@@ -1,0 +1,40 @@
+{
+  // Master switch. auto = the session-start conductor offers the installed doc
+  // canaries at the right moment (domain entry, ask-gated); manual = conductor
+  // silent, you invoke canaries yourself; off = fully silent.
+  "coalledgerMode": "auto",
+
+  // Language for prompts and nudges. auto = follow the conversation's language;
+  // a locked value pins user-facing prose (technical terms stay verbatim).
+  "language": "auto",
+
+  // Canary names to disable, e.g. ["doc-structure"]. "conductor" or "all"
+  // silences the conductor entirely.
+  "disabledCanaries": [],
+
+  // Report findings at or above this severity (low, medium, high, critical).
+  // Severity is assigned by context in the report step, never mechanically.
+  "severityFloor": "low",
+
+  // Default scan tier for the mixed canaries: quick = mechanical layer only
+  // (~free, report-only); full = adds the semantic layer (paid; always a
+  // separate consent).
+  "quickVsFull": "quick",
+
+  // Enable the #7 doc-leak canary (prose-level public/private boundary).
+  // Default on; a private-only project (docs never published) turns it off.
+  "docLeak": true,
+
+  // Treat this project's docs as PUBLIC-facing (raises leak/grounding stakes
+  // in severity context).
+  "publicMode": false,
+
+  // Self-update (series standard). The session-start hook only SCHEDULES a check
+  // via a throttled local stamp (no network); the AGENT verifies the latest tag
+  // and offers the update, consent-gated. ask = offer when due; auto = standing
+  // consent to check + offer; remind = a free reminder, you run it; off = silent.
+  "updateMode": "ask",
+
+  // Days between self-update checks/reminders (1-365; out-of-range clamps to 14 on read).
+  "updateCheckDays": 14
+}

@@ -1,0 +1,10 @@
+{
+  "name": "coalledger",
+  "version": "0.1.0-beta.1",
+  "description": "CoalLedger — docs-health canary suite (CoalMine for DOCS). 6+1 canaries, one failure mode each: doc-grounding (WRONG — claims vs their source of truth: code/data/original text/reality; offline degrades to unverified), doc-standard (INCOMPLETE), doc-rot (STALE), doc-consistency (CONTRADICTORY, incl. cross-language drift), doc-structure (BROKEN — via the vendored CommonMark+GFM AST engine: detection by AST, never regex, so things that render fine are not flagged; Thai/CJK-safe), doc-quality (UNREADABLE/MALFORMED — incl. language mechanics), plus the config-gated doc-leak (prose-level audience boundary; token-shaped secrets stay gitleaks' job). Honest frame: CommonMark+GFM fidelity, NOT 100% GitHub-pixel fidelity; severity judged by context, never mechanically; fixes choice-gated, never auto-applied; the correctness slice escalates to CoalBoard. Zero-dependency, offline by default, no API keys.",
+  "author": { "name": "HetCreep" },
+  "homepage": "https://github.com/TheColliery/CoalLedger",
+  "repository": "https://github.com/TheColliery/CoalLedger",
+  "license": "Apache-2.0",
+  "keywords": ["docs-health", "documentation", "markdown", "commonmark", "gfm", "broken-links", "canary", "skills", "hooks"]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "coalledger",
+  "owner": { "name": "TheColliery" },
+  "description": "CoalLedger — docs-health canary suite (CoalMine for DOCS). Part of the TheColliery mining series.",
+  "plugins": [
+    {
+      "name": "coalledger",
+      "source": "./plugin",
+      "description": "Docs-health canary suite — 6+1 canaries: grounding (WRONG), standard (INCOMPLETE), rot (STALE), consistency (CONTRADICTORY), structure (BROKEN — vendored CommonMark+GFM AST engine, never regex; Thai/CJK-safe), quality (UNREADABLE), config-gated leak. Honest frame: CommonMark+GFM fidelity, NOT GitHub-pixel fidelity; severity judged by context; fixes choice-gated, never auto-applied. Zero-dependency, offline by default, no API keys."
+    }
+  ]
+}

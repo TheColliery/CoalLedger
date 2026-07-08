@@ -1,0 +1,42 @@
+name: "Bug report"
+description: "The conductor hook, the AST engine (md-ast/md-checks), a canary skill, a command, or a script misbehaves"
+title: "[bug] <component>: <one-line summary>"
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - session-start conductor / canary offers (hooks/coalledger-conductor.js)
+        - AST engine — parsing/slugs (scripts/lib/md-ast.mjs)
+        - structure checks — false positive/negative (scripts/lib/md-checks.mjs)
+        - a canary skill contract (skills/doc-*)
+        - stats / update commands (commands/)
+        - config (config-load.mjs / config-schema.mjs)
+        - verify / build / test scripts
+        - plugin / packaging
+        - docs
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CoalLedger version + platform
+      placeholder: "v0.1.0-beta.1 · Claude Code on Windows 11"  # version-pin: tracks .claude-plugin/plugin.json — bump on release
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce + what happened
+      description: "Exact commands/inputs and exact output. For an engine false positive/negative, a MINIMAL markdown snippet that reproduces it — with any private doc content redacted or replaced by placeholders (the structure matters, never the prose)."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: "What you expected to happen instead."
+    validations:
+      required: false
