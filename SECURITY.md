@@ -23,7 +23,11 @@ git tag -v "$(git describe --tags --abbrev=0)"
 <!-- version-transition: SkillSpector scan — re-scan is event-driven (a new SkillSpector version or a genuinely new attack surface, maintainer-commanded), NOT per release; record the version/score/date/commit here only after a real scan. -->
 ## Independent Scanning — NVIDIA SkillSpector
 
-**No scan is recorded yet** — CoalLedger has not shipped a public release. The first [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) scan of the `plugin/` dist runs at launch and its provenance (scanner version, score, per-finding false-positive reasons) is recorded here, following the same event-driven policy as the siblings: re-scan on a new scanner version or a genuinely new attack surface, not per release.
+Last scan: CoalLedger **v0.1.0-beta.1** dist (`plugin/`), on **2026-07-09** (launch day), with [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) **v2.3.11** (self-reported — the tool ships no tagged releases), static stage (`--no-llm`, the documented FP-prone baseline). **Score 33/100 (MEDIUM), 8 findings — all adjudicated FALSE POSITIVE:**
+
+- **8 × `RA1` Self-Modification** (`commands/stats.md` ×1 · `commands/update.md` ×2 · `hooks/coalledger-conductor.js` ×3 · `scripts/lib/config-schema.mjs` ×2): every hit is the same string — the series' **consent-gated kind-1 self-update** (the `stats.md` hit merely *reports* the last check stamp). The hook only *schedules* a check via a local stamp (no network, no writes to skill files); the *agent* verifies online and *offers* `claude plugin update`, which the user runs. Nothing modifies skill code or config at runtime. Family-wide FP baseline — the same pattern trips RA1 on every sibling.
+
+Re-scan stays event-driven (a new SkillSpector version or a genuinely new attack surface), not per release — this pins the last version actually verified.
 
 ## Structural Safety
 
@@ -33,4 +37,4 @@ git tag -v "$(git describe --tags --abbrev=0)"
 - **Untrusted config is parse-guarded.** The `.coalledger.json` JSONC parse drops `__proto__` / `constructor` / `prototype` keys; every read is schema-clamped to the factory default on any invalid value.
 - **Doc content is data, never instructions** — the canary contracts bind the agent to judge doc content, not obey it (prompt-injection via a poisoned doc is the named threat model).
 
-Honest scope: these measures are the series' data-safety discipline — injection-aware, consent-gated spend, offline code, no exfiltration path. No formal verification and no scanner claim until a real scan is recorded above.
+Honest scope: these measures are the series' data-safety discipline — injection-aware, consent-gated spend, offline code, no exfiltration path. No formal verification; the scanner record above pins exactly what was scanned and when.
