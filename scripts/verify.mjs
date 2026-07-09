@@ -63,12 +63,14 @@ try {
 console.log('skills (frontmatter contract, all 6+1):');
 for (const name of SKILLS) {
   try {
+    // \r?-tolerant: the Windows CI runner checks out with autocrlf=true, so the
+    // same committed LF file arrives CRLF there — the contract must not care.
     const sk = fs.readFileSync(path.join(repo, 'skills', name, 'SKILL.md'), 'utf8');
-    const fm = /^---\n([\s\S]*?)\n---/.exec(sk);
+    const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(sk);
     if (!fm) { fail(`${name}: no frontmatter block`); continue; }
     if (new RegExp(`^name:\\s*${name}\\s*$`, 'm').test(fm[1])) ok(`${name}: frontmatter name matches its dir`);
     else fail(`${name}: frontmatter name does not match its dir`);
-    const desc = /description:\s*>-?\n([\s\S]*?)(?:\n[a-zA-Z]|$)/.exec(fm[1]);
+    const desc = /description:\s*>-?\r?\n([\s\S]*?)(?:\r?\n[a-zA-Z]|$)/.exec(fm[1]);
     const len = desc ? desc[1].length : 0;
     if (len > 0 && len <= 1536) ok(`${name}: description ${len} chars (<= 1536 cap)`);
     else fail(`${name}: description ${len} chars (cap 1536, must be > 0)`);
