@@ -45,6 +45,13 @@ const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 // are stripped before this runs (an id inside <!-- --> is never a live anchor).
 const HTML_ID_RE = /(?<![\w-])(?:id|name)\s*=\s*(?:"([^"]+)"|'([^']+)')/g;
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
+// A SINGLE pass can leave a residual comment on overlapping/adjacent markers
+// (`<!--<!---->-->`), so strip to a FIXED POINT — repeat until nothing changes.
+function stripHtmlComments(s) {
+  let prev;
+  do { prev = s; s = s.replace(HTML_COMMENT_RE, ''); } while (s !== prev);
+  return s;
+}
 const BARE_URL_RE = /(?:https?:\/\/|www\.)[^\s<>"')\]]+/g;
 
 function safeDecode(s) {
@@ -59,7 +66,7 @@ export function collectAnchors(root) {
   walk(root, (node) => {
     if (node.type === 'heading') anchors.add(slugger.slug(textContent(node)));
     if (node.type === 'html') {
-      const html = node.value.replace(HTML_COMMENT_RE, '');
+      const html = stripHtmlComments(node.value);
       HTML_ID_RE.lastIndex = 0;
       let m;
       while ((m = HTML_ID_RE.exec(html)) !== null) anchors.add(m[1] != null ? m[1] : m[2]);
