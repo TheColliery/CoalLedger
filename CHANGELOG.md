@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.1.0-beta.2] - 2026-07-09
+
+Launch-day **CoalBoard dogfood** (nasa rigor, opus blind lenses + judge) caught a precision bug the fixture gate missed.
+
+### Fixed
+- **[MED] `anchor-missing` could pass a genuinely-broken `#link`.** `collectAnchors`'s `HTML_ID_RE` matched `id`/`name` anywhere in raw HTML — `data-id="x"`, `item-name='y'`, or an `id` inside an HTML comment all registered as FALSE anchors, so a link to a non-existent anchor slipped through. The regex now requires an attribute boundary (a negative lookbehind for a word-char/hyphen) and HTML comments are stripped before scanning — only real `id`/`name` anchors count.
+
 ## [0.1.0-beta.1] - 2026-07-09
 
 Initial public beta — phase 1 (engine + pilot) and phase 2 (the full suite + public docs) together.

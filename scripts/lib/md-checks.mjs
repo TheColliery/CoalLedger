@@ -39,7 +39,12 @@ import { pathToFileURL } from 'node:url';
 import { parseMarkdown, walk, textContent, makeSlugger } from './md-ast.mjs';
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
-const HTML_ID_RE = /(?:id|name)\s*=\s*(?:"([^"]+)"|'([^']+)')/g;
+// A real anchor id/name only — the negative lookbehind for a word-char or hyphen
+// stops `data-id=`, `aria-*=`, `item-name=` etc. from registering a FALSE anchor
+// (which would let a genuinely-broken #link pass anchor-missing). HTML comments
+// are stripped before this runs (an id inside <!-- --> is never a live anchor).
+const HTML_ID_RE = /(?<![\w-])(?:id|name)\s*=\s*(?:"([^"]+)"|'([^']+)')/g;
+const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 const BARE_URL_RE = /(?:https?:\/\/|www\.)[^\s<>"')\]]+/g;
 
 function safeDecode(s) {
@@ -54,9 +59,10 @@ export function collectAnchors(root) {
   walk(root, (node) => {
     if (node.type === 'heading') anchors.add(slugger.slug(textContent(node)));
     if (node.type === 'html') {
+      const html = node.value.replace(HTML_COMMENT_RE, '');
       HTML_ID_RE.lastIndex = 0;
       let m;
-      while ((m = HTML_ID_RE.exec(node.value)) !== null) anchors.add(m[1] != null ? m[1] : m[2]);
+      while ((m = HTML_ID_RE.exec(html)) !== null) anchors.add(m[1] != null ? m[1] : m[2]);
     }
   });
   return anchors;

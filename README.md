@@ -69,7 +69,7 @@ Every tool in the series supports two config levels — a global `~/.claude/.coa
 
 | Key | Default | What it does |
 |---|---|---|
-| `coalledgerMode` | `auto` | Master switch: `auto` = session-start conductor offers the canaries · `manual` = conductor silent, invoke canaries yourself · `off` = fully silent |
+| `coalledgerMode` | `auto` | Conductor switch: `auto` = session-start conductor offers the canaries · `manual` = the conductor stays silent, invoke canaries yourself · `off` = the conductor never runs. (Orthogonal: the self-update nudge has its own switch — `updateMode: "off"` — so `manual` silences the *canary offers*, not the periodic update check.) |
 | `language` | `auto` | Language for prompts and reports (`auto` \| `th` \| `en` \| `ja` \| `zh` \| `es`); technical terms stay verbatim |
 | `disabledCanaries` | `[]` | Canary names to disable (e.g. `["doc-quality"]`); `"conductor"` or `"all"` silences the conductor entirely |
 | `severityFloor` | `low` | Report findings at or above this severity (judged by context, never mechanically) |
