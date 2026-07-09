@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.1.0-beta.3] - 2026-07-09
+
+Second CoalBoard dogfood pass (full-mirror, nasa) — a HIGH the first pass missed.
+
+### Fixed
+- **[HIGH] the markdown parser was quadratic-time; a crafted doc could hang any scan.**   re-scanned the tail to end-of-string on every  with an unclosed  —  repeated N times parsed in O(N^2) (measured: 8 KB≈190ms, 16 KB≈680ms, 32 KB≈2.9s, extrapolated ~1 MB≈1hr), while a benign 273 KB doc parsed in 5 ms. Fixed at the root: the inline destination/title scans are length-bounded (, over the cap = not a valid inline link → literal text), and  refuses a doc over  (512 KB) — flagging  instead of parsing — which also closes the transitive vector (a benign doc that links a poisoned ). Parse is now near-linear (16 KB pathological ≈ 340 ms, bounded ≈5.7 s at the 512 KB cap, never a hang). +2 timing regression tests (88 → 90).
+
 ## [0.1.0-beta.2] - 2026-07-09
 
 Launch-day **CoalBoard dogfood** (nasa rigor, opus blind lenses + judge) caught a precision bug the fixture gate missed.

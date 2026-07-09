@@ -72,10 +72,19 @@ export function collectAnchors(root) {
 //   filePath   absolute or cwd-relative path of the doc (enables relative-file
 //              and cross-file-anchor checks; omit for pure in-memory checks)
 //   fileExists / readFile   injectable fs (hermetic tests); default real fs
+// A structural health scan never needs to parse a megabyte-scale doc; capping the
+// input is the root fix for the parser's super-linear worst case (a crafted doc of
+// pathological inline-link fragments) — it bounds both the primary parse AND the
+// transitive linked-file parses below. Real READMEs/specs sit far under this.
+const MAX_DOC_BYTES = 512 * 1024; // 512 KB
+
 export function checkDocument(src, opts = {}) {
   const filePath = opts.filePath ? path.resolve(opts.filePath) : null;
   const fileExists = opts.fileExists || ((p) => { try { return fs.existsSync(p); } catch { return false; } });
   const readFile = opts.readFile || ((p) => fs.readFileSync(p, 'utf8'));
+  if (typeof src === 'string' && src.length > MAX_DOC_BYTES) {
+    return [{ check: 'doc-too-large', line: 1, column: 1, message: `document is ${(src.length / 1048576).toFixed(1)} MB (> ${MAX_DOC_BYTES / 1048576} MB) — too large for a structural scan; split it into smaller docs` }];
+  }
   const root = parseMarkdown(src);
   const findings = [];
   const at = (node) => (node && node.position ? node.position.start : { line: 1, column: 1 });
@@ -106,7 +115,12 @@ export function checkDocument(src, opts = {}) {
   function anchorsOf(absPath) {
     if (targetCache.has(absPath)) return targetCache.get(absPath);
     let set = null;
-    try { set = collectAnchors(parseMarkdown(readFile(absPath))); } catch { set = null; }
+    try {
+      const text = readFile(absPath);
+      // same cap as the primary doc — a linked target over the limit is left
+      // unchecked (null) rather than pulled into the parser's worst case.
+      set = (typeof text === 'string' && text.length > MAX_DOC_BYTES) ? null : collectAnchors(parseMarkdown(text));
+    } catch { set = null; }
     targetCache.set(absPath, set);
     return set;
   }

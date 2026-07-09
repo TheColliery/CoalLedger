@@ -128,3 +128,30 @@ test('CLI fails loud on an unreadable file (exit 1) but still checks the rest', 
   assert.ok(r.stderr.includes('FAIL'));
   assert.ok(r.stdout.includes('0 finding(s)'), 'the readable file was still checked');
 });
+
+// --- H1 (CoalBoard dogfood): the parser must not go quadratic on crafted docs ---
+import { parseMarkdown } from './md-ast.mjs';
+
+test('H1: a pathological inline-link doc parses in bounded (near-linear) time, not O(N^2)', () => {
+  // `[a](` repeated N: each `]` used to re-scan the tail to EOS -> O(N^2) hang.
+  // Bounded now (MAX_INLINE_DEST): assert a 4000-fragment (16 KB) doc — which the
+  // pre-fix code took ~700ms on and ~2.9s at 8000 — finishes comfortably fast.
+  const doc = '[a]('.repeat(4000);
+  const t0 = process.hrtime.bigint();
+  parseMarkdown(doc);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(ms < 1500, `pathological parse should be bounded, took ${ms.toFixed(0)}ms`);
+});
+
+test('H1: checkDocument flags an over-cap doc and does NOT parse it (transitive vector closed)', () => {
+  const over = 'x'.repeat(600 * 1024); // > 512 KB
+  const t0 = process.hrtime.bigint();
+  const f = checkDocument(over);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.strictEqual(f.length, 1);
+  assert.strictEqual(f[0].check, 'doc-too-large');
+  assert.ok(ms < 100, `an over-cap doc must be flagged instantly, took ${ms.toFixed(0)}ms`);
+  // a benign doc just under the cap still parses normally (no false "too large")
+  const ok = checkDocument('# Title\n\nnormal content\n');
+  assert.ok(!ok.some((x) => x.check === 'doc-too-large'));
+});

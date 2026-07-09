@@ -59,6 +59,10 @@ function makePosMap(lines) {
 }
 
 const BLANK_RE = /^[ \t]*$/;
+// A real inline-link destination or title is never this long. Bounding the scans
+// keeps `[a](` (or `[a]("`) repeated N times from re-scanning the tail per bracket
+// -> O(N^2) (a crafted-doc parse hang). Over the cap = not a valid inline link.
+const MAX_INLINE_DEST = 2048;
 
 function scanIndent(text, p, col) {
   while (p < text.length) {
@@ -1074,7 +1078,13 @@ function parseInlines(raw, definitions, pt) {
     } else {
       let depth = 0;
       const st = j;
+      // Bound the destination scan: a real inline-link URL is never this long,
+      // and without the bound `[a](` repeated N times makes each `]` re-scan the
+      // tail to EOS -> O(N^2) parse (a crafted-doc hang). Over the cap = not a
+      // valid inline destination -> return null (the text stays literal, exactly
+      // what an unterminated destination already does).
       while (j < s.length) {
+        if (j - st > MAX_INLINE_DEST) return null;
         const ch = s[j];
         if (ch === '\\' && j + 1 < s.length) { j += 2; continue; }
         if (/[ \t\n]/.test(ch)) break;
@@ -1089,6 +1099,7 @@ function parseInlines(raw, definitions, pt) {
       const closeCh = s[j] === '(' ? ')' : s[j];
       let k = j + 1;
       while (k < s.length) {
+        if (k - j > MAX_INLINE_DEST) return null; // unterminated title within the cap = not a valid link
         if (s[k] === '\\') { k += 2; continue; }
         if (s[k] === closeCh) break;
         k++;
