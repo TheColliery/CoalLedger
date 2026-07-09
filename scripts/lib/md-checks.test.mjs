@@ -155,3 +155,13 @@ test('H1: checkDocument flags an over-cap doc and does NOT parse it (transitive 
   const ok = checkDocument('# Title\n\nnormal content\n');
   assert.ok(!ok.some((x) => x.check === 'doc-too-large'));
 });
+
+// --- L2 (CoalBoard nasa audit): binary/corrupted input must not report a false clean bill ---
+test('doc-unreadable: a NUL byte flags binary/corrupted input instead of a false "0 findings" clean bill', () => {
+  const f = checkDocument('# Title\n\ntext\0more');
+  assert.strictEqual(f.length, 1);
+  assert.strictEqual(f[0].check, 'doc-unreadable');
+  // benign text with no NUL byte still parses normally
+  const ok = checkDocument('# Title\n\nnormal content\n');
+  assert.ok(!ok.some((x) => x.check === 'doc-unreadable'));
+});

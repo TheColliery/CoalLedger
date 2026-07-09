@@ -2,6 +2,25 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.1.0-beta.5] - 2026-07-09
+
+A reconciliation pass (`plugin.json` vs `CHANGELOG.md`) plus the third CoalBoard dogfood pass (full-mirror, nasa — `.coalboard/reports/audit-2026-07-09-nasa-full-mirror.md`): two LOW findings and a bookkeeping gap.
+
+### Fixed
+- **CHANGELOG backfill: v0.1.0-beta.4 shipped with no entry.** `plugin.json` had already moved to `0.1.0-beta.4` while this file's newest entry stayed at beta.3 — an undocumented version bump, caught by a reconciliation pass, not the audit. Reconstructed from `git log`/`git show` v0.1.0-beta.3..v0.1.0-beta.4 (never from memory) and backfilled below. Lesson: a version bump without its CHANGELOG entry is an undocumented release — the release checklist's entry-before-tag order exists for exactly this.
+- **[LOW, CoalBoard nasa audit] degenerate/binary input parsed to a near-empty tree, reporting a false "0 findings" clean bill.** `parseMarkdown` never throws, so a corrupted or non-text `.md` produced no structural findings at all — the beta.3 size cap addressed volume, not content validity. Added a `doc-unreadable` pre-parse guard (`scripts/lib/md-checks.mjs`): a NUL byte in the first 8 KB (git/grep/diff's own binary-detection heuristic) is now flagged instead of silently parsed. Documented the remaining honest ceiling in the file's "Known limits" header — genuinely garbled-but-NUL-free UTF-8 text has no such signal and still parses near-empty (this is a structural scanner, not a content validator), and `anchorsOf`'s `catch → null` still treats every unreadable cross-file anchor target alike. +1 hermetic test (90 → 91).
+- **[LOW, CoalBoard nasa audit] README doctrine link pointed at the org root instead of the `.github` repo.** "Series doctrine: `TheColliery/.github`" linked `https://github.com/TheColliery` though the visible text names the `.github` repo specifically — corrected to `https://github.com/TheColliery/.github`.
+
+## [0.1.0-beta.4] - 2026-07-09
+
+*(Backfilled 2026-07-09 — this release shipped with no CHANGELOG entry; reconstructed from `git log`/`git show` v0.1.0-beta.3..v0.1.0-beta.4, never from memory.)* CodeQL flagged a second-order sanitization gap in the same file the beta.3 DoS fix touched.
+
+### Fixed
+- **[HIGH, CodeQL `js/incomplete-multi-character-sanitization`] the HTML-comment strip in `collectAnchors` could leave a residual comment on overlapping/adjacent markers** (`scripts/lib/md-checks.mjs`). A single `.replace(HTML_COMMENT_RE, '')` pass doesn't re-scan its own output, so input like `<!--<!---->-->` left a partial comment behind — the canonical incomplete-multi-character-sanitization pattern. Fixed with `stripHtmlComments()`, which repeats the replace to a FIXED POINT (loops until the string stops changing) before `collectAnchors` scans for `id`/`name` attributes. The beta.2 anchor-precision property is unaffected; +0 test change (90/90 held). CodeQL's `bad-tag-filter` and dead-code alerts on the same region were reviewed and dismissed — the parser is a block-classifier, not a security sanitizer, and raw HTML is passthrough-flagged, never executed or re-emitted.
+
+### Changed
+- CI: `github/codeql-action` (`init`/`analyze`/`upload-sarif`) 4.36.3 → 4.37.0 and `DavidAnson/markdownlint-cli2-action` 23.2.0 → 24.0.0 (Dependabot, SHA-pinned). `dependabot.yml` now groups the three `codeql-action` bumps into one PR (avoids an init/analyze version-skew that reds CodeQL) and assigns bump PRs to the maintainer so they notify at any GitHub watch level.
+
 ## [0.1.0-beta.3] - 2026-07-09
 
 Second CoalBoard dogfood pass (full-mirror, nasa) — a HIGH the first pass missed.

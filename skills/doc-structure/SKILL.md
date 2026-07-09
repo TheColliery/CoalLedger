@@ -35,6 +35,7 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
 | ref-undefined | \[text]\[label] with no definition (renders as literal brackets) |
 | def-orphan | definition never referenced |
 | bare-url | raw URL in prose (MD034 class) |
+| doc-unreadable | binary/corrupted input (NUL byte sniffed) — refused before parsing, never a false "0 findings" clean bill |
 
 ## Output
 | # | path:line | check | severity | finding | fix |

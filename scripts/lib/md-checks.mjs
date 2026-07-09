@@ -20,12 +20,23 @@
 //   def-orphan          a [label]: definition no reference ever uses
 //   bare-url            a raw http(s)/www URL in prose text (GFM auto-links
 //                       it, CommonMark does not; MD034 class — style signal)
+//   doc-too-large       pre-parse short-circuit: input over MAX_DOC_BYTES is
+//                       refused, never parsed (the parser-DoS root fix)
+//   doc-unreadable      pre-parse short-circuit: a NUL byte in the first 8 KB
+//                       (binary/corrupted input) is refused, never parsed
 //
 // Known limits (honest ceiling, mirrors md-ast.mjs):
 //   - site-root-relative targets (/path) are SKIPPED — resolving them needs a
 //     repo root this module does not assume (no-external-assumption).
 //   - bare-url columns inside multi-line text nodes are line-accurate,
 //     column-approximate.
+//   - this is a STRUCTURAL scanner, not a content validator: parseMarkdown
+//     never throws, so garbled-but-NUL-free text (valid UTF-8, no real
+//     structure) still parses to a near-empty tree — "0 findings" there means
+//     "nothing structurally broken found," not "content verified sane."
+//   - anchorsOf's catch->null treats every unreadable linked target alike
+//     (missing, permission-denied, bad encoding) — a cross-file anchor check
+//     is silently skipped rather than reported as its own finding.
 // Language-neutral: anchors resolve through the Unicode slugger + a
 // decodeURIComponent pass, so Thai/CJK headings and percent-encoded fragments
 // match exactly (blueprint §4).
@@ -91,6 +102,13 @@ export function checkDocument(src, opts = {}) {
   const readFile = opts.readFile || ((p) => fs.readFileSync(p, 'utf8'));
   if (typeof src === 'string' && src.length > MAX_DOC_BYTES) {
     return [{ check: 'doc-too-large', line: 1, column: 1, message: `document is ${(src.length / 1048576).toFixed(1)} MB (> ${MAX_DOC_BYTES / 1048576} MB) — too large for a structural scan; split it into smaller docs` }];
+  }
+  // git/grep/diff's own "is this binary" heuristic: a NUL byte survives utf8
+  // decode as literal U+0000, and real text never contains one. Without this,
+  // a binary/corrupted .md parses to a near-empty tree -> "0 findings" reads
+  // as a clean bill when the doc was never readable as markdown at all.
+  if (typeof src === 'string' && src.slice(0, 8000).includes('\0')) {
+    return [{ check: 'doc-unreadable', line: 1, column: 1, message: 'document contains a NUL byte in its first 8000 characters — likely binary or corrupted, not scannable as markdown' }];
   }
   const root = parseMarkdown(src);
   const findings = [];
