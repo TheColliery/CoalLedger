@@ -10,6 +10,14 @@
 ![license](https://img.shields.io/badge/license-Apache_2.0-blue)
 ![status](https://img.shields.io/badge/status-beta-orange)
 
+![Claude Code: validated](https://img.shields.io/badge/Claude_Code-validated-brightgreen)
+![Antigravity: works with](https://img.shields.io/badge/Antigravity-works_with-blue)
+![Cursor: works with](https://img.shields.io/badge/Cursor-works_with-blue)
+![Codex: works with](https://img.shields.io/badge/Codex-works_with-blue)
+![Gemini CLI: works with](https://img.shields.io/badge/Gemini_CLI-works_with-blue)
+![Cline: works with](https://img.shields.io/badge/Cline-works_with-blue)
+![Copilot: works with](https://img.shields.io/badge/Copilot-works_with-blue)
+
 [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalLedger/releases)
 
 **Part of [TheColliery](https://github.com/TheColliery)** — siblings: **[CoalMine](https://github.com/HetCreep/CoalMine)** (quality canaries) · **[CoalTipple](https://github.com/TheColliery/CoalTipple)** (model/effort routing) · **[CoalBoard](https://github.com/TheColliery/CoalBoard)** (consensus board) · **[CoalHearth](https://github.com/TheColliery/CoalHearth)** (warm-resume) · **[CoalFace](https://github.com/TheColliery/CoalFace)** (fan-out discipline) · **[CoalWash](https://github.com/TheColliery/CoalWash)** (memory defrag).
@@ -61,7 +69,13 @@ claude plugin marketplace add TheColliery/CoalLedger
 claude plugin install coalledger@coalledger
 ```
 
-**Other agents** — file-copy: copy `skills/` (the seven canary contracts) and `scripts/lib/` (the AST engine) into your platform's skill directory, keeping the relative layout (each SKILL.md resolves the engine at `../../scripts/lib`). The conductor hook is Claude-Code-only; elsewhere invoke the canaries manually. No API keys, no network, no `npm install`.
+**Antigravity** — file-copy: copy `skills/` (the seven canary contracts) and `scripts/lib/` (the AST engine) into `~/.gemini/config/skills/` (global) or `<workspace>/.agents/skills/` (project), keeping the relative layout (each SKILL.md resolves the engine at `../../scripts/lib`).
+
+**Other agents** — the same file-copy into your platform's skill directory, keeping that relative layout. No `install.mjs` step — the canaries are plain SKILL.md contracts over the zero-dep engine.
+
+**claude.ai** — read/analyze skills (like CoalLedger's canaries) upload as a custom skill: ZIP a folder from `skills/` bundled with `scripts/lib/` so the engine resolves, then add it in claude.ai's skill settings (paid plan with code execution on). Per-surface — an upload doesn't sync across surfaces.
+
+The conductor hook is **Claude-Code-only**; on every other surface the canaries run **manually** (invoke `doc-structure`, `doc-grounding`, … or ask for a docs scan). No API keys, no network, no `npm install`.
 
 ## 🔧 Configure
 
