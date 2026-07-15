@@ -60,6 +60,26 @@ try {
   else fail('marketplace entry sets a version — remove it (plugin.json is the only version home)');
 } catch (e) { fail(`marketplace.json: ${e.message}`); }
 
+// Skill-listing description cap: gate at 1024 = cross-platform-safe (agentskills.io / agnix);
+// CC's own listing truncation is 1536 chars combined description+when_to_use
+// (code.claude.com/docs/en/skills, verified 2026-07-16). USER standard 2026-07-16: never exceed.
+const DESC_CAP = 1024;
+function frontmatterField(text, key) {
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return null;
+  const lines = m[1].split(/\r?\n/);
+  const i = lines.findIndex((l) => l.startsWith(key + ':'));
+  if (i === -1) return null;
+  let v = lines[i].slice(key.length + 1).trim();
+  if (/^[>|][-+]?$/.test(v)) {
+    const parts = [];
+    for (let j = i + 1; j < lines.length && /^\s+\S/.test(lines[j]); j++) parts.push(lines[j].trim());
+    return parts.join(' ');
+  }
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+  return v;
+}
+
 console.log('skills (frontmatter contract, all 6+1):');
 for (const name of SKILLS) {
   try {
@@ -70,14 +90,27 @@ for (const name of SKILLS) {
     if (!fm) { fail(`${name}: no frontmatter block`); continue; }
     if (new RegExp(`^name:\\s*${name}\\s*$`, 'm').test(fm[1])) ok(`${name}: frontmatter name matches its dir`);
     else fail(`${name}: frontmatter name does not match its dir`);
-    const desc = /description:\s*>-?\r?\n([\s\S]*?)(?:\r?\n[a-zA-Z]|$)/.exec(fm[1]);
-    const len = desc ? desc[1].length : 0;
-    if (len > 0 && len <= 1536) ok(`${name}: description ${len} chars (<= 1536 cap)`);
-    else fail(`${name}: description ${len} chars (cap 1536, must be > 0)`);
+    const len = (frontmatterField(sk, 'description') || '').length + (frontmatterField(sk, 'when_to_use') || '').length;
+    if (len === 0) fail(`${name}: frontmatter description missing/unparsed`);
+    else if (len > DESC_CAP) fail(`${name}: description+when_to_use ${len} chars exceeds the ${DESC_CAP}-char cap`);
+    else ok(`${name}: description ${len} chars (cap ${DESC_CAP})`);
     if (sk.includes('github.com/TheColliery/CoalLedger/issues')) ok(`${name}: carries the problem-report offer`);
     else fail(`${name}: missing the problem-report offer (standard system #4)`);
   } catch (e) { fail(`${name}: ${e.message}`); }
 }
+
+console.log('description length cap (commands):');
+try {
+  const commandsDir = path.join(repo, 'commands');
+  for (const f of fs.readdirSync(commandsDir).filter((n) => n.endsWith('.md'))) {
+    try {
+      const text = fs.readFileSync(path.join(commandsDir, f), 'utf8');
+      const len = (frontmatterField(text, 'description') || '').length + (frontmatterField(text, 'when_to_use') || '').length;
+      if (len > DESC_CAP) fail(`commands/${f}: description+when_to_use ${len} chars exceeds the ${DESC_CAP}-char cap`);
+      else ok(`commands/${f}: ${len} chars (cap ${DESC_CAP})`);
+    } catch (e) { fail(`commands/${f} description check: ${e.message}`); }
+  }
+} catch (e) { fail(`commands/ listing: ${e.message}`); }
 try {
   const sk = fs.readFileSync(path.join(repo, 'skills', 'doc-structure', 'SKILL.md'), 'utf8');
   if (sk.includes('md-checks.mjs')) ok('doc-structure wires the shipped engine (md-checks.mjs)');
