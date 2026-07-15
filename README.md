@@ -11,12 +11,12 @@
 ![status](https://img.shields.io/badge/status-beta-orange)
 
 ![Claude Code: validated](https://img.shields.io/badge/Claude_Code-validated-brightgreen)
-![Antigravity: works with](https://img.shields.io/badge/Antigravity-works_with-blue)
-![Cursor: works with](https://img.shields.io/badge/Cursor-works_with-blue)
-![Codex: works with](https://img.shields.io/badge/Codex-works_with-blue)
-![Gemini CLI: works with](https://img.shields.io/badge/Gemini_CLI-works_with-blue)
-![Cline: works with](https://img.shields.io/badge/Cline-works_with-blue)
-![Copilot: works with](https://img.shields.io/badge/Copilot-works_with-blue)
+![Antigravity: manual](https://img.shields.io/badge/Antigravity-manual-blue)
+![Cursor: manual](https://img.shields.io/badge/Cursor-manual-blue)
+![Codex: manual](https://img.shields.io/badge/Codex-manual-blue)
+![Gemini CLI: manual](https://img.shields.io/badge/Gemini_CLI-manual-blue)
+![Cline: manual](https://img.shields.io/badge/Cline-manual-blue)
+![Copilot: manual](https://img.shields.io/badge/Copilot-manual-blue)
 
 [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalLedger/releases)
 
@@ -59,6 +59,8 @@ Multilingual by construction: the mechanical layers are language-agnostic (an AS
 ## 🧭 Compatibility
 
 Cross-agent by design — the canaries are plain SKILL.md contracts and the engine is zero-dependency Node scripts any agent can run. The activation ladder is capability-keyed, never a platform table: **has lifecycle hooks** → wire the shipped session-start conductor (Claude Code today) and the canaries offer themselves at the right moment; **no hooks** → best-effort agent-driven (an always-loaded instruction can offer the right canary — probabilistic, not hook parity); **always** → manual (invoke `doc-structure`, `doc-grounding`, … or ask for a docs scan).
+
+Support tiers, honestly labeled: **Claude Code — validated** (live plugin, launched + dogfooded 2026-07-09) · **every other skill-reading platform — manual** (the file-copy install below suffices, because read/analyze canaries need only a platform that reads SKILL.md — but nothing has been run end-to-end there, so no higher claim).
 
 ## 🚀 Install
 
