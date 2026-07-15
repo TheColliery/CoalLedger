@@ -81,7 +81,7 @@ The conductor hook is **Claude-Code-only**; on every other surface the canaries 
 
 ## 🔧 Configure
 
-Every tool in the series supports two config levels — a global `~/.claude/.coalledger.json` and a per-project `.coalledger.json` override (project wins) — so a globally-installed skill can be tuned or **shut off per project** (`coalledgerMode: "off"` is the off-switch; a project can also disable single canaries or raise the severity floor instead). The keys:
+Every tool in the series supports two config levels — a global `~/.claude/.coalledger.json` and a per-project `.coalledger.json` override (project wins) — so a globally-installed skill can be tuned or **shut off per project** (`coalledgerMode: "off"` is the off-switch; a project can also disable single canaries or raise the severity floor instead) — a skill you don't need in a given project stops loading (and burning tokens) there. The keys:
 
 | Key | Default | What it does |
 |---|---|---|
