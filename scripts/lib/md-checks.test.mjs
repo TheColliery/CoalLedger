@@ -156,6 +156,29 @@ test('H1: checkDocument flags an over-cap doc and does NOT parse it (transitive 
   assert.ok(!ok.some((x) => x.check === 'doc-too-large'));
 });
 
+// --- H11 (CoalBoard nasa audit): processEmphasis / angle-dest / backtick were
+// still O(N^2) after the beta.3 parseInlineDest fix — a benign-looking emphasis
+// doc hung any scan through checkDocument. Guard the LINEAR behavior. ---
+test('H11: a dense-emphasis doc (the processEmphasis O(N^2) vector) scans in bounded time', () => {
+  // `a*b_c*d_` repeated: every `*`/`_` pair matched, the old code reset the
+  // closer index to 0 and array-spliced per match -> O(N^2). Pre-fix wall times
+  // measured through checkDocument: 47 KB ~= 2.5 s, 94 KB ~= 3.9 s, 188 KB ~= 26 s,
+  // ~500 KB did not finish in 5 min. Linear now (~0.5 s at 188 KB). A 200 KB doc
+  // that took ~30 s pre-fix must finish comfortably under a generous bound (slow
+  // CI headroom; a reintroduced quadratic blows straight past it).
+  const doc = 'a*b_c*d_'.repeat(25000); // ~200 KB, under MAX_DOC_BYTES
+  const t0 = process.hrtime.bigint();
+  const f = checkDocument(doc);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(!f.some((x) => x.check === 'doc-too-large'), 'the fixture is under the cap (real parse, not short-circuited)');
+  assert.ok(ms < 6000, `dense-emphasis parse must be bounded, took ${ms.toFixed(0)}ms`);
+});
+// (The angle-dest bound and backtick memo are the other two H11 paths; the angle
+// bound is guarded functionally in md-ast.test.mjs — a wall-clock guard there is
+// theater: the 512 KB cap already held both under ~2 s even while quadratic, so a
+// time bound can't tell the fix from the bug. The backtick memo is output-neutral,
+// covered by the existing code-span test.)
+
 // --- L2 (CoalBoard nasa audit): binary/corrupted input must not report a false clean bill ---
 test('doc-unreadable: a NUL byte flags binary/corrupted input instead of a false "0 findings" clean bill', () => {
   const f = checkDocument('# Title\n\ntext\0more');

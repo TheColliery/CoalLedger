@@ -248,6 +248,18 @@ test('inline links: title, <dest with spaces>, balanced parens in dest', () => {
   assert.strictEqual(links[2].url, 'https://x.example/p(q)r');
 });
 
+test('H11: the <angle-dest> closing-> scan is length-bounded (the O(N^2) `[](<` spam fix)', () => {
+  // The unbounded indexOf('>') here re-scanned to EOS on `[](<` spam -> O(N^2).
+  // Bounded by MAX_INLINE_DEST (2048) now, matching the non-angle branch: a '>'
+  // past the cap is not found, so it is not a valid angle destination. This is a
+  // FUNCTIONAL guard (fails on the old unbounded code, which WOULD find the '>').
+  const near = md('[x](<' + 'a'.repeat(100) + '>)\n');   // '>' well within the cap
+  assert.strictEqual(findAll(near, 'link').length, 1);
+  assert.strictEqual(findAll(near, 'link')[0].url, 'a'.repeat(100));
+  const far = md('[x](<' + 'a'.repeat(3000) + '>)\n');    // '>' past the 2048 cap
+  assert.strictEqual(findAll(far, 'link').length, 0, 'a >2048-char angle dest is not a link (bounded scan)');
+});
+
 test('images: alt text flattens nested formatting', () => {
   const t = md('![the *alt* text](./img.png "T")\n');
   const img = first(t, 'image');

@@ -824,6 +824,7 @@ function parseInlines(raw, definitions, pt) {
   const nodes = [];
   const delims = [];
   const brackets = [];
+  const noBacktickCloser = new Set(); // backtick run-lengths proven to have no closer ahead
   let buf = '';
   let bufV = 0;
   let i = 0;
@@ -869,16 +870,24 @@ function parseInlines(raw, definitions, pt) {
     if (c === '`') {
       let k = 1;
       while (s[i + k] === '`') k++;
-      // find a closing run of exactly k
-      let j = i + k;
+      // Find a closing run of exactly k. Once a run of length k finds no closer
+      // ahead, no further-right run of length k can either (its search range is a
+      // subset), so memoize the miss — each backtick length scans to EOS at most
+      // once. Without it, backtick spam (`x``x`...) re-scans the tail per run =
+      // O(N^2). (Distinct-length spam stays bounded ~O(N^1.5), sub-second at the
+      // MAX_DOC_BYTES cap.)
       let close = -1;
-      while (j < s.length) {
-        if (s[j] === '`') {
-          let m = 1;
-          while (s[j + m] === '`') m++;
-          if (m === k) { close = j; break; }
-          j += m;
-        } else j++;
+      if (!noBacktickCloser.has(k)) {
+        let j = i + k;
+        while (j < s.length) {
+          if (s[j] === '`') {
+            let m = 1;
+            while (s[j + m] === '`') m++;
+            if (m === k) { close = j; break; }
+            j += m;
+          } else j++;
+        }
+        if (close === -1) noBacktickCloser.add(k);
       }
       if (close !== -1) {
         flush(i);
@@ -976,7 +985,7 @@ function parseInlines(raw, definitions, pt) {
   }
   flush(s.length);
 
-  processEmphasis(nodes, delims, -1);
+  processEmphasis(nodes, delims);
 
   // final position mapping
   const finalize = (list) => {
@@ -1048,7 +1057,7 @@ function parseInlines(raw, definitions, pt) {
 
     const children = nodes.splice(bk.nodeIndex + 1);
     nodes.pop(); // the '[' / '![' opener text node
-    processEmphasis(children, delims, -1, children);
+    processEmphasis(children, delims);
 
     let node;
     if (url != null) {
@@ -1071,8 +1080,18 @@ function parseInlines(raw, definitions, pt) {
     while (j < s.length && /[ \t\n]/.test(s[j])) j++;
     let url = '';
     if (s[j] === '<') {
-      const end = s.indexOf('>', j + 1);
-      if (end === -1 || s.slice(j + 1, end).includes('\n')) return null;
+      // Bounded scan for the closing '>' — a real <dest> is short and single-line;
+      // an unbounded indexOf('>') re-scans to EOS on `[](<` spam = O(N^2) (the
+      // sibling of the MAX_INLINE_DEST bound below). A '\n' before '>', or no '>'
+      // within the cap, = not a valid angle destination.
+      let end = -1;
+      const lim = Math.min(s.length, j + 1 + MAX_INLINE_DEST);
+      for (let p = j + 1; p < lim; p++) {
+        const ch = s[p];
+        if (ch === '\n') return null;
+        if (ch === '>') { end = p; break; }
+      }
+      if (end === -1) return null;
       url = s.slice(j + 1, end);
       j = end + 1;
     } else {
@@ -1113,67 +1132,115 @@ function parseInlines(raw, definitions, pt) {
     return { url: unescapeMd(url), title: destTitle, after: j + 1 };
   }
 
-  function processEmphasis(nodeList, allDelims, _bottom, scope) {
-    const inScope = (d) => nodeList.includes(d.node);
-    const live = allDelims.filter((d) => d.length > 0 && inScope(d));
-    let ci = 0;
-    while (ci < live.length) {
-      const closer = live[ci];
-      if (!closer.canClose || closer.length === 0) { ci++; continue; }
-      let oi = -1;
-      for (let k = ci - 1; k >= 0; k--) {
-        const op = live[k];
-        if (op.length === 0 || op.char !== closer.char || !op.canOpen) continue;
-        if (closer.char !== '~' && (closer.canOpen || op.canClose) &&
-            (op.origLen + closer.origLen) % 3 === 0 &&
-            !(op.origLen % 3 === 0 && closer.origLen % 3 === 0)) continue;
-        if (closer.char === '~' && (op.origLen !== 2 || closer.origLen !== 2)) continue;
-        oi = k;
-        break;
+  // CommonMark reference "process emphasis" — LINEAR time. Two devices from the
+  // spec's reference impl stop the re-scanning that made the old array version
+  // O(N^2) (it reset the closer index to 0 after every match and spliced the node
+  // array each time → a crafted doc like `a*b_c*d_` repeated hung any scan through
+  // checkDocument):
+  //   * an `openersBottom` table keyed by (delimiter char, remaining-len mod 3):
+  //     once a closer of a kind fails to find an opener, no earlier closer of that
+  //     kind ever scans below that point again;
+  //   * a doubly-linked delimiter stack (pv/nx) + a doubly-linked sibling list of
+  //     inline nodes (_le/_ri) so consuming a delimiter and wrapping a span are
+  //     O(1) — never an O(N) indexOf/splice.
+  // Output is identical to the naive scan: openersBottom only skips openers that
+  // provably cannot match (CommonMark spec, "Process emphasis").
+  function processEmphasis(nodeList, allDelims) {
+    const scope = new Set(nodeList);
+    // the delimiter stack = in-scope, still-live delimiters in document order
+    const stack = allDelims.filter((d) => d.length > 0 && scope.has(d.node));
+    if (stack.length === 0) return; // no emphasis delimiters here — nothing to do
+
+    for (let n = 0; n < stack.length; n++) {
+      stack[n].pv = n > 0 ? stack[n - 1] : null;
+      stack[n].nx = n < stack.length - 1 ? stack[n + 1] : null;
+    }
+    const removeDelim = (d) => {
+      if (d.pv) d.pv.nx = d.nx;
+      if (d.nx) d.nx.pv = d.pv;
+      d.pv = d.nx = null;
+    };
+
+    // sibling list over the inline nodes (temp _le/_ri, stripped before return)
+    let head = null;
+    let prev = null;
+    for (const node of nodeList) {
+      node._le = prev; node._ri = null;
+      if (prev) prev._ri = node; else head = node;
+      prev = node;
+    }
+    let tail = prev;
+    const unlinkNode = (node) => {
+      const le = node._le;
+      const ri = node._ri;
+      if (le) le._ri = ri; else if (head === node) head = ri;
+      if (ri) ri._le = le; else if (tail === node) tail = le;
+      delete node._le; delete node._ri;
+    };
+    const insertAfter = (ref, node) => {
+      node._le = ref; node._ri = ref._ri;
+      if (ref._ri) ref._ri._le = node; else tail = node;
+      ref._ri = node;
+    };
+
+    const openersBottom = new Map(); // exclusive lower-bound delimiter per bucket (or null)
+    let closer = stack[0];
+    while (closer !== null) {
+      if (!closer.canClose) { closer = closer.nx; continue; }
+      // Bucket on the INVARIANTS the match rule uses: char, canOpen, and the
+      // ORIGINAL run length mod 3 (CommonMark's openers_bottom index). Keying on
+      // the shrinking remaining length, or dropping the canOpen dimension, stops
+      // the opener scan at a stale bottom and misses valid openers.
+      const key = closer.char + (closer.canOpen ? 1 : 0) + (closer.origLen % 3);
+      const bottom = openersBottom.has(key) ? openersBottom.get(key) : null;
+      let opener = closer.pv;
+      let found = false;
+      while (opener !== null && opener !== bottom) {
+        if (opener.char === closer.char && opener.canOpen) {
+          // CommonMark multiple-of-3 rule; tilde (GFM ~~) pairs exact 2-with-2 only.
+          const oddSkip = closer.char !== '~' && (closer.canOpen || opener.canClose) &&
+            (opener.origLen + closer.origLen) % 3 === 0 &&
+            !(opener.origLen % 3 === 0 && closer.origLen % 3 === 0);
+          const tildeSkip = closer.char === '~' && (opener.origLen !== 2 || closer.origLen !== 2);
+          if (!oddSkip && !tildeSkip) { found = true; break; }
+        }
+        opener = opener.pv;
       }
-      if (oi === -1) {
-        if (!closer.canOpen) live.splice(ci, 1);
-        else ci++;
+      const oldCloser = closer;
+      if (!found) {
+        openersBottom.set(key, oldCloser.pv); // no earlier closer of this kind re-scans below here
+        closer = oldCloser.nx;
+        if (!oldCloser.canOpen) removeDelim(oldCloser); // a pure closer that matched nothing is inert
         continue;
       }
-      const opener = live[oi];
       const use = closer.char === '~' ? 2 : (opener.length >= 2 && closer.length >= 2 ? 2 : 1);
       const type = closer.char === '~' ? 'delete' : (use === 2 ? 'strong' : 'emphasis');
-      const oIdx = nodeList.indexOf(opener.node);
-      const cIdx = nodeList.indexOf(closer.node);
-      if (oIdx === -1 || cIdx === -1 || cIdx <= oIdx) { ci++; continue; }
-      const inner = nodeList.slice(oIdx + 1, cIdx);
+      // wrap the inline nodes strictly between opener and closer (O(1) via _le/_ri)
+      const inner = [];
+      for (let t = opener.node._ri; t && t !== closer.node;) { const nx = t._ri; unlinkNode(t); inner.push(t); t = nx; }
       const wrap = { type, children: inner, _v0: opener.node._v1 - use, _v1: closer.node._v0 + use };
+      insertAfter(opener.node, wrap);
       opener.length -= use;
       closer.length -= use;
       opener.node.value = opener.node.value.slice(0, opener.length);
       opener.node._v1 -= use;
       closer.node.value = closer.node.value.slice(use);
       closer.node._v0 += use;
-      nodeList.splice(oIdx + 1, inner.length, wrap);
       // delimiters strictly between opener and closer die with the wrap
-      for (let k = oi + 1; k < ci && k < live.length; k++) live[k].length = 0;
-      if (opener.length === 0) {
-        const idx = nodeList.indexOf(opener.node);
-        if (idx !== -1) nodeList.splice(idx, 1);
-      }
+      for (let b = opener.nx; b && b !== closer;) { const nx = b.nx; removeDelim(b); b = nx; }
+      if (opener.length === 0) { unlinkNode(opener.node); removeDelim(opener); }
       if (closer.length === 0) {
-        const idx = nodeList.indexOf(closer.node);
-        if (idx !== -1) nodeList.splice(idx, 1);
-        live.splice(ci, 1);
+        unlinkNode(closer.node);
+        const nx = closer.nx;
+        removeDelim(closer);
+        closer = nx;
       }
-      // re-scan from the first live delimiter after the opener
-      ci = 0;
-      while (ci < live.length && live[ci].length === 0) ci++;
-      void scope;
+      // else keep the same closer (still has delimiters) — the reference does not advance
     }
-    // drop zero-length leftovers from the shared list
-    for (const d of allDelims) {
-      if (d.length === 0) {
-        const idx = nodeList.indexOf(d.node);
-        if (idx !== -1 && d.node.value === '') nodeList.splice(idx, 1);
-      }
-    }
+
+    // rebuild nodeList in place from the sibling list; strip the temp pointers
+    nodeList.length = 0;
+    for (let n = head; n;) { const nx = n._ri; delete n._le; delete n._ri; nodeList.push(n); n = nx; }
   }
 
   function plainText(list) {

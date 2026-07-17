@@ -2,6 +2,17 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.1.0-beta.6] - 2026-07-17
+
+Fourth CoalBoard dogfood pass (full-mirror, nasa-L3) — a HIGH the beta.3 fix left half-open.
+
+### Fixed
+- **[HIGH, CoalBoard nasa-L3 audit] the markdown parser was STILL quadratic after beta.3 — `processEmphasis` was O(N²), and the beta.3 "near-linear … never a hang" claim was false.** beta.3 bounded only `parseInlineDest`'s non-angle branch; three quadratic paths remained in `scripts/lib/md-ast.mjs`, all reachable through the documented `checkDocument` entry on benign-looking input under the 512 KB cap:
+  - **`processEmphasis`** reset the closer index to 0 after every match and array-spliced the node list each time → O(N²) on dense emphasis. A plain doc of `a*b_c*d_` repeated hung any scan — measured **200 KB ≈ 57 s**, and **~500 KB (under the cap) did not finish in 5 minutes** (pure wasted CPU, 0 findings). Fixed by porting the **LINEAR CommonMark reference "process emphasis"**: a doubly-linked delimiter stack + an `openers_bottom` bucket table (keyed by char, `canOpen`, and original-run-length mod 3 — the invariants the match rule uses) so no closer ever re-scans, plus a sibling linked list so wrapping a span is O(1) instead of an O(N) splice.
+  - **the `<…>` angle-destination scan** used an unbounded `indexOf('>')` → O(N²) on `[](<` spam; now length-bounded by `MAX_INLINE_DEST`, matching the sibling non-angle branch.
+  - **the code-span (backtick) scan** re-scanned the tail to EOS per run → O(N²) on backtick spam; a failed-run-length memo makes each length scan at most once.
+  - **Result:** linear now — the 200 KB emphasis doc scans in **~0.5 s**, the 512 KB worst case in **~1.3 s**. **Parser output is unchanged** — verified structurally identical to the previous parser across 4025 fuzz docs and, where the two agreed, identical to the `commonmark` reference. +2 hermetic guards (91 → 93): a dense-emphasis wall-bound through `checkDocument`, and a functional bound on the angle destination (both fail on the pre-fix code). The 512 KB `MAX_DOC_BYTES` cap remains as the backstop for the residual native-scan paths (reference-label, table), which the cap already holds under ~2 s.
+
 ## [0.1.0-beta.5] - 2026-07-09
 
 A reconciliation pass (`plugin.json` vs `CHANGELOG.md`) plus the third CoalBoard dogfood pass (full-mirror, nasa — `.coalboard/reports/audit-2026-07-09-nasa-full-mirror.md`): two LOW findings and a bookkeeping gap.
@@ -24,6 +35,8 @@ A reconciliation pass (`plugin.json` vs `CHANGELOG.md`) plus the third CoalBoard
 ## [0.1.0-beta.3] - 2026-07-09
 
 Second CoalBoard dogfood pass (full-mirror, nasa) — a HIGH the first pass missed.
+
+> **Correction ([Unreleased]):** the "Parse is now near-linear … never a hang" claim below was **incomplete** — it fixed only the `parseInlineDest` (`[a](`) vector. `processEmphasis`, the `<…>` angle-destination scan, and the backtick scan remained O(N²); a dense-emphasis doc still hung. Closed for real in [Unreleased].
 
 ### Fixed
 - **[HIGH] the markdown parser was quadratic-time; a crafted doc could hang any scan.** `md-ast.mjs` `parseInlineDest` re-scanned the tail to end-of-string on every `]` with an unclosed `(` — `[a](` repeated N times parsed in O(N²) (measured: 8 KB ≈ 190 ms, 16 KB ≈ 680 ms, 32 KB ≈ 2.9 s, extrapolated ~1 MB ≈ 1 hr), while a benign 273 KB doc parsed in 5 ms. Fixed at the root: the inline destination/title scans are length-bounded (`MAX_INLINE_DEST`; over the cap = not a valid inline link → literal text), and `checkDocument` refuses a doc over `MAX_DOC_BYTES` (512 KB) — flagging `doc-too-large` instead of parsing — which also closes the transitive vector (a benign doc that links a poisoned `.md`). Parse is now near-linear (16 KB pathological ≈ 340 ms, bounded ≈ 5.7 s at the 512 KB cap, never a hang). +2 timing regression tests (88 → 90).

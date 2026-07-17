@@ -90,10 +90,12 @@ export function collectAnchors(root) {
 //   filePath   absolute or cwd-relative path of the doc (enables relative-file
 //              and cross-file-anchor checks; omit for pure in-memory checks)
 //   fileExists / readFile   injectable fs (hermetic tests); default real fs
-// A structural health scan never needs to parse a megabyte-scale doc; capping the
-// input is the root fix for the parser's super-linear worst case (a crafted doc of
-// pathological inline-link fragments) — it bounds both the primary parse AND the
-// transitive linked-file parses below. Real READMEs/specs sit far under this.
+// A structural health scan never needs to parse a megabyte-scale doc. The parser's
+// super-linear paths are fixed at the algorithm level (linear emphasis processing +
+// bounded inline-dest/backtick scans in md-ast.mjs); this cap is the BACKSTOP that
+// bounds absolute worst-case wall time (incl. the remaining native-scan paths like
+// reference-label/table) AND closes the transitive linked-file parses below. Real
+// READMEs/specs sit far under this.
 const MAX_DOC_BYTES = 512 * 1024; // 512 KB
 
 export function checkDocument(src, opts = {}) {
