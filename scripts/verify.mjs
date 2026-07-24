@@ -27,7 +27,9 @@ const SKILLS = ['doc-structure', 'doc-grounding', 'doc-standard', 'doc-rot', 'do
 console.log('files:');
 for (const [label, p] of [
   ['hooks/coalledger-conductor.js', path.join(repo, 'hooks', 'coalledger-conductor.js')],
+  ['hooks/ag-conductor.js', path.join(repo, 'hooks', 'ag-conductor.js')],
   ['hooks/hooks.json', path.join(repo, 'hooks', 'hooks.json')],
+  ['platform-configs/hooks.json', path.join(repo, 'platform-configs', 'hooks.json')],
   ...SKILLS.map((s) => [`skills/${s}/SKILL.md`, path.join(repo, 'skills', s, 'SKILL.md')]),
   ['commands/stats.md', path.join(repo, 'commands', 'stats.md')],
   ['commands/update.md', path.join(repo, 'commands', 'update.md')],

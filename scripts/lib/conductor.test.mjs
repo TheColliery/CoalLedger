@@ -169,3 +169,195 @@ test('updateMode off: canary offers inject, no update line, no stamp', () => {
     assert.strictEqual(fs.existsSync(path.join(home, '.claude', '.coalledger-update-check')), false);
   } finally { clean(home, proj); }
 });
+
+// ---------------------------------------------------------------------------
+// Antigravity adapter (hooks/ag-conductor.js) — hermetic spawn tests. Same
+// three observable surfaces; plus the AG-specific state: the once-per-session
+// marker under os.tmpdir()/coalledger (TMPDIR/TEMP/TMP sandboxed so real
+// markers never leak in) and the sanctioned single-line injectSteps JSON emit
+// (the current PreInvocation output contract, re-derived 2026-07-23 — the
+// pilot-era additionalContext key is a dead letter and must never appear).
+// ---------------------------------------------------------------------------
+
+const AG_HOOK = path.join(REPO, 'hooks', 'ag-conductor.js');
+
+function agSandbox() {
+  const { home, proj } = sandbox();
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-tmp-')));
+  return { home, proj, tmp };
+}
+function agRun(cwd, home, tmp, stdinText) {
+  return spawnSync(process.execPath, [AG_HOOK, 'PreInvocation'], {
+    cwd,
+    input: stdinText,
+    env: { ...process.env, HOME: home, USERPROFILE: home, TEMP: tmp, TMP: tmp, TMPDIR: tmp, CLAUDE_CONFIG_DIR: '' },
+    encoding: 'utf8',
+    timeout: 20000,
+  });
+}
+function markerFiles(tmp) {
+  const dir = path.join(tmp, 'coalledger');
+  try { return fs.readdirSync(dir).filter((n) => n.endsWith('.marker')); } catch { return []; }
+}
+// Must mirror the hook's djb2 (test-only duplicate, for the plant test below).
+function djb2(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (((h << 5) + h + s.charCodeAt(i)) >>> 0);
+  return h.toString(36);
+}
+const payload = (sid, cwd) => JSON.stringify({ session_id: sid, cwd });
+
+// The sanctioned AG PreInvocation output (contract re-derived 2026-07-23):
+// exactly {"injectSteps":[{"ephemeralMessage": ...}]} — the key-set asserts
+// also prove the dead additionalContext key never reappears.
+function agInject(stdout) {
+  const obj = JSON.parse(stdout.trim());
+  assert.deepStrictEqual(Object.keys(obj), ['injectSteps'], 'injectSteps is the ONLY key (current AG PreInvocation output contract)');
+  assert.strictEqual(obj.injectSteps.length, 1, 'exactly one injected step');
+  assert.deepStrictEqual(Object.keys(obj.injectSteps[0]), ['ephemeralMessage'], 'ephemeralMessage (transient system message) is the step type');
+  return obj.injectSteps[0].ephemeralMessage;
+}
+
+test('AG: first PreInvocation emits ONE-line injectSteps/ephemeralMessage JSON with the offers + creates the session marker; no self-update, no stamp', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    const r = agRun(proj, home, tmp, payload('s-basic', proj));
+    assertGraceful(r);
+    const lines = r.stdout.split('\n').filter(Boolean);
+    assert.strictEqual(lines.length, 1, `single-line JSON emit, got: ${r.stdout}`);
+    const msg = agInject(lines[0]);
+    assert.ok(msg.includes('[CoalLedger] docs-health canary suite installed'));
+    for (const c of ALL_CANARIES) assert.ok(msg.includes(`- ${c} (`), `${c} offered on AG`);
+    assert.ok(!msg.includes('[self-update due]'), 'KIND 1 is not ported to AG');
+    assert.strictEqual(fs.existsSync(path.join(home, '.claude', '.coalledger-update-check')), false, 'no CC update stamp consumed on AG');
+    assert.strictEqual(markerFiles(tmp).length, 1, 'once-per-session marker created');
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: second PreInvocation of the same session is fully silent (marker latch)', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    assertGraceful(agRun(proj, home, tmp, payload('s-latch', proj)));
+    const r2 = agRun(proj, home, tmp, payload('s-latch', proj));
+    assertGraceful(r2);
+    assert.strictEqual(r2.stdout, '', 'no re-injection per model call');
+    assert.strictEqual(markerFiles(tmp).length, 1);
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: a different session key injects again (per-session, not global)', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    assertGraceful(agRun(proj, home, tmp, payload('s-one', proj)));
+    const r2 = agRun(proj, home, tmp, payload('s-two', proj));
+    assertGraceful(r2);
+    assert.ok(agInject(r2.stdout).includes('[CoalLedger]'));
+    assert.strictEqual(markerFiles(tmp).length, 2);
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: garbage stdin -> silent, exit 0, no marker (Phoenix #12)', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    const r = agRun(proj, home, tmp, 'definitely not json');
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '');
+    assert.strictEqual(markerFiles(tmp).length, 0);
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: payload without a session key -> silent (an unkeyed injection would repeat per model call)', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    const r = agRun(proj, home, tmp, JSON.stringify({ cwd: proj }));
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '');
+    assert.strictEqual(markerFiles(tmp).length, 0);
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: coalledgerMode off at the payload cwd -> no emit (marker still latches: config is read once per session)', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    writeProjCfg(proj, { coalledgerMode: 'off' });
+    const r = agRun(proj, home, tmp, payload('s-off', proj));
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '');
+    assert.strictEqual(markerFiles(tmp).length, 1, 'marker before config read (spares per-call imports)');
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: manual mode -> silent (offers gated; the self-update nudge is deliberately not ported)', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    writeProjCfg(proj, { coalledgerMode: 'manual' });
+    const r = agRun(proj, home, tmp, payload('s-manual', proj));
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '');
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: payload.cwd is authoritative for config — spawn cwd elsewhere, project config still honored', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    writeProjCfg(proj, { docLeak: false });
+    const r = agRun(home, home, tmp, payload('s-cwd', proj)); // spawn cwd = home, NOT the project
+    assertGraceful(r);
+    const msg = agInject(r.stdout);
+    assert.ok(msg.includes('- doc-structure ('), 'offers present');
+    assert.ok(!msg.includes('- doc-leak ('), 'docLeak:false read from the payload cwd, not the spawn cwd');
+  } finally { clean(home, proj, tmp); }
+});
+
+// CURRENT AG spec payload (re-derived 2026-07-23): conversationId +
+// workspacePaths[] — no cwd, no session_id. The adapter must key the marker on
+// conversationId and feed workspacePaths[0] into loadMergedConfig({ cwd }).
+test('AG: current-spec payload (conversationId + workspacePaths) -> config honored from workspacePaths[0], conversationId latches', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    writeProjCfg(proj, { docLeak: false });
+    const stdin = JSON.stringify({ conversationId: 'conv-spec', workspacePaths: [proj] });
+    const r = agRun(home, home, tmp, stdin); // spawn cwd = home, NOT the project
+    assertGraceful(r);
+    const msg = agInject(r.stdout);
+    assert.ok(msg.includes('- doc-structure ('), 'a current-spec payload (no cwd/session_id) still injects');
+    assert.ok(!msg.includes('- doc-leak ('), 'workspacePaths[0] drives the project-config walk (the current spec ships no cwd field)');
+    const r2 = agRun(home, home, tmp, stdin);
+    assertGraceful(r2);
+    assert.strictEqual(r2.stdout, '', 'conversationId keys the once-per-session latch');
+    assert.strictEqual(markerFiles(tmp).length, 1);
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: pre-planted marker file (EEXIST) -> fail-closed, no emit', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    const markerDir = path.join(tmp, 'coalledger');
+    fs.mkdirSync(markerDir, { recursive: true });
+    fs.writeFileSync(path.join(markerDir, `ag-conductor-${djb2('s-plant')}.marker`), '');
+    const r = agRun(proj, home, tmp, payload('s-plant', proj));
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '', 'planted marker suppresses the emit (wx create fails atomically)');
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: unwritable tmp (tmpdir points at a FILE) -> fail-closed silent, exit 0', () => {
+  const { home, proj, tmp } = agSandbox();
+  const asFile = path.join(tmp, 'not-a-dir');
+  try {
+    fs.writeFileSync(asFile, '');
+    const r = agRun(proj, home, asFile, payload('s-nowrite', proj));
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '', 'marker cannot persist -> advisory payload skipped (fail-closed)');
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: language lock rides the emit', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    writeProjCfg(proj, { language: 'th' });
+    const r = agRun(proj, home, tmp, payload('s-lang', proj));
+    assertGraceful(r);
+    assert.ok(agInject(r.stdout).includes('(language=th'), r.stdout);
+  } finally { clean(home, proj, tmp); }
+});

@@ -2,6 +2,16 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.2.0-beta.1] - 2026-07-24
+
+Antigravity 2.0 gains the auto-conductor: the docs-health canary offers now ride AG's real hook engine, alongside the always-available manual cross-agent skill contract.
+
+### Added
+- **`hooks/ag-conductor.js`** — the canary offers ride the FIRST `PreInvocation` of a session (AG never fires `SessionStart`; PreInvocation fires per model call, so a per-session atomic marker in `os.tmpdir()/coalledger/` guards the injection to once per session, and **fails CLOSED** on any marker-write failure — repeating an advisory payload on every model call is exactly the spam the guard exists to prevent). Requires its sibling `hooks/coalledger-conductor.js`, which now exports shared `{buildOffers, languageLine, lib}` behind a `require.main` gate — one offer text for both platforms; the Claude Code `SessionStart` path is unchanged (all 11 of its existing tests stayed green, untouched by this diff). Emits the current AG contract, `{"injectSteps":[{"ephemeralMessage":...}]}` (protojson; re-derived 2026-07-23 from the installed build's own hooks doc — the pilot-era `additionalContext` key is a dead letter there, 0 engine hits). Honors the payload's workspace via `loadMergedConfig({ cwd })`, reading `workspacePaths[0]` as authoritative with a legacy `cwd` fallback — a named mechanism divergence from CoalFace's adapter, which `process.chdir()`s instead; same "the payload's workspace is authoritative" rule, no process-state mutation. Deliberately NOT ported: the KIND-1 self-update nudge (its payload, `claude plugin update coalledger@coalledger`, is Claude-Code plugin machinery; AG installs by file-copy).
+- **`platform-configs/hooks.json`** — the AG wiring template. Carries an explicit caveat: the wire location itself regressed on an AG update (2026-07-12 → 07-16) — the two previously-documented locations (global `~/.gemini/config/hooks.json`, project `<workspace>/.agents/hooks.json`) stopped executing, and the AG state dir moved — so the template tells the reader to re-derive the current path from AG's own docs before wiring. Wiring at a dead path is inert-harmless: the adapter simply never runs, and manual canary invocation (the reliable floor on every non-Claude-Code surface) is unaffected.
+- +12 hermetic AG spawn tests (`scripts/lib/conductor.test.mjs`) → 93 → 105 total (ground-truthed by a live run 2026-07-24: 105/105); `verify.mjs` gains the 2 new file rows.
+- **Tier: wired** — built and hermetically tested against the current AG hook contract; live delivery into a real AG session is not yet validated. No "works on Antigravity" claim until a real run proves it.
+
 ## [0.1.0-beta.6] - 2026-07-17
 
 Fourth CoalBoard dogfood pass (full-mirror, nasa-L3) — a HIGH the beta.3 fix left half-open.
@@ -36,7 +46,7 @@ A reconciliation pass (`plugin.json` vs `CHANGELOG.md`) plus the third CoalBoard
 
 Second CoalBoard dogfood pass (full-mirror, nasa) — a HIGH the first pass missed.
 
-> **Correction ([Unreleased]):** the "Parse is now near-linear … never a hang" claim below was **incomplete** — it fixed only the `parseInlineDest` (`[a](`) vector. `processEmphasis`, the `<…>` angle-destination scan, and the backtick scan remained O(N²); a dense-emphasis doc still hung. Closed for real in [Unreleased].
+> **Correction (0.1.0-beta.6):** the "Parse is now near-linear … never a hang" claim below was **incomplete** — it fixed only the `parseInlineDest` (`[a](`) vector. `processEmphasis`, the `<…>` angle-destination scan, and the backtick scan remained O(N²); a dense-emphasis doc still hung. Closed for real in 0.1.0-beta.6.
 
 ### Fixed
 - **[HIGH] the markdown parser was quadratic-time; a crafted doc could hang any scan.** `md-ast.mjs` `parseInlineDest` re-scanned the tail to end-of-string on every `]` with an unclosed `(` — `[a](` repeated N times parsed in O(N²) (measured: 8 KB ≈ 190 ms, 16 KB ≈ 680 ms, 32 KB ≈ 2.9 s, extrapolated ~1 MB ≈ 1 hr), while a benign 273 KB doc parsed in 5 ms. Fixed at the root: the inline destination/title scans are length-bounded (`MAX_INLINE_DEST`; over the cap = not a valid inline link → literal text), and `checkDocument` refuses a doc over `MAX_DOC_BYTES` (512 KB) — flagging `doc-too-large` instead of parsing — which also closes the transitive vector (a benign doc that links a poisoned `.md`). Parse is now near-linear (16 KB pathological ≈ 340 ms, bounded ≈ 5.7 s at the 512 KB cap, never a hang). +2 timing regression tests (88 → 90).

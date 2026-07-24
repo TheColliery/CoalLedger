@@ -69,23 +69,21 @@ function updateDue(cfg, clampedRead) {
   } catch { return false; }
 }
 
-async function main() {
-  const [{ loadMergedConfig }, { clampedRead }] = await Promise.all([
-    import(lib('config-load.mjs')),
-    import(lib('config-schema.mjs')),
-  ]);
-
-  const cfg = loadMergedConfig();
+// Shared offer assembly — ONE text source for the CC SessionStart path below
+// AND the Antigravity adapter (hooks/ag-conductor.js, which require()s this;
+// the CoalFace/CoalHearth shared-core one-flock pattern — a re-typed offer list
+// silently diverged once in a sibling; never again). Returns null when the
+// conductor is gated fully off (mode off / disabledCanaries conductor|all),
+// else the offer lines ([] in manual mode — offers silent; callers append
+// their own platform-specific lines, e.g. the CC self-update nudge).
+function buildOffers(cfg, clampedRead) {
   const mode = clampedRead(cfg, 'coalledgerMode');
-  if (mode === 'off') return; // fully silent
+  if (mode === 'off') return null; // fully silent
   const disabled = clampedRead(cfg, 'disabledCanaries');
-  if (disabled.includes('conductor') || disabled.includes('all')) return;
-  const language = clampedRead(cfg, 'language');
-
+  if (disabled.includes('conductor') || disabled.includes('all')) return null;
   const out = [];
-
-  // Canary offers only in auto; manual keeps them silent but the self-update
-  // scheduler below still runs (its own off-switch is updateMode — standard
+  // Canary offers only in auto; manual keeps them silent but callers may still
+  // emit their own lines (the CC path's self-update scheduler — standard
   // system #3 is orthogonal to the conductor offers).
   if (mode === 'auto') {
     const offers = CANARIES
@@ -93,18 +91,44 @@ async function main() {
       .map((c) => c.line);
     if (offers.length) out.push(HEAD, ...offers, ...TAIL);
   }
+  return out;
+}
+
+// The language-lock trailer (null when language is 'auto') — shared with the AG
+// adapter so the user-visible wording can never fork between platforms.
+function languageLine(language) {
+  if (language === 'auto') return null;
+  return `[CoalLedger] (language=${language} — deliver user-facing prose in that language; keep technical terms, commands, and paths verbatim)`;
+}
+
+async function main() {
+  const [{ loadMergedConfig }, { clampedRead }] = await Promise.all([
+    import(lib('config-load.mjs')),
+    import(lib('config-schema.mjs')),
+  ]);
+
+  const cfg = loadMergedConfig();
+  const out = buildOffers(cfg, clampedRead);
+  if (!out) return; // off / disabled — silent, no update scheduling either
 
   if (updateDue(cfg, clampedRead)) {
     out.push('[CoalLedger] [self-update due] Offer the update check: web-check the latest CoalLedger tag vs the installed plugin.json version; if newer, OFFER `claude plugin update coalledger@coalledger`; if current, say "up to date"; if git/network is unavailable, say so and suggest updating manually later (never assume). Consent-gated; the hook only scheduled it.');
   }
 
   if (out.length) {
-    if (language !== 'auto') out.push(`[CoalLedger] (language=${language} — deliver user-facing prose in that language; keep technical terms, commands, and paths verbatim)`);
+    const lang = languageLine(clampedRead(cfg, 'language'));
+    if (lang) out.push(lang);
     console.log(out.join('\n')); // sanctioned SessionStart context-injection channel (Phoenix #13)
   }
 }
 
-main().catch(() => {
-  // Phoenix #4: fail-silent, never throw, never crash the parent agent.
-});
+// Shared pieces for the AG adapter (require.main gate below keeps requiring
+// this module side-effect-free — the CC path runs only when invoked directly).
+module.exports = { buildOffers, languageLine, lib };
+
+if (require.main === module) {
+  main().catch(() => {
+    // Phoenix #4: fail-silent, never throw, never crash the parent agent.
+  });
+}
 // No process.exit() — Phoenix #4 (would truncate the sanctioned stdout write above).
