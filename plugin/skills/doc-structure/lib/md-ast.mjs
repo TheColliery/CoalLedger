@@ -170,7 +170,7 @@ function matchListItem(text, p, col) {
   let bullet = null;
   let delim = null;
   let start = 1;
-  let mp = p;
+  let mp; // set on every surviving path below (ordered marker / bullet); else we return null
   const m = /^(\d{1,9})([.)])/.exec(text.slice(p));
   if (m) {
     ordered = true;
@@ -404,7 +404,6 @@ export function parseMarkdown(src) {
 
     // 1) match continuations of open containers
     let matched = 1;
-    let itemSawBlank = false;
     for (let fi = 1; fi < open.length; fi++) {
       const f = open[fi];
       if (f.kind === 'blockquote') {
@@ -414,7 +413,7 @@ export function parseMarkdown(src) {
         col = s.col + 1;
         if (text[p] === ' ') { p++; col++; } else if (text[p] === '\t') { col += 4 - (col % 4); p++; }
       } else if (f.kind === 'item') {
-        if (BLANK_RE.test(text.slice(p))) { itemSawBlank = true; /* blank matches item */ } else {
+        if (BLANK_RE.test(text.slice(p))) { /* a blank line matches an open item — consume no columns */ } else {
           const r = consumeCols(text, p, col, f.contentCol);
           if (r.col < f.contentCol) break;
           p = r.p;
@@ -480,7 +479,6 @@ export function parseMarkdown(src) {
     // item, never lazy text — the paragraph-interrupt rule only protects
     // paragraphs from a NEW list ("4. four" under "3. three" is item #2).
     if (!allMatched) {
-      const rest = text.slice(p);
       const lazyOk = leaf && leaf.kind === 'paragraph' && !restIsBlank &&
         !startsNewBlock(text, p, col) && !siblingItemStart(text, p, col);
       if (lazyOk) {
