@@ -29,7 +29,7 @@ Verify that a doc's claims match their source of truth. Report CONFIRMED mismatc
 4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: a wrong security or install instruction = CRITICAL; doc ≠ source on a surface readers actively rely on = HIGH; a stale minor claim = MEDIUM; cosmetic = LOW. `publicMode: true` raises the stakes of public-facing docs.
 
 ## Escalation boundary (health ≠ correctness)
-This canary verifies only what it can FETCH or RECOMPUTE. A claim needing formal verification — a proof, high-precision math, any error-not-allowed decision — is flagged and ESCALATED to CoalBoard (`/coalboard`), never adjudicated here.
+This canary verifies only what it can FETCH or RECOMPUTE. A claim needing formal verification — a proof, high-precision math, any error-not-allowed decision — is flagged and ESCALATED to CoalBoard (`/coalboard`) when that skill is installed — otherwise flagged as needing formal verification. Never adjudicated here.
 
 ## Output
 | # | path:line | claim | source checked | verdict | severity | fix |

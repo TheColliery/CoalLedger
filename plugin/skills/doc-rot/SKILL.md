@@ -31,7 +31,7 @@ Detection is deterministic; whether a marker means ROT is not — an old date on
 4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: rotten install/security steps readers follow = HIGH-CRITICAL; a stale badge or version mention = MEDIUM; an old date in an archived doc = LOW.
 
 ## Escalation boundary
-Whether a claim was EVER true is doc-grounding's job; formal verification of a high-stakes claim escalates to CoalBoard (`/coalboard`). This canary only answers "did time break it".
+Whether a claim was EVER true is doc-grounding's job; formal verification of a high-stakes claim escalates to CoalBoard (`/coalboard`) if that skill is installed. This canary only answers "did time break it".
 
 ## Output
 | # | path:line | marker | evidence (current state) | severity | fix |

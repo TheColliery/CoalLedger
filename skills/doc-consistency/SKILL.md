@@ -28,7 +28,7 @@ Find places where the doc set disagrees with itself. Report CONFIRMED contradict
 4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: contradictory instructions readers may follow = HIGH-CRITICAL; contradictory descriptions = MEDIUM; naming inconsistency = LOW.
 
 ## Escalation boundary
-Adjudicating WHICH of two contradicting claims is true = doc-grounding (fetch/recompute) or CoalBoard (`/coalboard`) for the error-not-allowed slice. This canary only surfaces the disagreement.
+Adjudicating WHICH of two contradicting claims is true = doc-grounding (fetch/recompute) or, for the error-not-allowed slice, CoalBoard (`/coalboard`) if that skill is installed. This canary only surfaces the disagreement.
 
 ## Output
 | # | doc A (path:line) | doc B (path:line) | class | disagreement | severity |

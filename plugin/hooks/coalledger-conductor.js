@@ -34,7 +34,7 @@ const DAY_MS = 86400000;
 // The 6+1 canary map (blueprint §1 + §8). doc-leak also rides the docLeak
 // config gate (checked in main).
 const CANARIES = [
-  { name: 'doc-structure', line: '- doc-structure (mechanical, ~free): broken links/anchors · heading hierarchy · table shape · orphan/undefined refs · bare URLs — run `node "<plugin root>/scripts/lib/md-checks.mjs" <files.md>` per its skill contract, never re-derive by eye.' },
+  { name: 'doc-structure', line: '- doc-structure (mechanical, ~free): broken links/anchors · heading hierarchy · table shape · orphan/undefined refs · bare URLs — run the AST engine the way its skill contract states (the skill ships it beside itself), never re-derive by eye.' },
   { name: 'doc-grounding', line: '- doc-grounding (semantic + mechanical recompute): doc claims vs their source of truth (code · data · original text · reality); offline degrades to "⚠️ unverified", never a guess.' },
   { name: 'doc-standard', line: '- doc-standard (semantic + mechanical): missing/incomplete vs the doc kind\'s standard (required sections, undocumented public surface).' },
   { name: 'doc-rot', line: '- doc-rot (mechanical age-markers + semantic): stale versions/dates/badges, dead TODOs, superseded instructions.' },

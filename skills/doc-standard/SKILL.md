@@ -26,7 +26,7 @@ Find what a doc is MISSING versus the standard for its kind. Report CONFIRMED ga
 4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: a missing security-reporting channel or install step = HIGH-CRITICAL; an undocumented public key = MEDIUM-HIGH; a nice-to-have section = LOW.
 
 ## Escalation boundary
-Whether content is CORRECT is doc-grounding's job; whether a judgment call needs formal verification is CoalBoard's (`/coalboard`). This canary only answers "is it all THERE".
+Whether content is CORRECT is doc-grounding's job; whether a judgment call needs formal verification is CoalBoard's (`/coalboard`, if that skill is installed). This canary only answers "is it all THERE".
 
 ## Output
 | # | path | gap | standard source | severity | fix |

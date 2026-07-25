@@ -121,8 +121,12 @@ try {
 } catch (e) { fail(`commands/ listing: ${e.message}`); }
 try {
   const sk = fs.readFileSync(path.join(repo, 'skills', 'doc-structure', 'SKILL.md'), 'utf8');
-  if (sk.includes('md-checks.mjs')) ok('doc-structure wires the shipped engine (md-checks.mjs)');
-  else fail('doc-structure never mentions the engine it must run');
+  // Assert the SELF-CONTAINED relative contract, not merely the filename: the old
+  // `<plugin root>/scripts/lib/md-checks.mjs` form also contained 'md-checks.mjs'
+  // and passed, so the loose check protected nothing. The skill folder travels
+  // alone (claude.ai ZIP / standalone consumer) where no plugin root exists.
+  if (sk.includes('./lib/md-checks.mjs')) ok('doc-structure invokes the engine by its self-contained relative path (./lib/md-checks.mjs)');
+  else fail('doc-structure must invoke ./lib/md-checks.mjs — a <plugin root>/ or ../ path breaks the skill when the folder travels alone');
 } catch (e) { fail(`doc-structure engine wiring: ${e.message}`); }
 
 console.log('version pins (.github issue templates):');

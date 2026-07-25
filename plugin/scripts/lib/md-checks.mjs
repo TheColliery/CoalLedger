@@ -42,7 +42,10 @@
 // match exactly (blueprint §4).
 //
 // Zero external deps (node built-ins only). CLI at the bottom:
-//   node scripts/lib/md-checks.mjs [--json] <file.md> [more.md ...]
+//   node md-checks.mjs [--json] <file.md> [more.md ...]
+// (path-free on purpose: these exact bytes live in TWO homes — scripts/lib/ and
+// the generated skills/doc-structure/lib/ copy — so any location-specific path
+// here would be wrong in one of them.)
 
 import fs from 'node:fs';
 import path from 'node:path';

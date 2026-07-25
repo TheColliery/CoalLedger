@@ -7,12 +7,13 @@
 // plugin.json — verify.mjs FAILs on drift. Node built-ins only.
 //
 // Named divergence from the hook-only siblings (one-flock rule: name it where
-// it lives): CoalLedger ships `scripts/lib/` in the dist because the AST
-// ENGINE is cross-agent code (any agent runs `node scripts/lib/md-checks.mjs`
-// per the doc-structure skill contract), and the hooks/ conductor imports the
-// same modules so hook and engine can never diverge. Tests are filtered out
-// of the dist; fixtures live under scripts/fixtures/ (outside every
-// DIST_ITEM) so they never ship.
+// it lives): CoalLedger ships `scripts/lib/` in the dist because the hooks/
+// conductor and the Stop drift hook import those modules at runtime, so hook
+// and engine can never diverge. The doc-structure SKILL no longer runs the
+// engine from there — it runs its OWN self-contained copy at
+// `skills/doc-structure/lib/`, generated below (see GENERATED). Tests are
+// filtered out of the dist; fixtures live under scripts/fixtures/ (outside
+// every DIST_ITEM) so they never ship.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,6 +32,27 @@ export const DIST_ITEMS = [
   path.join('scripts', 'lib'),
 ];
 
+// GENERATED engine copy: dist-relative path -> the ONE source it is copied from.
+//
+// doc-structure's SKILL.md tells the agent to run the AST engine. A skill folder
+// must be SELF-CONTAINED, because it travels alone (a claude.ai ZIP upload, any
+// standalone consumer) where no plugin root exists and a `<plugin root>/...` or
+// `../../scripts/lib/...` instruction points at nothing. So the build copies the
+// engine INTO the skill as `./lib/`, and SKILL.md invokes it relatively.
+//
+// The SOURCE stays single (`scripts/lib/`) — this is build OUTPUT, never
+// hand-edited, and checkDist byte-checks it against that source like everything
+// else under plugin/. Tracking a second copy as SOURCE was the rejected
+// alternative: it forks the engine the day a standalone consumer appears.
+// md-checks.mjs imports './md-ast.mjs', so both files must land side by side.
+export const SKILL_ENGINE_DIR = path.join('skills', 'doc-structure', 'lib');
+export const GENERATED = new Map(
+  ['md-ast.mjs', 'md-checks.mjs'].map((f) => [
+    path.join(SKILL_ENGINE_DIR, f),
+    path.join('scripts', 'lib', f),
+  ]),
+);
+
 const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 
 export function buildDist(distRoot = dist) {
@@ -40,6 +62,11 @@ export function buildDist(distRoot = dist) {
     const dst = path.join(distRoot, rel);
     fs.mkdirSync(path.dirname(dst), { recursive: true });
     fs.cpSync(src, dst, { recursive: true, filter: (s) => !isTest(s) }); // recursive always; EXCLUDE *.test.* — dev-only tests never ship (clean-clone)
+  }
+  for (const [distRel, srcRel] of GENERATED) {
+    const dst = path.join(distRoot, distRel);
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.copyFileSync(path.join(repo, srcRel), dst);
   }
 }
 
@@ -63,8 +90,15 @@ export function checkDist(distRoot = dist) {
       else if (fs.readFileSync(path.join(repo, rel)).compare(fs.readFileSync(d)) !== 0) out.push(`stale in plugin/: ${rel}`);
     }
     for (const rel of filesUnder(distRoot, item)) {
+      if (GENERATED.has(rel)) continue; // build output, byte-checked against its own source below
       if (!fs.existsSync(path.join(repo, rel))) out.push(`orphan in plugin/ (no source): ${rel}`);
     }
+  }
+  // The generated engine copy: present + byte-identical to the ONE source.
+  for (const [distRel, srcRel] of GENERATED) {
+    const d = path.join(distRoot, distRel);
+    if (!fs.existsSync(d)) out.push(`missing in plugin/ (generated from ${srcRel}): ${distRel}`);
+    else if (fs.readFileSync(path.join(repo, srcRel)).compare(fs.readFileSync(d)) !== 0) out.push(`stale in plugin/ (generated from ${srcRel}): ${distRel}`);
   }
   const allowedTops = new Set(DIST_ITEMS.map((rel) => rel.split(path.sep)[0]));
   if (fs.existsSync(distRoot)) {
