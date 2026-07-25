@@ -15,8 +15,10 @@
 // Docs have NO chokepoint (SKILL-REPO-PATTERN Layer 8): they are not loaded
 // per-session, so coverage is the gold-standard 3-motion shape — install-scan
 // the past + trigger on the present (this conductor's domain-entry offers) +
-// template-bind the future. A Stop-hook auto-quick scan on touched doc files
-// is a later phase; today the conductor is SessionStart-only.
+// template-bind the future. A Stop-hook auto-quick SCAN on touched doc files is
+// still a later phase — note the shipped Stop hook (coalledger-drift-stop.js) is
+// NOT it: that one is the quiet non-canary memory-drift advisory, and the scan
+// tier must never be welded onto its channel (blueprint §5).
 //
 // The engine lives in ../scripts/lib/*.mjs (ESM) — dynamically imported so
 // this CJS hook and the agent-invoked scripts share ONE config implementation

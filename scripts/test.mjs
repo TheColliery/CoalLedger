@@ -18,6 +18,7 @@ const TESTS = [
   'scripts/lib/md-ast.test.mjs',
   'scripts/lib/md-checks.test.mjs',
   'scripts/lib/conductor.test.mjs',
+  'scripts/lib/hooks.test.mjs',
   'scripts/build-plugin.test.mjs',
 ];
 

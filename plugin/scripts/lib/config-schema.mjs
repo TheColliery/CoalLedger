@@ -26,6 +26,7 @@ export const CONFIG_SCHEMA = [
   { key: 'quickVsFull', type: 'enum', values: ['quick', 'full'], def: 'quick', help: 'Default scan tier for mixed canaries: quick = mechanical layer only (~free, report-only) · full = adds the semantic layer (paid; always a separate consent)' },
   { key: 'docLeak', type: 'bool', def: true, help: 'Enable the #7 doc-leak canary (prose-level public/private boundary; default on — a private-only project turns it off)' },
   { key: 'publicMode', type: 'bool', def: false, help: 'Treat this project’s docs as PUBLIC-facing (raises leak/grounding stakes in severity context)' },
+  { key: 'docsDriftNudge', type: 'bool', def: true, help: 'Docs memory-drift advisory: when the agent finishes responding, if documentation files were edited but MEMORY.md has not been updated this session, emit ONE quiet model-context note (default on; set false to silence). The DOCS mirror of CoalMine memoryDriftNudge (CODE)' },
   { key: 'updateMode', type: 'enum', values: ['ask', 'auto', 'remind', 'off'], def: 'ask', help: 'Self-update behavior at session start (ask, auto, remind, off; default: ask)' },
   { key: 'updateCheckDays', type: 'int', min: 1, max: 365, def: 14, help: 'Days between self-update checks/reminders (default: 14)' },
 ];

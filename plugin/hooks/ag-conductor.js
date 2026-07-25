@@ -95,9 +95,9 @@ async function main() {
   // unwritable tmp) skips the emit entirely. Marker BEFORE the config read:
   // every later PreInvocation of the session returns here at ~1ms, never
   // paying the ESM config import again (Phoenix #3).
-  // ponytail: markers are session-scoped and OS-tmp-cleaner reaped; CoalLedger
-  // ships no Stop hook to collect them on (AG's Stop fires per RESPONSE, not
-  // per session) — accumulation is bounded, same accepted ceiling as CoalFace.
+  // ponytail: markers are session-scoped and OS-tmp-cleaner reaped; the Stop
+  // hook that could collect them (coalledger-drift-stop.js) is CC-only and
+  // never runs on AG — accumulation is bounded, same accepted ceiling as CoalFace.
   const markerDir = path.join(os.tmpdir(), 'coalledger');
   const marker = path.join(markerDir, `ag-conductor-${hashKey(key)}.marker`);
   try {

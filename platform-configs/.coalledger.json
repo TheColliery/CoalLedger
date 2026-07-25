@@ -29,6 +29,14 @@
   // in severity context).
   "publicMode": false,
 
+  // Docs memory-drift advisory (the DOCS mirror of CoalMine's memoryDriftNudge,
+  // which covers CODE). When the agent finishes responding, if documentation
+  // files were edited but MEMORY.md has not been updated this session, one QUIET
+  // model-context note is emitted — no report, no fix menu, never blocks. Once
+  // you update MEMORY.md it stays quiet for the rest of the session. Default on;
+  // set false to silence.
+  "docsDriftNudge": true,
+
   // Self-update (series standard). The session-start hook only SCHEDULES a check
   // via a throttled local stamp (no network); the AGENT verifies the latest tag
   // and offers the update, consent-gated. ask = offer when due; auto = standing

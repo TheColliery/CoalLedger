@@ -28,6 +28,8 @@ console.log('files:');
 for (const [label, p] of [
   ['hooks/coalledger-conductor.js', path.join(repo, 'hooks', 'coalledger-conductor.js')],
   ['hooks/ag-conductor.js', path.join(repo, 'hooks', 'ag-conductor.js')],
+  ['hooks/coalledger-doctrack.js', path.join(repo, 'hooks', 'coalledger-doctrack.js')],
+  ['hooks/coalledger-drift-stop.js', path.join(repo, 'hooks', 'coalledger-drift-stop.js')],
   ['hooks/hooks.json', path.join(repo, 'hooks', 'hooks.json')],
   ['platform-configs/hooks.json', path.join(repo, 'platform-configs', 'hooks.json')],
   ...SKILLS.map((s) => [`skills/${s}/SKILL.md`, path.join(repo, 'skills', s, 'SKILL.md')]),
@@ -51,6 +53,10 @@ try {
   const hj = fs.readFileSync(path.join(repo, 'hooks', 'hooks.json'), 'utf8');
   if (hj.includes('${CLAUDE_PLUGIN_ROOT}/hooks/coalledger-conductor.js')) ok('hooks.json wires SessionStart via ${CLAUDE_PLUGIN_ROOT}/hooks');
   else fail('hooks.json does not wire SessionStart under ${CLAUDE_PLUGIN_ROOT}/hooks');
+  if (hj.includes('${CLAUDE_PLUGIN_ROOT}/hooks/coalledger-doctrack.js')) ok('hooks.json wires PostToolUse (docs-drift tracker)');
+  else fail('hooks.json does not wire the docs-drift tracker (coalledger-doctrack.js)');
+  if (hj.includes('${CLAUDE_PLUGIN_ROOT}/hooks/coalledger-drift-stop.js')) ok('hooks.json wires Stop (docs-drift nudge)');
+  else fail('hooks.json does not wire the docs-drift Stop nudge (coalledger-drift-stop.js)');
 } catch (e) { fail(`plugin manifest: ${e.message}`); }
 
 console.log('marketplace.json:');

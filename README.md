@@ -57,6 +57,12 @@ Two tiers, one discipline:
 
 Multilingual by construction: the mechanical layers are language-agnostic (an AST does not care what language the prose is; sections are detected by structure, never an English keyword), and the semantic layers work in the doc's own language, degrading to low-confidence flags — never false alarms — on a poorly-handled one. Cross-language drift between a doc and its translation is a first-class check.
 
+### Docs memory-drift reminder
+
+Separate from the canaries — it scans nothing and reports nothing. If documentation files (`.md` `.mdx` `.markdown` `.rst` `.txt` `.adoc` `.asciidoc` `.org`) were edited but `MEMORY.md` has not been updated this session, CoalLedger emits **one quiet reminder to the agent** when the agent finishes responding: no findings, no fix menu, and it never blocks. Update `MEMORY.md` once and it stays quiet for the rest of the session. It fires only where the project uses the `MEMORY.md` convention (a `MEMORY.md` at the project root), and `docsDriftNudge: false` silences it. Capability-keyed like everything else here — it needs a stop hook that can pass context back to the model, which today means Claude Code (Antigravity's engine documents no such channel).
+
+This is the DOCS half of a pair: [CoalMine](https://github.com/HetCreep/CoalMine)'s `memoryDriftNudge` covers CODE edits, CoalLedger's covers DOC edits. The two watch disjoint file extensions, and a single `MEMORY.md` update satisfies both.
+
 ## 🧭 Compatibility
 
 Cross-agent by design — the canaries are plain SKILL.md contracts and the engine is zero-dependency Node scripts any agent can run. The activation ladder is capability-keyed, never a platform table: **has lifecycle hooks** → wire the shipped session-start conductor (Claude Code — validated; Antigravity — wired via a ported adapter, live delivery not yet validated) and the canaries offer themselves at the right moment; **no hooks** → best-effort agent-driven (an always-loaded instruction can offer the right canary — probabilistic, not hook parity); **always** → manual (invoke `doc-structure`, `doc-grounding`, … or ask for a docs scan).
@@ -65,7 +71,7 @@ Support tiers, honestly labeled: **Claude Code — validated** (live plugin, lau
 
 ## 🚀 Install
 
-**Claude Code** — one command pair (also wires the session-start conductor):
+**Claude Code** — one command pair (also wires the session-start conductor and the quiet docs memory-drift reminder):
 
 ```bash
 claude plugin marketplace add TheColliery/CoalLedger
@@ -95,6 +101,7 @@ Every tool in the series supports two config levels — a global `~/.claude/.coa
 | `quickVsFull` | `quick` | Default scan tier for mixed canaries: `quick` = mechanical only (~free) · `full` = adds the semantic layer (paid; always a separate consent) |
 | `docLeak` | `true` | The #7 doc-leak canary's gate — a private-only project (docs never published) turns it off |
 | `publicMode` | `false` | Treat this project's docs as public-facing (raises leak/grounding stakes in severity context) |
+| `docsDriftNudge` | `true` | The off-switch for the quiet [docs memory-drift reminder](#docs-memory-drift-reminder); set `false` to silence it |
 | `updateMode` | `ask` | Self-update behavior at session start (`ask` \| `auto` \| `remind` \| `off`) |
 | `updateCheckDays` | `14` | Days between self-update checks/reminders |
 
