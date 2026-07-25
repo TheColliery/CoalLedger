@@ -109,7 +109,7 @@ Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs
 
 ## 📊 Benchmark
 
-Not yet measured — CoalLedger launches unbenchmarked rather than with an invented number. The engine's mechanical layer is fixture-gated in-repo (planted defects found, clean decoys silent — `scripts/verify.mjs` runs it); the first published benchmark (recall on seeded doc-defect fixtures, canary-by-canary, dated + versioned) will live at [`TheColliery/.github/benchmarks`](https://github.com/TheColliery/.github/tree/main/benchmarks) like every sibling's.
+Not yet measured — CoalLedger launches unbenchmarked rather than with an invented number. The engine's mechanical layer is fixture-gated in-repo (planted defects found, clean decoys silent — `scripts/verify.mjs` runs it); the digest at [`benchmarks/CoalLedger/RESULTS.md`](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalLedger/RESULTS.md) will fill in from the first dated, versioned run (recall on seeded doc-defect fixtures, canary-by-canary), like every sibling's.
 
 ## 🧭 Part of TheColliery
 

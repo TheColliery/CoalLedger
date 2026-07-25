@@ -14,7 +14,7 @@ CoalLedger is the docs-health canary suite of the [TheColliery](https://github.c
 
 ## 💻 Developing & Testing
 
-CoalLedger is **zero-dependency** (Node.js built-ins only, Node 18+). No `npm install` and no `package.json` — the gates run directly:
+CoalLedger is **zero-dependency** (Node.js built-ins only, Node 22+). No `npm install` and no `package.json` — the gates run directly:
 
 ```bash
 node scripts/build-plugin.mjs   # regenerate plugin/ from source
@@ -35,7 +35,7 @@ node scripts/test.mjs           # zero-dependency test suite (node --test, expli
 
 ## 🖥️ Supported Platforms
 
-Cross-agent by design — the canaries are plain SKILL.md contracts and the engine is plain Node scripts — but **the conductor hook is Claude-Code-only** (capability-keyed: a platform with lifecycle hooks can wire it; a hookless platform invokes canaries manually or via a best-effort agent-driven offer). A field report from another platform is a welcome contribution.
+Cross-agent by design — the canaries are plain SKILL.md contracts and the engine is plain Node scripts. The conductor hook is capability-keyed, not Claude-Code-only: Claude Code wires it directly (validated); Antigravity wires it through a ported adapter (built and hermetically tested, live delivery not yet validated); a hookless platform invokes canaries manually or via a best-effort agent-driven offer. A field report from another platform is a welcome contribution.
 
 ---
 
@@ -44,6 +44,9 @@ Cross-agent by design — the canaries are plain SKILL.md contracts and the engi
 | Path | Purpose |
 |---|---|
 | `hooks/coalledger-conductor.js` | SessionStart conductor: canary offers + self-update scheduling (Phoenix-13). |
+| `hooks/ag-conductor.js` | Antigravity `PreInvocation` conductor adapter — mirrors the CC conductor's offers via a ported adapter (Phoenix-13); wired, live delivery not yet validated. |
+| `hooks/coalledger-doctrack.js` | PostToolUse: records edited DOC files and the `MEMORY.md`-update satisfier that feeds the docs memory-drift reminder (Phoenix-13). |
+| `hooks/coalledger-drift-stop.js` | Stop: emits the quiet docs memory-drift reminder when docs were edited but `MEMORY.md` was not (Phoenix-13). |
 | `hooks/hooks.json` | Hook wiring via `${CLAUDE_PLUGIN_ROOT}/hooks/…`. |
 | `scripts/lib/` | The engine (ESM, shipped): `md-ast` CommonMark+GFM parser · `md-checks` structure checks · config modules. |
 | `skills/` | The 6+1 canary contracts (`doc-structure`, `doc-grounding`, `doc-standard`, `doc-rot`, `doc-consistency`, `doc-quality`, `doc-leak`). |
