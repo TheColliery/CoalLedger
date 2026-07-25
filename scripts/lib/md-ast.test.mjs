@@ -361,3 +361,32 @@ test('unbalanced emphasis and brackets stay literal without hanging', () => {
   assert.strictEqual(t.children.length, 1);
   assert.ok(textContent(t.children[0]).length > 0);
 });
+
+// CONFORMANCE LOCK (CodeQL js/bad-tag-filter #22, adjudicated FALSE POSITIVE
+// 2026-07-25). That query targets HTML sanitizers, which must match the BROWSER
+// (WHATWG) tokenizer where `--!>` closes a comment. This is a CommonMark parser,
+// and CommonMark 0.31.2 does NOT recognize `--!>`:
+//   - HTML block type 2 — "Start condition: line begins with `<!--`.
+//     End condition: line contains the string `-->`."          (spec.txt:2374-2375)
+//   - inline HTML comment — "`<!--`, a string of characters not
+//     including the string `-->`, and `-->`"                    (spec.txt:8986-8988)
+//   - the literal `--!>` appears ZERO times in the whole spec.
+// So swallowing the remainder of the document after an unterminated comment is
+// SPEC-MANDATED and matches GitHub. "Fixing" the alert by ending the comment at
+// `--!>` would DIVERGE from that parse — we would report markdown findings on
+// content GitHub does not parse as markdown, i.e. manufacture the cry-wolf class
+// this engine exists to avoid. (How a browser ultimately RENDERS that trailing
+// text is a separate, unverified question — WHATWG does close a comment at
+// `--!>`, so it may well be visible literal text. The decision holds either way:
+// under both readings the content is not structured markdown.)
+// This test fails if anyone applies that wrong fix.
+test('CommonMark conformance: `--!>` does NOT end an HTML comment block (spec 0.31.2 type 2)', () => {
+  const blocks = (src) => md(src).children.map((n) => n.type);
+  // Control: a real `-->` ends the block, the rest of the doc is visible.
+  assert.deepStrictEqual(blocks('<!-- x -->\n\n# H\n\npara\n'), ['html', 'heading', 'paragraph']);
+  // `--!>` is NOT an end condition -> one html block to end of document.
+  assert.deepStrictEqual(blocks('<!-- x --!>\n\n# H\n\npara\n'), ['html']);
+  // The spec's own type-2 examples, verbatim (spec.txt examples 148 + 150).
+  assert.deepStrictEqual(blocks('<!-- foo -->*bar*\n*baz*\n'), ['html', 'paragraph']);
+  assert.deepStrictEqual(blocks('<!-- Foo\n\nbar\n   baz -->\nokay\n'), ['html', 'paragraph']);
+});
