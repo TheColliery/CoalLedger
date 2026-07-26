@@ -21,6 +21,7 @@
 //
 // Zero dependencies (Phoenix #2): no imports at all — pure functions over a
 // string. Node 18+ (Unicode property escapes in regex).
+// ponytail: 1248 lines — implements ONE external spec (CommonMark + GFM); the block and inline phases share private cross-phase contracts (the definitions map, the _raw virtual-offset segs: encoded in one phase, decoded in the other), so any split severs a private format across files — the spec, not a line count, is the cohesion unit.
 
 // ---------------------------------------------------------------------------
 // Line model + positions
