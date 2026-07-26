@@ -1,7 +1,8 @@
 // CoalLedger md-ast — VENDORED-MINIMAL CommonMark + GFM parser producing an
 // mdast-shaped tree with positions. The ONE genuinely-new engine component of
-// the suite (blueprint §7): every mechanical doc check runs on THIS tree, never
-// on regex over raw text (regex cry-wolfs on things that render fine).
+// the suite (blueprint §7) — and it serves the doc-structure canary ONLY:
+// every structure check (md-checks.mjs, its sole consumer) runs on THIS tree,
+// never on regex over raw text (regex cry-wolfs on things that render fine).
 //
 // HONEST CEILING: CommonMark+GFM fidelity, NOT 100% GitHub-pixel fidelity —
 // GitHub-specific quirks are flagged as known-limits, never silently claimed:
@@ -21,7 +22,7 @@
 //
 // Zero dependencies (Phoenix #2): no imports at all — pure functions over a
 // string. Node 18+ (Unicode property escapes in regex).
-// ponytail: 1248 lines — implements ONE external spec (CommonMark + GFM); the block and inline phases share private cross-phase contracts (the definitions map, the _raw virtual-offset segs: encoded in one phase, decoded in the other), so any split severs a private format across files — the spec, not a line count, is the cohesion unit.
+// ponytail: 1249 lines — implements ONE external spec (CommonMark + GFM); the block and inline phases share private cross-phase contracts (the definitions map, the _raw virtual-offset segs: encoded in one phase, decoded in the other), so any split severs a private format across files — the spec, not a line count, is the cohesion unit.
 
 // ---------------------------------------------------------------------------
 // Line model + positions
