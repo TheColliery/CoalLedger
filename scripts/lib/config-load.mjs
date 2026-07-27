@@ -72,18 +72,38 @@ function readJsonc(file) {
 //                    project list revives canaries the user silenced globally.
 //                    Set-valued, so "safer" = MORE disabled = a UNION (same
 //                    direction as CoalBoard's criticalPaths REPLACE->UNION).
-// NOT clamped, deliberately: language/severityFloor/publicMode (no consent
-// axis) · docLeak/docsDriftNudge (advisory display toggles — re-enabling one
-// quiet line in a single project is a legitimate use, and there is no spend or
-// outward action to gate) · updateCheckDays (a numeric spend-RATE dial; neither
-// flock exemplar clamps a number, so the shape is reported to main rather than
-// hand-rolled here). And `quickVsFull` — CL's real spend dial, since 'full' is
-// the paid semantic tier — is read by the AGENT from the raw file, never
-// through this merge, so a clamp here would protect nothing (CoalMine's
-// `autoFixMode` carries the same note).
+//   docLeak          gates whether the doc-leak canary is OFFERED at all, on
+//                    the SAME conductor filter expression as disabledCanaries
+//                    (coalledger-conductor.js) — both halves suppress the same
+//                    offer, so guarding one and not the other was arbitrary. A
+//                    boolean gating a CAPABILITY is just an enum of two and
+//                    clamps with this same mechanism; `false` is the safer
+//                    index. Attack it closes: a global `docLeak:false` (the
+//                    private-project case the template itself documents) that a
+//                    cloned repo flips back to `true`.
+// NOT clamped, and each for its OWN reason — the classifier is BLAST, not type:
+//   docsDriftNudge   also a boolean, but it suppresses ONE quiet model-only
+//                    line: no offer, no scan, no spend. Re-enabling that in a
+//                    single project is a legitimate use, so it stays plain.
+//                    (docLeak vs docsDriftNudge is why two booleans must never
+//                    share one parenthetical — it hides exactly this asymmetry.)
+//   language · severityFloor · publicMode   no consent, spend or outward axis.
+//   updateCheckDays  a numeric spend-RATE dial. CONSIDERED AND DECLINED (§9,
+//                    2026-07-27): the action it paces is already gated by
+//                    `updateMode`, which IS clamped, and clampedRead already
+//                    floors the value — a second guard over a bounded cadence
+//                    under an already-gated action is the over-hardening
+//                    skill-authoring.md §2 forbids. Settled, not open.
+// OUT OF REACH (not a gap in this list): `quickVsFull` — CL's real paid-tier
+// dial — is read by the AGENT from the raw project file and never passes
+// through this merge, so no clamp here could protect it. §9's scope test is
+// "does a HOOK read it?", not "is it consent-bearing?". It is named where a
+// reader actually meets it (config-schema.mjs `help:` + the .coalledger.json
+// template), because naming it only here would reach nobody.
 const SAFER_ENUM = {
   coalledgerMode: ['off', 'manual', 'auto'], // index 0 = safest
   updateMode: ['off', 'remind', 'ask', 'auto'], // order byte-identical to CM/CW
+  docLeak: ['false', 'true'], // boolean gate = enum of two; String()+toLowerCase below makes it work unchanged
 };
 const SAFER_UNION = ['disabledCanaries'];
 

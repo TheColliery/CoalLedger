@@ -151,19 +151,40 @@ test('clamp: an EXPLICIT global is required — with no global key the project i
   } finally { clean(home, proj); }
 });
 
+test('clamp: docLeak is a BOOLEAN GATE — a project cannot re-enable a globally-off canary offer', () => {
+  const { home, proj } = sandbox();
+  try {
+    // §9: a boolean gating a CAPABILITY is an enum of two; `false` is the safer
+    // index. docLeak sits on the SAME conductor filter as disabledCanaries and
+    // suppresses the same offer, so guarding one without the other was arbitrary.
+    assert.strictEqual(cascade(home, proj, { docLeak: false }, { docLeak: true }).docLeak, false);
+    assert.strictEqual(cascade(home, proj, { docLeak: true }, { docLeak: false }).docLeak, false, 'quietening still allowed');
+    assert.strictEqual(cascade(home, proj, {}, { docLeak: true }).docLeak, true, 'no explicit global -> project free');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: docsDriftNudge stays UNCLAMPED — deliberate, by BLAST not type (§9)', () => {
+  const { home, proj } = sandbox();
+  try {
+    // Same TYPE as docLeak, different BLAST: it suppresses one quiet model-only
+    // line — no offer, no scan, no spend. Re-enabling it in a single project is
+    // a legitimate use. This test exists so the asymmetry is deliberate and
+    // locked, not an oversight someone "fixes" later.
+    assert.strictEqual(cascade(home, proj, { docsDriftNudge: false }, { docsDriftNudge: true }).docsDriftNudge, true);
+  } finally { clean(home, proj); }
+});
+
 test('clamp: non-consent keys stay PLAIN project-wins (no over-clamping)', () => {
   const { home, proj } = sandbox();
   try {
     const cfg = cascade(home, proj,
-      { updateCheckDays: 30, language: 'en', severityFloor: 'critical', quickVsFull: 'quick', docLeak: false, publicMode: false, docsDriftNudge: false },
-      { updateCheckDays: 7, language: 'th', severityFloor: 'low', quickVsFull: 'full', docLeak: true, publicMode: true, docsDriftNudge: true });
-    assert.strictEqual(cfg.updateCheckDays, 7);
+      { updateCheckDays: 30, language: 'en', severityFloor: 'critical', quickVsFull: 'quick', publicMode: false },
+      { updateCheckDays: 7, language: 'th', severityFloor: 'low', quickVsFull: 'full', publicMode: true });
+    assert.strictEqual(cfg.updateCheckDays, 7, 'numeric spend-RATE: considered and DECLINED by §9, stays plain');
     assert.strictEqual(cfg.language, 'th');
     assert.strictEqual(cfg.severityFloor, 'low');
-    assert.strictEqual(cfg.quickVsFull, 'full');
-    assert.strictEqual(cfg.docLeak, true);
+    assert.strictEqual(cfg.quickVsFull, 'full', 'agent-read, never passes this merge — see the schema/template note');
     assert.strictEqual(cfg.publicMode, true);
-    assert.strictEqual(cfg.docsDriftNudge, true);
   } finally { clean(home, proj); }
 });
 
