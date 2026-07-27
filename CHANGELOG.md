@@ -5,6 +5,7 @@ All notable changes to CoalLedger are documented here. Format: [Keep a Changelog
 ## [Unreleased]
 
 ### Changed
+- **"Part of TheColliery" is readable again — it was one unbroken 1,007-character paragraph.** Six sibling links, the compose promise and the shared doctrine were welded into a single block sitting right before the License, i.e. the last thing a visitor reads. Same content, now in the flock-canonical shape: a one-line lead, the six siblings as a list (one per line, with each one's role), the compose promise plus CoalLedger's own health-layer line, then the doctrine paragraph. The closing line keeps its "offline **by default**" wording — a deliberate difference from the siblings' plain "offline" — and now names the reason on the spot: the consent-gated Full tier's source verification (`doc-grounding`, `doc-standard`) and the self-update check go online, while the shipped hooks and engine never do.
 - **The README now documents what you can invoke and what CoalLedger is allowed to do.** Two required sections were missing: `## Commands` (every invocable surface with its exact form — the seven canaries, `/coalledger:stats`, `/coalledger:update` — and a note that slash commands are the Claude Code form) and `## Permissions` (what it reads, the scratch it writes, the one local engine it runs, and the things it deliberately never does: no doc edited without your pick, no deletions, no subagents, no network outside the consented Full tier and update check). Neither adds behaviour; both describe what already shipped.
 
 ### Fixed
