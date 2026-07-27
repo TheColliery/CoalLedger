@@ -78,15 +78,25 @@ claude plugin marketplace add TheColliery/CoalLedger
 claude plugin install coalledger@coalledger
 ```
 
-**Antigravity** — file-copy: copy `skills/` (the seven canary contracts) and `scripts/lib/` (the AST engine) into `~/.gemini/config/skills/` (global) or `<workspace>/.agents/skills/` (project), keeping the relative layout (each SKILL.md resolves the engine at `../../scripts/lib`).
+**Antigravity** — file-copy: copy the built skill folders from [`plugin/skills/`](plugin/skills) into `~/.gemini/config/skills/` (global) or `<workspace>/.agents/skills/` (project). Each folder is self-contained — `doc-structure` carries the AST engine beside itself in its own `lib/`, so nothing else has to travel with it. (Copy from `plugin/skills/`, not the repo's `skills/`: the latter holds the contracts only, without the engine.)
 
-**Auto conductor on AG (wired — live AG validation pending):** AG 2.0 shipped a real hook engine, so the canary offers can ride Antigravity's `PreInvocation` too, through [`hooks/ag-conductor.js`](hooks/ag-conductor.js) (requires its sibling [`hooks/coalledger-conductor.js`](hooks/coalledger-conductor.js) — one offer text for both platforms). Keep `hooks/` alongside your file-copy install, then copy [`platform-configs/hooks.json`](platform-configs/hooks.json) into place and replace `__COALLEDGER_DIR__` with the directory holding it. **Known caveat:** the wire location itself regressed on an AG update (2026-07-12 → 07-16) — the two previously-documented locations (global `~/.gemini/config/hooks.json`, project `<workspace>/.agents/hooks.json`) stopped executing, and the AG state dir moved — so re-derive the current hooks.json location from AG's own docs before wiring (the template carries the same note). Wiring at a dead path is inert-harmless: the adapter simply never runs, and manual canary invocation is unaffected either way. Once wired, the directive fires at most once per session; delivery into the agent is not yet live-validated. The self-update nudge is deliberately not ported (its payload is Claude-Code plugin machinery); on AG, update by re-copying.
+**Auto conductor on AG (wired — live AG validation pending):** AG 2.0 shipped a real hook engine, so the canary offers can ride Antigravity's `PreInvocation` too, through [`hooks/ag-conductor.js`](hooks/ag-conductor.js) (requires its sibling [`hooks/coalledger-conductor.js`](hooks/coalledger-conductor.js) — one offer text for both platforms). The conductor is the one piece that needs more than a skill folder: copy `hooks/` **and** `scripts/lib/` side by side (the hooks resolve the shared config library at `../scripts/lib`), then copy [`platform-configs/hooks.json`](platform-configs/hooks.json) into place and replace `__COALLEDGER_DIR__` with the directory holding them. **Known caveat:** the wire location itself regressed on an AG update (2026-07-12 → 07-16) — the two previously-documented locations (global `~/.gemini/config/hooks.json`, project `<workspace>/.agents/hooks.json`) stopped executing, and the AG state dir moved — so re-derive the current hooks.json location from AG's own docs before wiring (the template carries the same note). Wiring at a dead path is inert-harmless: the adapter simply never runs, and manual canary invocation is unaffected either way. Once wired, the directive fires at most once per session; delivery into the agent is not yet live-validated. The self-update nudge is deliberately not ported (its payload is Claude-Code plugin machinery); on AG, update by re-copying.
 
-**Other agents** — the same file-copy into your platform's skill directory, keeping that relative layout. No `install.mjs` step — the canaries are plain SKILL.md contracts over the zero-dep engine.
+**Other agents** — the same file-copy from `plugin/skills/` into your platform's skill directory. No `install.mjs` step — the canaries are plain SKILL.md contracts over the zero-dep engine.
 
-**claude.ai** — read/analyze skills (like CoalLedger's canaries) upload as a custom skill: ZIP a folder from `skills/` bundled with `scripts/lib/` so the engine resolves, then add it in claude.ai's skill settings (paid plan with code execution on). Per-surface — an upload doesn't sync across surfaces.
+**claude.ai** — read/analyze skills (like CoalLedger's canaries) upload as a custom skill: ZIP one folder from `plugin/skills/` (already complete — `doc-structure` includes its engine) and add it in claude.ai's skill settings (paid plan with code execution on). Per-surface — an upload doesn't sync across surfaces.
 
 The conductor hook wires automatically on Claude Code (validated) and, once you complete the AG wiring above, on Antigravity (wired, pending live validation); every other surface runs the canaries **manually** (invoke `doc-structure`, `doc-grounding`, … or ask for a docs scan). No API keys, no network, no `npm install`.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `/coalledger:doc-structure` | Runs one doc canary on the files you name. The other six take the same form — `/coalledger:doc-grounding`, `/coalledger:doc-standard`, `/coalledger:doc-rot`, `/coalledger:doc-consistency`, `/coalledger:doc-quality`, `/coalledger:doc-leak` — and what each one catches is the table in [How it works](#️-how-it-works). |
+| `/coalledger:stats` | Reports the scans run and findings this session by canary and severity, plus which canaries are enabled here and at what severity floor. Read-only, session-local. |
+| `/coalledger:update` | Checks for a newer CoalLedger version and offers to apply it, or sets how updates are handled. |
+
+Slash commands are the Claude Code form. Everywhere else the canaries are invoked the way your agent invokes a skill — by name (`doc-structure`, `doc-grounding`, …) or by just asking for a docs scan.
 
 ## 🔧 Configure
 
@@ -106,6 +116,14 @@ Every tool in the series supports two config levels — a global `~/.claude/.coa
 | `updateCheckDays` | `14` | Days between self-update checks/reminders |
 
 Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) and the commented template [`platform-configs/.coalledger.json`](platform-configs/.coalledger.json).
+
+## Permissions
+
+**Reads** the docs you name (plus the files their links point at, to verify those links) and your `.coalledger.json`. **Writes only its own scratch:** two session files in your temp dir, a self-update date stamp under `~/.claude/`, and on Antigravity a once-per-session marker. **Runs up to three things locally:** the bundled zero-dependency AST engine (`node ./lib/md-checks.mjs`, read-only), a `git stash`/commit checkpoint before any fix (a file copy where git is absent), and — only if you consent — a documented example a doc claims works.
+
+**Never edits a doc on its own.** Every fix is a choice-gated menu item you pick; no file is ever deleted, and CoalLedger spawns no subagents, so nothing runs with more power than the session you started. **Network is opt-in only:** the paid Full tier's real-time source verification (doc-grounding, doc-standard) and the self-update check, each consented separately — offline they degrade to `⚠️ unverified`, never a guess.
+
+Full series matrix + the must-fail set: [Permission Matrix](https://github.com/TheColliery/.github/blob/main/PERMISSION-MATRIX.md)
 
 ## 📊 Benchmark
 
