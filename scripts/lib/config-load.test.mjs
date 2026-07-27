@@ -83,3 +83,93 @@ test('a poisoned project config cannot pollute Object.prototype through the merg
     assert.strictEqual(Object.prototype.polluted, undefined);
   } finally { clean(home, proj); }
 });
+
+// --------------------------------------------------------------------------
+// Config-cascade clamp (hooks-safety.md §9). The project .coalledger.json
+// ARRIVES WITH A CLONED REPO and is untrusted: for the hook-read keys that gate
+// consent / spend / an outward action it may QUIETEN, never ESCALATE.
+// --------------------------------------------------------------------------
+
+function cascade(home, proj, globalCfg, projectCfg) {
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', '.coalledger.json'), JSON.stringify(globalCfg));
+  fs.writeFileSync(path.join(proj, '.coalledger.json'), JSON.stringify(projectCfg));
+  return loadMergedConfig({ cwd: proj, home });
+}
+
+test('clamp: a cloned project cannot escalate coalledgerMode off -> auto', () => {
+  const { home, proj } = sandbox();
+  try {
+    assert.strictEqual(cascade(home, proj, { coalledgerMode: 'off' }, { coalledgerMode: 'auto' }).coalledgerMode, 'off');
+    // manual is also louder than off
+    assert.strictEqual(cascade(home, proj, { coalledgerMode: 'off' }, { coalledgerMode: 'manual' }).coalledgerMode, 'off');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: a project may QUIETEN coalledgerMode auto -> off (the allowed direction)', () => {
+  const { home, proj } = sandbox();
+  try {
+    assert.strictEqual(cascade(home, proj, { coalledgerMode: 'auto' }, { coalledgerMode: 'off' }).coalledgerMode, 'off');
+    assert.strictEqual(cascade(home, proj, { coalledgerMode: 'auto' }, { coalledgerMode: 'manual' }).coalledgerMode, 'manual');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: a cloned project cannot escalate updateMode off -> auto (spend + outward check)', () => {
+  const { home, proj } = sandbox();
+  try {
+    assert.strictEqual(cascade(home, proj, { updateMode: 'off' }, { updateMode: 'auto' }).updateMode, 'off');
+    assert.strictEqual(cascade(home, proj, { updateMode: 'ask' }, { updateMode: 'auto' }).updateMode, 'ask');
+    assert.strictEqual(cascade(home, proj, { updateMode: 'auto' }, { updateMode: 'off' }).updateMode, 'off', 'quietening still allowed');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: CASE-FOLDED — a project "AUTO"/"Off" cannot slip past the lookup (CoalWash H5)', () => {
+  const { home, proj } = sandbox();
+  try {
+    // the schema validates enums case-insensitively, so the clamp must too or
+    // the mismatched case falls through to the plain overlay and escalates
+    assert.strictEqual(cascade(home, proj, { updateMode: 'off' }, { updateMode: 'AUTO' }).updateMode, 'off');
+    assert.strictEqual(cascade(home, proj, { coalledgerMode: 'Off' }, { coalledgerMode: 'Auto' }).coalledgerMode, 'Off');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: disabledCanaries UNIONs — a project cannot re-enable what global silenced', () => {
+  const { home, proj } = sandbox();
+  try {
+    // ["all"] is the documented silence-everything switch; an empty project list must not revive it
+    assert.deepStrictEqual(cascade(home, proj, { disabledCanaries: ['all'] }, { disabledCanaries: [] }).disabledCanaries, ['all']);
+    const both = cascade(home, proj, { disabledCanaries: ['doc-leak'] }, { disabledCanaries: ['doc-rot'] }).disabledCanaries;
+    assert.deepStrictEqual([...both].sort(), ['doc-leak', 'doc-rot'], 'a project may add more, never remove');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: an EXPLICIT global is required — with no global key the project is free', () => {
+  const { home, proj } = sandbox();
+  try {
+    assert.strictEqual(cascade(home, proj, {}, { coalledgerMode: 'auto' }).coalledgerMode, 'auto');
+    assert.strictEqual(cascade(home, proj, {}, { updateMode: 'auto' }).updateMode, 'auto');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: non-consent keys stay PLAIN project-wins (no over-clamping)', () => {
+  const { home, proj } = sandbox();
+  try {
+    const cfg = cascade(home, proj,
+      { updateCheckDays: 30, language: 'en', severityFloor: 'critical', quickVsFull: 'quick', docLeak: false, publicMode: false, docsDriftNudge: false },
+      { updateCheckDays: 7, language: 'th', severityFloor: 'low', quickVsFull: 'full', docLeak: true, publicMode: true, docsDriftNudge: true });
+    assert.strictEqual(cfg.updateCheckDays, 7);
+    assert.strictEqual(cfg.language, 'th');
+    assert.strictEqual(cfg.severityFloor, 'low');
+    assert.strictEqual(cfg.quickVsFull, 'full');
+    assert.strictEqual(cfg.docLeak, true);
+    assert.strictEqual(cfg.publicMode, true);
+    assert.strictEqual(cfg.docsDriftNudge, true);
+  } finally { clean(home, proj); }
+});
+
+test('clamp: a genuinely unknown enum value falls through to the overlay (schema clamps downstream)', () => {
+  const { home, proj } = sandbox();
+  try {
+    assert.strictEqual(cascade(home, proj, { updateMode: 'off' }, { updateMode: 'banana' }).updateMode, 'banana');
+  } finally { clean(home, proj); }
+});

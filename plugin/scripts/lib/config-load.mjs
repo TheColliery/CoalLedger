@@ -54,9 +54,65 @@ function readJsonc(file) {
   }
 }
 
-// Flat shallow merge: project keys overwrite global keys (the schema is flat).
+// Consent-cascade clamp (hooks-safety.md §9). The project `.coalledger.json`
+// ARRIVES WITH A CLONED REPO — untrusted. A plain project-wins overlay lets it
+// ESCALATE a consent-bearing key, so the conductor then spends tokens or fires
+// standing-consent actions nobody agreed to. For the hook-read keys that gate
+// CONSENT, SPEND or an OUTWARD action the project layer may QUIETEN, never
+// escalate; every other key stays plain project-wins (caps, language, floors).
+// Flock shape: CoalMine `updateMode` + CoalWash `mergeSafety`.
+//
+// SCOPE — why exactly these three, and not the rest:
+//   coalledgerMode   'auto' makes the SessionStart conductor inject its offer
+//                    directive every session (tokens, and it drives paid-scan
+//                    offers); 'off' is silence. A `coal*Mode`, named by §9.
+//   updateMode       'auto' is standing consent to CHECK and offer an update —
+//                    it sends the AGENT to the network. The flock's exemplar.
+//   disabledCanaries the documented silence switch (`["all"]`), so a SHORTER
+//                    project list revives canaries the user silenced globally.
+//                    Set-valued, so "safer" = MORE disabled = a UNION (same
+//                    direction as CoalBoard's criticalPaths REPLACE->UNION).
+// NOT clamped, deliberately: language/severityFloor/publicMode (no consent
+// axis) · docLeak/docsDriftNudge (advisory display toggles — re-enabling one
+// quiet line in a single project is a legitimate use, and there is no spend or
+// outward action to gate) · updateCheckDays (a numeric spend-RATE dial; neither
+// flock exemplar clamps a number, so the shape is reported to main rather than
+// hand-rolled here). And `quickVsFull` — CL's real spend dial, since 'full' is
+// the paid semantic tier — is read by the AGENT from the raw file, never
+// through this merge, so a clamp here would protect nothing (CoalMine's
+// `autoFixMode` carries the same note).
+const SAFER_ENUM = {
+  coalledgerMode: ['off', 'manual', 'auto'], // index 0 = safest
+  updateMode: ['off', 'remind', 'ask', 'auto'], // order byte-identical to CM/CW
+};
+const SAFER_UNION = ['disabledCanaries'];
+
+export function mergeSafety(global, project) {
+  const out = { ...global, ...project };
+  for (const [key, order] of Object.entries(SAFER_ENUM)) {
+    // Constrain only against an EXPLICIT global choice: a global sitting on the
+    // factory default (key absent) leaves the project free to set anything.
+    if (global[key] === undefined || project[key] === undefined) continue;
+    // CASE-FOLD to match the schema's case-insensitive enums (clampedRead
+    // lowercases). Comparing raw case let a project 'AUTO'/'Off' miss the
+    // lookup (indexOf -> -1) and fall through to the overlay, re-enabling a
+    // globally-off skill — CoalWash paid for this one (H5).
+    const gi = order.indexOf(String(global[key]).toLowerCase());
+    const pi = order.indexOf(String(project[key]).toLowerCase());
+    if (gi === -1 || pi === -1) continue; // genuinely unknown value: leave the overlay (clampedRead clamps downstream)
+    out[key] = pi <= gi ? project[key] : global[key]; // project may not move PAST global toward the louder end
+  }
+  for (const key of SAFER_UNION) {
+    if (!Array.isArray(global[key]) || !Array.isArray(project[key])) continue;
+    out[key] = [...new Set([...global[key], ...project[key]])]; // a project may add, never remove
+  }
+  return out;
+}
+
+// Two-level cascade: global overlaid by the nearest project config, with the
+// consent-bearing keys clamped safer-value-wins (mergeSafety above).
 export function loadMergedConfig({ cwd = process.cwd(), home = os.homedir() } = {}) {
   const global = readJsonc(globalConfigPath(home));
   const project = readJsonc(projectConfigPath(cwd, home));
-  return { ...global, ...project };
+  return mergeSafety(global, project);
 }
