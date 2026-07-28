@@ -10,10 +10,11 @@
 //   heading-skip        heading level jumps down more than one (h1 -> h3)
 //   heading-multiple-h1 more than one top-level heading in a doc
 //   heading-duplicate   two sibling headings (same parent) with identical text
-//                       — GitHub appends -1/-2 to the slug, so #slug silently
-//                       points to the first; CHANGELOG ### Added under different
-//                       ## versions is NOT flagged (different parents, MD024
-//                       siblings_only semantics)
+//                       — duplicate headings make auto-generated anchors
+//                       ambiguous (markdown -1 suffix, HTML id uniqueness,
+//                       screen-reader jump-to-heading); CHANGELOG ### Added
+//                       under different ## versions is NOT flagged (different
+//                       parents, MD024 siblings_only semantics)
 //   anchor-missing      #fragment (same-file or file.md#frag) resolves to no
 //                       heading slug / HTML id — incl. a case-mismatch hint
 //   file-missing        relative link/image/definition target absent on disk
@@ -135,8 +136,9 @@ export function checkDocument(src, opts = {}) {
   // when both headings share the same parent section. A CHANGELOG with
   // ### Added under ## 1.0.0 and ### Added under ## 2.0.0 is the
   // world-standard keepachangelog format — different parents, not a duplicate.
-  // Same parent + same text = the ambiguous case where #slug silently hits
-  // the first occurrence.
+  // Same parent + same text = ambiguous auto-generated anchors (the defect is
+  // format-general: markdown -1 suffix, HTML id uniqueness, screen-reader
+  // jump-to-heading all break on duplicates independently).
   const parentAt = []; // parentAt[depth] = slug of the current heading at that depth
   const siblingsSeen = new Map(); // "parentKey/slug" -> first node
   walk(root, (node) => {
@@ -161,7 +163,7 @@ export function checkDocument(src, opts = {}) {
       const sibKey = parentKey + '/' + slug;
       const prev = siblingsSeen.get(sibKey);
       if (prev) {
-        add('heading-duplicate', node, `duplicate heading "${text}" under the same parent (first at line ${at(prev).line}) — anchor #${slug} silently points to the first occurrence`);
+        add('heading-duplicate', node, `duplicate heading "${text}" under the same parent (first at line ${at(prev).line}) — auto-generated anchors become ambiguous`);
       } else {
         siblingsSeen.set(sibKey, node);
       }
