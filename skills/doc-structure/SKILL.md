@@ -1,7 +1,7 @@
 ---
 name: doc-structure
 description: >-
-  Docs-health structure scan — broken internal links/anchors (GitHub-slug resolution, Thai/CJK safe), dead relative file links, heading hierarchy (skipped levels, multiple H1), GFM table shape (silently-dropped cells), orphan/undefined reference definitions, bare URLs in prose. Triggers on: "/doc-structure", "doc-structure", "broken links", "check docs structure", "doc health". Mechanical + deterministic: detection runs through the shipped CommonMark+GFM AST engine (never regex over raw markdown), so things that render fine are not flagged. Reports; fixes on request via choice-gated menu. Severity is judged by context, never mechanical.
+  Docs-health structure scan — broken internal links/anchors (GitHub-slug resolution, Thai/CJK safe), dead relative file links, heading hierarchy (skipped levels, multiple H1), duplicate sibling headings (same parent, same text), GFM table shape (silently-dropped cells), orphan/undefined reference definitions, bare URLs in prose. Triggers on: "/doc-structure", "doc-structure", "broken links", "check docs structure", "doc health". Mechanical + deterministic: detection runs through the shipped CommonMark+GFM AST engine (never regex over raw markdown), so things that render fine are not flagged. Reports; fixes on request via choice-gated menu. Severity is judged by context, never mechanical.
 ---
 
 # Doc-Structure
