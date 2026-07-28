@@ -11,7 +11,9 @@
 //   heading-multiple-h1 more than one top-level heading in a doc
 //   heading-duplicate   two sibling headings (same parent node) with identical
 //                       rendered text — a plain #slug link reaches only the
-//                       first; suffixed anchors are order-fragile. Format-
+//                       FIRST heading with that text in the whole document
+//                       (the CHECK is sibling-scoped, the SLUG is not);
+//                       suffixed anchors are order-fragile. Format-
 //                       general (markdown, HTML id, screen-reader). Siblings-
 //                       only: CHANGELOG ### Added under different ## versions
 //                       is NOT flagged (different parent nodes). Keyed on text,
@@ -57,7 +59,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseMarkdown, walk, textContent, makeSlugger } from './md-ast.mjs';
+import { parseMarkdown, walk, textContent, makeSlugger, githubSlug } from './md-ast.mjs';
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 // A real anchor id/name only — the negative lookbehind for a word-char or hyphen
@@ -137,8 +139,13 @@ export function checkDocument(src, opts = {}) {
   // when both headings share the same parent section. A CHANGELOG with
   // ### Added under ## 1.0.0 and ### Added under ## 2.0.0 is the
   // keepachangelog format — different parent nodes, not siblings.
-  // Same parent node + same text = a plain #slug link reaches only the first
-  // occurrence; the suffixed anchors (#slug-1) are order-fragile and readers
+  // Same parent node + same text = ambiguous anchors. SCOPE MISMATCH — do NOT
+  // "simplify" the message back to "the first occurrence": the CHECK is
+  // sibling-scoped, the SLUG is document-wide, so a plain #slug reaches the
+  // first heading with that text ANYWHERE, which may be neither sibling.
+  // Repro (pure ASCII): # Setup / ## Section / ### Setup / ### Setup — #setup
+  // is the h1's, and the flagged pair is #setup-1 / #setup-2.
+  // The suffixed anchors (#slug-1) are order-fragile and readers
   // cannot predict them. The defect is format-general: duplicate headings make
   // auto-generated identifiers ambiguous in markdown, HTML, AsciiDoc, and
   // screen-reader jump-to-heading navigation alike.
@@ -173,7 +180,11 @@ export function checkDocument(src, opts = {}) {
       const sibKey = parentId + '/' + key;
       const prev = siblingsSeen.get(sibKey);
       if (prev) {
-        add('heading-duplicate', node, `duplicate heading "${text}" under the same parent (first at line ${at(prev).line}) — a plain #${text.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '')} link reaches only the first occurrence`);
+        // githubSlug, never a hand-rolled one: `\w` is ASCII-only, so a
+        // hand-roll prints "#" for a Thai/CJK heading and "#caf-rsum" for
+        // "Café résumé". The base (un-suffixed) slug is exactly what "a plain
+        // #slug link" means, so no dedupe state is wanted here.
+        add('heading-duplicate', node, `duplicate heading "${text}" under the same parent (first at line ${at(prev).line}) — a plain #${githubSlug(text)} link reaches only the first heading with that text in the document`);
       } else {
         siblingsSeen.set(sibKey, node);
       }

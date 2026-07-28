@@ -107,6 +107,24 @@ test('duplicate headings resolve through GitHub dedupe suffixes, and one-past fa
   assert.ok(findings.some(f => f.check === 'heading-duplicate'));
 });
 
+// The message names the anchor a reader would type, so it must come from the
+// SHIPPED slugger. A hand-rolled `\w`-based one is ASCII-only: it emits a bare
+// "#" for Thai/CJK and "#caf-rsum" for "Café résumé" — contradicting the
+// language-neutral guarantee (md-checks.mjs header, doc-structure frontmatter)
+// in a suite that ships Thai fixtures. Detection is keyed on raw text and is
+// unaffected either way, so ONLY the emitted string can catch this.
+import { githubSlug } from './md-ast.mjs';
+
+test('heading-duplicate prints the real Unicode anchor, not an ASCII-only slug', () => {
+  for (const heading of ['การติดตั้ง', '安装步骤', 'Café résumé', 'Setup Guide']) {
+    const f = checkDocument(`## ${heading}\n\n## ${heading}\n`).find((x) => x.check === 'heading-duplicate');
+    assert.ok(f, `no heading-duplicate raised for "${heading}"`);
+    const printed = /a plain #(\S*) link/.exec(f.message);
+    assert.ok(printed, `message shape changed, anchor not locatable: ${f.message}`);
+    assert.strictEqual(printed[1], githubSlug(heading), `anchor printed for "${heading}"`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // CLI surface
 // ---------------------------------------------------------------------------
