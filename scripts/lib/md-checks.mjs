@@ -9,6 +9,9 @@
 // Checks (ids are stable API):
 //   heading-skip        heading level jumps down more than one (h1 -> h3)
 //   heading-multiple-h1 more than one top-level heading in a doc
+//   heading-duplicate   two headings with identical rendered text — GitHub
+//                       appends -1/-2 to the slug, so #slug silently points
+//                       to the first; a link to the second is wrong by default
 //   anchor-missing      #fragment (same-file or file.md#frag) resolves to no
 //                       heading slug / HTML id — incl. a case-mismatch hint
 //   file-missing        relative link/image/definition target absent on disk
@@ -126,6 +129,7 @@ export function checkDocument(src, opts = {}) {
   // ---- headings -------------------------------------------------------------
   let prevDepth = 0;
   let h1Seen = false;
+  const headingSlugs = new Map(); // slug -> first node (for heading-duplicate)
   walk(root, (node) => {
     if (node.type !== 'heading') return;
     if (prevDepth && node.depth > prevDepth + 1) {
@@ -135,6 +139,20 @@ export function checkDocument(src, opts = {}) {
     if (node.depth === 1) {
       if (h1Seen) add('heading-multiple-h1', node, 'more than one top-level (h1) heading in this document');
       h1Seen = true;
+    }
+    // heading-duplicate: same rendered text at any depth — GitHub appends -1,
+    // -2, ... to the slug, so a link to #slug silently hits the FIRST one even
+    // when the author meant the second. Deterministic: identical text at any
+    // level is objectively ambiguous.
+    const text = textContent(node);
+    const slug = safeDecode(text).trim().toLowerCase();
+    if (slug) {
+      const prev = headingSlugs.get(slug);
+      if (prev) {
+        add('heading-duplicate', node, `duplicate heading "${text}" (first at line ${at(prev).line}) — anchor #${slug} silently points to the first occurrence`);
+      } else {
+        headingSlugs.set(slug, node);
+      }
     }
   });
 

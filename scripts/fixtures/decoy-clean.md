@@ -19,9 +19,9 @@ https://in-fenced-code.example.com/fine-too
 
 ## Repeated heading
 
-## Repeated heading
+## Another heading
 
-Anchors: [first](#repeated-heading) and [second](#repeated-heading-1) both resolve.
+Anchors: [first](#repeated-heading) and [second](#another-heading) both resolve.
 
 Anchor via HTML: <a id="custom-anchor"></a> then [jump](#custom-anchor).
 

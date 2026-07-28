@@ -31,6 +31,7 @@ test('defects-structure.md: every planted defect found — exact check ids and l
     'def-orphan@27',
     'file-missing@11', // ./no-such-file.md
     'file-missing@13', // dead image
+    'heading-duplicate@33', // second "## Setup" — anchor silently points to first
     'heading-multiple-h1@5',
     'heading-skip@3',
     'ref-undefined@23',
@@ -100,8 +101,10 @@ test('bare-url is line-accurate inside a wrapped paragraph', () => {
 test('duplicate headings resolve through GitHub dedupe suffixes, and one-past fails', () => {
   const src = '## Dup\n\n## Dup\n\n[a](#dup) [b](#dup-1) [c](#dup-2)\n';
   const findings = checkDocument(src);
-  assert.strictEqual(findings.length, 1);
-  assert.ok(findings[0].message.includes('#dup-2'));
+  // heading-duplicate fires on the second "## Dup" + anchor-missing on #dup-2
+  assert.strictEqual(findings.length, 2);
+  assert.ok(findings.some(f => f.check === 'anchor-missing' && f.message.includes('#dup-2')));
+  assert.ok(findings.some(f => f.check === 'heading-duplicate'));
 });
 
 // ---------------------------------------------------------------------------
