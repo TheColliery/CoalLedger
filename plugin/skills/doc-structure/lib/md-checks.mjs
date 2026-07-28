@@ -9,6 +9,13 @@
 // Checks (ids are stable API):
 //   heading-skip        heading level jumps down more than one (h1 -> h3)
 //   heading-multiple-h1 more than one top-level heading in a doc
+//   heading-duplicate   two sibling headings (same parent node) with identical
+//                       rendered text — a plain #slug link reaches only the
+//                       first; suffixed anchors are order-fragile. Format-
+//                       general (markdown, HTML id, screen-reader). Siblings-
+//                       only: CHANGELOG ### Added under different ## versions
+//                       is NOT flagged (different parent nodes). Keyed on text,
+//                       not slug — "Setup!" and "Setup" are not flagged (MD024)
 //   anchor-missing      #fragment (same-file or file.md#frag) resolves to no
 //                       heading slug / HTML id — incl. a case-mismatch hint
 //   file-missing        relative link/image/definition target absent on disk
@@ -126,6 +133,21 @@ export function checkDocument(src, opts = {}) {
   // ---- headings -------------------------------------------------------------
   let prevDepth = 0;
   let h1Seen = false;
+  // heading-duplicate (siblings-only, MD024 semantics): flag a duplicate only
+  // when both headings share the same parent section. A CHANGELOG with
+  // ### Added under ## 1.0.0 and ### Added under ## 2.0.0 is the
+  // keepachangelog format — different parent nodes, not siblings.
+  // Same parent node + same text = a plain #slug link reaches only the first
+  // occurrence; the suffixed anchors (#slug-1) are order-fragile and readers
+  // cannot predict them. The defect is format-general: duplicate headings make
+  // auto-generated identifiers ambiguous in markdown, HTML, AsciiDoc, and
+  // screen-reader jump-to-heading navigation alike.
+  // Known limit: headings with different text that slug to the same anchor
+  // (e.g. "Setup!" and "Setup" both slug to "setup") are NOT flagged — the
+  // key is the rendered text, matching markdownlint MD024 behavior.
+  let headingSeq = 0;
+  const ancestorId = []; // ancestorId[depth] = id of the current heading at that depth
+  const siblingsSeen = new Map(); // "parentId/text" -> first node
   walk(root, (node) => {
     if (node.type !== 'heading') return;
     if (prevDepth && node.depth > prevDepth + 1) {
@@ -135,6 +157,26 @@ export function checkDocument(src, opts = {}) {
     if (node.depth === 1) {
       if (h1Seen) add('heading-multiple-h1', node, 'more than one top-level (h1) heading in this document');
       h1Seen = true;
+    }
+    const text = textContent(node);
+    const key = text.trim().toLowerCase();
+    if (key) {
+      const thisId = ++headingSeq;
+      // find the nearest defined ancestor: walk depth-1 down to 1
+      let parentId = 0; // 0 = document root
+      for (let d = node.depth - 1; d >= 1; d--) {
+        if (ancestorId[d] !== undefined) { parentId = ancestorId[d]; break; }
+      }
+      // register this heading as the ancestor for deeper levels, clear stale
+      ancestorId[node.depth] = thisId;
+      for (let d = node.depth + 1; d < ancestorId.length; d++) ancestorId[d] = undefined;
+      const sibKey = parentId + '/' + key;
+      const prev = siblingsSeen.get(sibKey);
+      if (prev) {
+        add('heading-duplicate', node, `duplicate heading "${text}" under the same parent (first at line ${at(prev).line}) — a plain #${text.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '')} link reaches only the first occurrence`);
+      } else {
+        siblingsSeen.set(sibKey, node);
+      }
     }
   });
 

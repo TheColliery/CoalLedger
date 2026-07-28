@@ -30,6 +30,7 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
 |---|---|
 | heading-skip | level jumps (h1 -> h3) |
 | heading-multiple-h1 | more than one top-level title |
+| heading-duplicate | same-parent sibling headings with identical text — a plain #slug link reaches only the first; keep-a-changelog per-release `### Added` repeats under different `## version` parents are deliberately not flagged |
 | anchor-missing | #fragment resolves to no heading slug / HTML id (same-file + cross-file, case-mismatch hinted) |
 | file-missing | dead relative link/image/definition target |
 | table-ragged | row with MORE cells than the header (GitHub silently drops them) |

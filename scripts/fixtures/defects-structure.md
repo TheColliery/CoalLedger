@@ -25,3 +25,9 @@ See [broken ref][no-def] for details.
 Bare URL: https://example.com/dangling in prose.
 
 [orphan-def]: https://example.com/orphan
+
+## Setup
+
+Some instructions.
+
+## Setup

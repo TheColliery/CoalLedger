@@ -19,9 +19,9 @@ https://in-fenced-code.example.com/fine-too
 
 ## Repeated heading
 
-## Repeated heading
+## Another heading
 
-Anchors: [first](#repeated-heading) and [second](#repeated-heading-1) both resolve.
+Anchors: [first](#repeated-heading) and [second](#another-heading) both resolve.
 
 Anchor via HTML: <a id="custom-anchor"></a> then [jump](#custom-anchor).
 
@@ -53,3 +53,23 @@ External targets are skipped: [https scheme](https://example.com/x), [protocol-r
 [ok-def]: ./decoy-thai.md "A live target"
 [collapsed]: #repeated-heading
 [shortcut]: https://example.com/defined
+
+## 1.0.0
+
+### Added
+
+- first feature
+
+### Fixed
+
+- first fix
+
+## 2.0.0
+
+### Added
+
+- second feature
+
+### Fixed
+
+- second fix
