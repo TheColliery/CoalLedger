@@ -53,3 +53,23 @@ External targets are skipped: [https scheme](https://example.com/x), [protocol-r
 [ok-def]: ./decoy-thai.md "A live target"
 [collapsed]: #repeated-heading
 [shortcut]: https://example.com/defined
+
+## 1.0.0
+
+### Added
+
+- first feature
+
+### Fixed
+
+- first fix
+
+## 2.0.0
+
+### Added
+
+- second feature
+
+### Fixed
+
+- second fix
