@@ -27,6 +27,10 @@
 //   ref-undefined       full/collapsed reference [text][label] with no
 //                       definition (renders as literal brackets on GitHub)
 //   def-orphan          a [label]: definition no reference ever uses
+//   image-alt-missing   image with empty alt — opt-in (default off, enable via
+//                       opts.enableImageAlt); WCAG 1.1.1 treats empty alt as
+//                       correct for decorative images, so the finding names the
+//                       exception (MD045 class)
 //   bare-url            a raw http(s)/www URL in prose text (GFM auto-links
 //                       it, CommonMark does not; MD034 class — style signal)
 //   doc-too-large       pre-parse short-circuit: input over MAX_DOC_BYTES is
@@ -245,6 +249,23 @@ export function checkDocument(src, opts = {}) {
   walk(root, (node) => {
     if (node.type === 'link' || node.type === 'image' || node.type === 'definition') checkTarget(node, node.url);
   });
+
+  // ---- images: alt text (opt-in, default off) --------------------------------
+  // MD045 / WCAG 1.1.1. Gated by opts.enableImageAlt (default false) — in
+  // agent-authored or internal repos the value concentrates in public-facing
+  // content images, not every decorative icon; the caller (conductor / config)
+  // decides when to flip it on. Note: WCAG 1.1.1 itself treats empty alt as
+  // CORRECT for purely decorative images — the finding says so, leaving the
+  // judgment to the reviewing agent.
+  if (opts.enableImageAlt) {
+    walk(root, (node) => {
+      if (node.type !== 'image' && node.type !== 'imageReference') return;
+      const alt = (node.alt || '').trim();
+      if (!alt) {
+        add('image-alt-missing', node, 'image has empty alt — intentional for purely decorative images (WCAG 1.1.1); a content image needs a description (MD045)');
+      }
+    });
+  }
 
   // ---- tables ----------------------------------------------------------------
   walk(root, (node) => {

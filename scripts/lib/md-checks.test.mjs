@@ -31,6 +31,7 @@ test('defects-structure.md: every planted defect found — exact check ids and l
     'def-orphan@27',
     'file-missing@11', // ./no-such-file.md
     'file-missing@13', // dead image
+    'file-missing@35', // no-alt image target also missing
     'heading-duplicate@33', // second "## Setup" — anchor silently points to first
     'heading-multiple-h1@5',
     'heading-skip@3',
@@ -123,6 +124,38 @@ test('heading-duplicate prints the real Unicode anchor, not an ASCII-only slug',
     assert.ok(printed, `message shape changed, anchor not locatable: ${f.message}`);
     assert.strictEqual(printed[1], githubSlug(heading), `anchor printed for "${heading}"`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// image-alt-missing (opt-in)
+// ---------------------------------------------------------------------------
+
+test('image-alt-missing: off by default — no finding even with an empty-alt image', () => {
+  const findings = checkDocument('![](img.png)\n');
+  assert.ok(!findings.some(f => f.check === 'image-alt-missing'), 'should not fire when enableImageAlt is off');
+});
+
+test('image-alt-missing: fires when enableImageAlt is true', () => {
+  const findings = checkDocument('![](img.png)\n', { enableImageAlt: true });
+  const hit = findings.find(f => f.check === 'image-alt-missing');
+  assert.ok(hit, 'should fire on empty alt when enabled');
+  assert.ok(hit.message.includes('decorative'), 'message names the WCAG decorative-image exception');
+  assert.ok(hit.message.includes('MD045'), 'message cites MD045');
+});
+
+test('image-alt-missing: does not fire when alt is present', () => {
+  const findings = checkDocument('![a diagram](img.png)\n', { enableImageAlt: true });
+  assert.ok(!findings.some(f => f.check === 'image-alt-missing'), 'image with alt should pass');
+});
+
+test('image-alt-missing: whitespace-only alt is treated as empty', () => {
+  const findings = checkDocument('![   ](img.png)\n', { enableImageAlt: true });
+  assert.ok(findings.some(f => f.check === 'image-alt-missing'), 'whitespace-only alt is empty');
+});
+
+test('image-alt-missing: reference images are also checked', () => {
+  const findings = checkDocument('![][ref]\n\n[ref]: img.png\n', { enableImageAlt: true });
+  assert.ok(findings.some(f => f.check === 'image-alt-missing'), 'imageReference with empty alt fires');
 });
 
 // ---------------------------------------------------------------------------
