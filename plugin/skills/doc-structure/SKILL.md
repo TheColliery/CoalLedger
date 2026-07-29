@@ -37,6 +37,8 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
 | ref-undefined | \[text]\[label] with no definition (renders as literal brackets) |
 | def-orphan | definition never referenced |
 | image-alt-missing | image with empty alt text — opt-in (default off); WCAG 1.1.1 treats empty alt as correct for decorative images, so the finding names the exception; a content image needs a description (MD045) |
+| image-alt-too-short | alt below the script-aware grapheme floor (CJK: 1, default: 3) — measured in grapheme clusters so CJK/Thai/emoji count fairly |
+| image-alt-too-long | alt exceeds 125 graphemes — alt is a label, not a caption (WAI concision convention) |
 | bare-url | raw URL in prose (MD034 class) |
 | doc-unreadable | binary/corrupted input (NUL byte sniffed) — refused before parsing, never a false "0 findings" clean bill |
 

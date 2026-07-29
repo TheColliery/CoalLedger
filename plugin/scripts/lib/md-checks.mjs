@@ -31,6 +31,10 @@
 //                       opts.enableImageAlt); WCAG 1.1.1 treats empty alt as
 //                       correct for decorative images, so the finding names the
 //                       exception (MD045 class)
+//   image-alt-too-short alt below the script-aware grapheme floor (CJK: 1,
+//                       default: 3) — "img" is junk, "図" is a word
+//   image-alt-too-long  alt exceeds 125 graphemes — alt is a label, not a
+//                       caption (WAI concision convention)
 //   bare-url            a raw http(s)/www URL in prose text (GFM auto-links
 //                       it, CommonMark does not; MD034 class — style signal)
 //   doc-too-large       pre-parse short-circuit: input over MAX_DOC_BYTES is
@@ -257,12 +261,44 @@ export function checkDocument(src, opts = {}) {
   // decides when to flip it on. Note: WCAG 1.1.1 itself treats empty alt as
   // CORRECT for purely decorative images — the finding says so, leaving the
   // judgment to the reviewing agent.
+  //
+  // Length bounds (grapheme clusters via Intl.Segmenter — zero-dependency,
+  // Node 16+). The floor is script-aware: a single CJK character can be a
+  // complete description ("図"), while "img" (3 Latin chars) is junk. The
+  // ceiling is language-fair with a single number (it bounds excess, not
+  // meaning): 125 graphemes, matching the WAI screen-reader concision
+  // convention (alt is a label, not a caption).
   if (opts.enableImageAlt) {
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    const countGraphemes = (s) => [...segmenter.segment(s)].length;
+    const minAlt = opts.minAltGraphemes ?? { cjk: 1, default: 3 };
+    const maxAlt = opts.maxAltGraphemes ?? 125;
+    // CJK-heavy: more than half of the codepoints fall in CJK Unified / Ext A /
+    // Hiragana / Katakana / Compat ranges. A single character in these scripts
+    // carries a full word's meaning, so the junk-floor is 1 grapheme.
+    const isCJKHeavy = (s) => {
+      let cjk = 0, total = 0;
+      for (const ch of s) {
+        const cp = ch.codePointAt(0);
+        total++;
+        if ((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF) ||
+            (cp >= 0x3040 && cp <= 0x30FF) || (cp >= 0xF900 && cp <= 0xFAFF)) cjk++;
+      }
+      return total > 0 && cjk / total > 0.5;
+    };
     walk(root, (node) => {
       if (node.type !== 'image' && node.type !== 'imageReference') return;
       const alt = (node.alt || '').trim();
       if (!alt) {
         add('image-alt-missing', node, 'image has empty alt — intentional for purely decorative images (WCAG 1.1.1); a content image needs a description (MD045)');
+        return;
+      }
+      const g = countGraphemes(alt);
+      const floor = isCJKHeavy(alt) ? (typeof minAlt === 'object' ? minAlt.cjk : minAlt) : (typeof minAlt === 'object' ? minAlt.default : minAlt);
+      if (g < floor) {
+        add('image-alt-too-short', node, `alt "${alt}" is ${g} grapheme(s) — below the ${floor}-grapheme floor for this script; likely junk, not a description`);
+      } else if (g > maxAlt) {
+        add('image-alt-too-long', node, `alt is ${g} graphemes (limit ${maxAlt}) — alt is a label, not a caption; long descriptions belong in surrounding text or a figcaption`);
       }
     });
   }

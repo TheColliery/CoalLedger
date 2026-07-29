@@ -158,6 +158,47 @@ test('image-alt-missing: reference images are also checked', () => {
   assert.ok(findings.some(f => f.check === 'image-alt-missing'), 'imageReference with empty alt fires');
 });
 
+// ---- image-alt-too-short / too-long (grapheme-aware) ----
+
+test('image-alt-too-short: Latin junk below 3-grapheme floor', () => {
+  const findings = checkDocument('![ab](img.png)\n', { enableImageAlt: true });
+  assert.ok(findings.some(f => f.check === 'image-alt-too-short'), '"ab" is 2 graphemes — below default floor');
+});
+
+test('image-alt-too-short: CJK single character is valid (floor = 1)', () => {
+  const findings = checkDocument('![図](img.png)\n', { enableImageAlt: true });
+  assert.ok(!findings.some(f => f.check === 'image-alt-too-short'), 'single CJK char is a full word');
+});
+
+test('image-alt-too-short: Thai above floor passes', () => {
+  const findings = checkDocument('![แผนภาพ](img.png)\n', { enableImageAlt: true });
+  assert.ok(!findings.some(f => f.check === 'image-alt-too-short'), 'Thai word above 3 graphemes passes');
+});
+
+test('image-alt-too-short: exactly 3 Latin graphemes passes', () => {
+  const findings = checkDocument('![cat](img.png)\n', { enableImageAlt: true });
+  assert.ok(!findings.some(f => f.check === 'image-alt-too-short'), '3 graphemes = at floor, passes');
+});
+
+test('image-alt-too-long: exceeds 125-grapheme ceiling', () => {
+  const longAlt = 'a'.repeat(126);
+  const findings = checkDocument(`![${longAlt}](img.png)\n`, { enableImageAlt: true });
+  assert.ok(findings.some(f => f.check === 'image-alt-too-long'), '126 graphemes exceeds ceiling');
+});
+
+test('image-alt-too-long: exactly 125 passes', () => {
+  const alt = 'a'.repeat(125);
+  const findings = checkDocument(`![${alt}](img.png)\n`, { enableImageAlt: true });
+  assert.ok(!findings.some(f => f.check === 'image-alt-too-long'), '125 = at ceiling, passes');
+});
+
+test('image-alt length: config-tunable min and max', () => {
+  const findings = checkDocument('![hi](img.png)\n', { enableImageAlt: true, minAltGraphemes: 5, maxAltGraphemes: 10 });
+  assert.ok(findings.some(f => f.check === 'image-alt-too-short'), '"hi" (2) below custom floor 5');
+  const f2 = checkDocument('![' + 'x'.repeat(11) + '](img.png)\n', { enableImageAlt: true, minAltGraphemes: 5, maxAltGraphemes: 10 });
+  assert.ok(f2.some(f => f.check === 'image-alt-too-long'), '11 chars above custom ceiling 10');
+});
+
 // ---------------------------------------------------------------------------
 // CLI surface
 // ---------------------------------------------------------------------------
