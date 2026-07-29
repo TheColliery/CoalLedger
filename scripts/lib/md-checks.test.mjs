@@ -31,9 +31,7 @@ test('defects-structure.md: every planted defect found — exact check ids and l
     'def-orphan@27',
     'file-missing@11', // ./no-such-file.md
     'file-missing@13', // dead image
-    'file-missing@35', // no-alt image target also missing
     'heading-duplicate@33', // second "## Setup" — anchor silently points to first
-    'image-alt-missing@35', // ![](./img/no-alt.png) — no alt text
     'heading-multiple-h1@5',
     'heading-skip@3',
     'ref-undefined@23',

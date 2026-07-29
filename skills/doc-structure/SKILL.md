@@ -36,7 +36,6 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
 | table-ragged | row with MORE cells than the header (GitHub silently drops them) |
 | ref-undefined | \[text]\[label] with no definition (renders as literal brackets) |
 | def-orphan | definition never referenced |
-| image-alt-missing | image with empty or absent alt text — inaccessible to screen readers, invisible to search engines (MD045 / WCAG 1.1.1) |
 | bare-url | raw URL in prose (MD034 class) |
 | doc-unreadable | binary/corrupted input (NUL byte sniffed) — refused before parsing, never a false "0 findings" clean bill |
 

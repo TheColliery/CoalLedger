@@ -31,5 +31,3 @@ Bare URL: https://example.com/dangling in prose.
 Some instructions.
 
 ## Setup
-
-![](./img/no-alt.png)

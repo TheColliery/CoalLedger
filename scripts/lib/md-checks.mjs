@@ -27,9 +27,6 @@
 //   ref-undefined       full/collapsed reference [text][label] with no
 //                       definition (renders as literal brackets on GitHub)
 //   def-orphan          a [label]: definition no reference ever uses
-//   image-alt-missing   image with empty or absent alt text — screen readers
-//                       announce "image" with no description, search engines
-//                       cannot index content (MD045 class, WCAG 1.1.1)
 //   bare-url            a raw http(s)/www URL in prose text (GFM auto-links
 //                       it, CommonMark does not; MD034 class — style signal)
 //   doc-too-large       pre-parse short-circuit: input over MAX_DOC_BYTES is
@@ -247,19 +244,6 @@ export function checkDocument(src, opts = {}) {
 
   walk(root, (node) => {
     if (node.type === 'link' || node.type === 'image' || node.type === 'definition') checkTarget(node, node.url);
-  });
-
-  // ---- images: alt text -------------------------------------------------------
-  // MD045 / WCAG 1.1.1: every image needs a non-empty alt. Without it a screen
-  // reader says "image" with no description, and search engines cannot index the
-  // content. Both inline images (![alt](url)) and reference images (![alt][ref])
-  // are checked — the AST carries the alt field on both node types.
-  walk(root, (node) => {
-    if (node.type !== 'image' && node.type !== 'imageReference') return;
-    const alt = (node.alt || '').trim();
-    if (!alt) {
-      add('image-alt-missing', node, `image has no alt text — screen readers and search engines cannot describe it (MD045)`);
-    }
   });
 
   // ---- tables ----------------------------------------------------------------
