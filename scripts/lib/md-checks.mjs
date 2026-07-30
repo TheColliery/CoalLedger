@@ -30,8 +30,9 @@
 //   bare-url            a raw http(s)/www URL in prose text (GFM auto-links
 //                       it, CommonMark does not; MD034 class — style signal)
 //   image-alt-missing   image or image-reference with empty/whitespace-only
-//                       alt (all reference forms: full/collapsed/shortcut/
-//                       inline). SUSPECTED-ONLY, ALWAYS — carries
+//                       alt — covers inline images (![alt](url)) and every
+//                       imageReference form (full/collapsed/shortcut).
+//                       SUSPECTED-ONLY, ALWAYS — carries
 //                       finding.suspected = true and is never promoted to
 //                       CONFIRMED: empty alt is WCAG-1.1.1-CORRECT for a
 //                       purely decorative image, so decorative-vs-content
