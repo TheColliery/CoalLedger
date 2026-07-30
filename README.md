@@ -41,7 +41,7 @@ Seven canaries, one distinct failure mode each:
 | 2 | `doc-standard` | **INCOMPLETE** — missing vs the doc kind's standard (required sections, undocumented public surface) | semantic + mechanical |
 | 3 | `doc-rot` | **STALE** — old versions/dates/badges, dead TODOs, superseded instructions | mechanical age-markers + semantic |
 | 4 | `doc-consistency` | **CONTRADICTORY** — docs disagreeing, terminology drift, cross-language drift | semantic |
-| 5 | `doc-structure` | **BROKEN** — links/anchors/headings/tables/refs, via the AST engine | mechanical |
+| 5 | `doc-structure` | **BROKEN** — links/anchors/headings/tables/refs/image-alt, via the AST engine | mechanical |
 | 6 | `doc-quality` | **UNREADABLE / MALFORMED** — bloat, unclear prose, language mechanics (typo · grammar · spelling · orthography) | semantic + mechanical |
 | 7 | `doc-leak` (config-gated) | **LEAKED** — prose-level sensitive content in a public-facing doc; token-shaped secrets stay gitleaks' job | semantic, SUSPECTED-only |
 
