@@ -11,8 +11,12 @@
 //   heading-multiple-h1 more than one top-level heading in a doc
 //   heading-duplicate   two sibling headings (same parent node) with identical
 //                       rendered text — a plain #slug link reaches only the
-//                       FIRST heading with that text in the whole document
-//                       (the CHECK is sibling-scoped, the SLUG is not);
+//                       FIRST heading in the whole document to CLAIM that
+//                       slug, which can be neither one of the pair: slug
+//                       claims are text-INDEPENDENT (first-come, document
+//                       order), so an earlier heading with DIFFERENT text can
+//                       claim the slug before either duplicate gets a look
+//                       (the CHECK is sibling-scoped, the SLUG claim is not);
 //                       suffixed anchors are order-fragile. Format-
 //                       general (markdown, HTML id, screen-reader). Siblings-
 //                       only: CHANGELOG ### Added under different ## versions
@@ -152,12 +156,24 @@ export function checkDocument(src, opts = {}) {
   // when both headings share the same parent section. A CHANGELOG with
   // ### Added under ## 1.0.0 and ### Added under ## 2.0.0 is the
   // keepachangelog format — different parent nodes, not siblings.
-  // Same parent node + same text = ambiguous anchors. SCOPE MISMATCH — do NOT
-  // "simplify" the message back to "the first occurrence": the CHECK is
-  // sibling-scoped, the SLUG is document-wide, so a plain #slug reaches the
-  // first heading with that text ANYWHERE, which may be neither sibling.
-  // Repro (pure ASCII): # Setup / ## Section / ### Setup / ### Setup — #setup
-  // is the h1's, and the flagged pair is #setup-1 / #setup-2.
+  // Same parent node + same text = ambiguous anchors. TWO axes, do NOT
+  // "simplify" the message and lose either one: (1) SCOPE — the CHECK is
+  // sibling-scoped, the SLUG claim is document-wide, so a plain #slug can
+  // reach a heading outside this sibling pair entirely; (2) TEXT vs SLUG —
+  // slug claims are first-come by SLUG, not by matching TEXT, so the heading
+  // #slug actually reaches may have DIFFERENT text than either duplicate.
+  // Repro, same text (pure ASCII): # Setup / ## Section / ### Setup /
+  // ### Setup — #setup is the h1's (SCOPE axis: outside the sibling pair),
+  // and the flagged pair is #setup-1 / #setup-2.
+  // Repro, text DIFFERS (the TEXT-vs-SLUG trap — this axis is easy to miss
+  // because the repro above accidentally uses "Setup" for the h1 too):
+  // # Setup! / ## Section / ### Setup / ### Setup — #setup STILL belongs to
+  // the h1, whose text is "Setup!", not "Setup". Neither flagged duplicate
+  // (text "Setup") owns the plain #setup at all; both land on
+  // #setup-1 / #setup-2. Verified live: checkDocument('# Setup!\n\n##
+  // Section\n\n### Setup\n\n### Setup\n') fires heading-duplicate once, and
+  // its message names #setup — a slug this document already gave to a
+  // heading whose text is "Setup!".
   // The suffixed anchors (#slug-1) are order-fragile and readers
   // cannot predict them. The defect is format-general: duplicate headings make
   // auto-generated identifiers ambiguous in markdown, HTML, AsciiDoc, and
@@ -197,7 +213,7 @@ export function checkDocument(src, opts = {}) {
         // hand-roll prints "#" for a Thai/CJK heading and "#caf-rsum" for
         // "Café résumé". The base (un-suffixed) slug is exactly what "a plain
         // #slug link" means, so no dedupe state is wanted here.
-        add('heading-duplicate', node, `duplicate heading "${text}" under the same parent (first at line ${at(prev).line}) — a plain #${githubSlug(text)} link reaches only the first heading with that text in the document`);
+        add('heading-duplicate', node, `duplicate heading "${text}" under the same parent (first at line ${at(prev).line}) — a plain #${githubSlug(text)} link reaches only the first heading in the document to claim that slug, which may be neither one of these two (an earlier heading with different text can claim it first)`);
       } else {
         siblingsSeen.set(sibKey, node);
       }
