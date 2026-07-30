@@ -29,6 +29,13 @@
 //   def-orphan          a [label]: definition no reference ever uses
 //   bare-url            a raw http(s)/www URL in prose text (GFM auto-links
 //                       it, CommonMark does not; MD034 class — style signal)
+//   image-alt-missing   image or image-reference with empty/whitespace-only
+//                       alt (all reference forms: full/collapsed/shortcut/
+//                       inline). SUSPECTED-ONLY, ALWAYS — carries
+//                       finding.suspected = true and is never promoted to
+//                       CONFIRMED: empty alt is WCAG-1.1.1-CORRECT for a
+//                       purely decorative image, so decorative-vs-content
+//                       intent is a human call the engine cannot make (MD045)
 //   doc-too-large       pre-parse short-circuit: input over MAX_DOC_BYTES is
 //                       refused, never parsed (the parser-DoS root fix)
 //   doc-unreadable      pre-parse short-circuit: a NUL byte in the first 8 KB
@@ -129,7 +136,12 @@ export function checkDocument(src, opts = {}) {
   const at = (node) => (node && node.position ? node.position.start : { line: 1, column: 1 });
   const add = (check, node, message, extra = {}) => {
     const p0 = extra.point || at(node);
-    findings.push({ check, line: p0.line, column: p0.column, message });
+    const f = { check, line: p0.line, column: p0.column, message };
+    // Backward-compatible: existing checks omit this field entirely (old
+    // shape, unchanged). Only a check that cannot be judged CONFIRMED by the
+    // engine itself (decorative-vs-content intent, image-alt-missing) sets it.
+    if (extra.suspected) f.suspected = true;
+    findings.push(f);
   };
 
   // ---- headings -------------------------------------------------------------
@@ -189,6 +201,20 @@ export function checkDocument(src, opts = {}) {
         siblingsSeen.set(sibKey, node);
       }
     }
+  });
+
+  // ---- images (alt text) -----------------------------------------------------
+  // SUSPECTED-only, ALWAYS (main ruling on PR #11/#12, not a config toggle):
+  // the engine can CONFIRM alt is empty, never whether that is right — empty
+  // alt is the WCAG-1.1.1-correct choice for a purely decorative image, so
+  // decorative-vs-content is a human call. Covers image AND imageReference
+  // (full/collapsed/shortcut/inline all normalize to one of these two node
+  // types — see md-ast.mjs resolveBracket), and is AST-native so a code span
+  // or fenced/indented block showing "![](x)" as documentation stays silent.
+  walk(root, (node) => {
+    if (node.type !== 'image' && node.type !== 'imageReference') return;
+    if ((node.alt || '').trim()) return;
+    add('image-alt-missing', node, 'image has empty alt — intentional for purely decorative images (WCAG 1.1.1); a content image needs a description (MD045)', { suspected: true });
   });
 
   // ---- link / image / definition targets ------------------------------------

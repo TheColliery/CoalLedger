@@ -12,6 +12,8 @@ Link to [a dead file](./no-such-file.md) here.
 
 ![dead image](./img/missing.png)
 
+![](https://example.com/logo.png)
+
 Cross-file bad: [missing target heading](./defects-target.md#not-there).
 
 Good cross-file: [exists](./defects-target.md#existing-heading).

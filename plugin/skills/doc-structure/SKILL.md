@@ -1,7 +1,7 @@
 ---
 name: doc-structure
 description: >-
-  Docs-health structure scan — broken internal links/anchors (GitHub-slug resolution, Thai/CJK safe), dead relative file links, heading hierarchy (skipped levels, multiple H1), duplicate sibling headings (same parent, same text), GFM table shape (silently-dropped cells), orphan/undefined reference definitions, bare URLs in prose. Triggers on: "/doc-structure", "doc-structure", "broken links", "check docs structure", "doc health". Mechanical + deterministic: detection runs through the shipped CommonMark+GFM AST engine (never regex over raw markdown), so things that render fine are not flagged. Reports; fixes on request via choice-gated menu. Severity is judged by context, never mechanical.
+  Docs-health structure scan — broken internal links/anchors (GitHub-slug resolution, Thai/CJK safe), dead relative file links, heading hierarchy (skipped levels, multiple H1), duplicate sibling headings (same parent, same text), GFM table shape (silently-dropped cells), orphan/undefined reference definitions, bare URLs in prose, images missing alt text (WCAG-aware, SUSPECTED-only — decorative-vs-content intent is a human call). Triggers on: "/doc-structure", "doc-structure", "broken links", "check docs structure", "doc health". Mechanical + deterministic: detection runs through the shipped CommonMark+GFM AST engine (never regex over raw markdown), so things that render fine are not flagged. Reports; fixes on request via choice-gated menu. Severity is judged by context, never mechanical.
 ---
 
 # Doc-Structure
@@ -23,7 +23,7 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
    - HIGH: a real breakage on a doc readers actively use (broken anchor in a live README, dropped table cells with content).
    - MEDIUM: structural debt (skipped heading level, multiple H1, undefined ref in secondary docs).
    - LOW: style/hygiene (bare URL, orphan definition, anything in an archived/internal doc).
-3. **Report** — CONFIRMED table only; anything the engine could not verify (e.g. site-root-relative `/links`, a known engine limit) goes to a separate SUSPECTED list, never the main table.
+3. **Report** — CONFIRMED table only; anything the engine could not verify (e.g. site-root-relative `/links`, a known engine limit) OR whose correctness the engine cannot itself judge (`image-alt-missing` — decorative-vs-content intent) goes to a separate SUSPECTED list, never the main table. `image-alt-missing` carries `finding.suspected = true` and is SUSPECTED-only ALWAYS — there is no config toggle for it (skip-what-doesn't-matter, fill-what-does, never on/off).
 
 ## Checks (engine ids)
 | id | catches |
@@ -37,6 +37,8 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
 | ref-undefined | \[text]\[label] with no definition (renders as literal brackets) |
 | def-orphan | definition never referenced |
 | bare-url | raw URL in prose (MD034 class) |
+| image-alt-missing | image/image-reference with empty or whitespace-only alt (all reference forms). SUSPECTED-only always — empty alt is WCAG-1.1.1-correct for a purely decorative image, so intent is a human call, never CONFIRMED |
+| doc-too-large | input over the size cap — refused before parsing, never a false clean bill on a doc too big to scan safely |
 | doc-unreadable | binary/corrupted input (NUL byte sniffed) — refused before parsing, never a false "0 findings" clean bill |
 
 ## Output

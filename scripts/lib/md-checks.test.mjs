@@ -24,19 +24,27 @@ const pairs = (f) => f.map((x) => `${x.check}@${x.line}`).sort();
 test('defects-structure.md: every planted defect found — exact check ids and lines', () => {
   const findings = run('defects-structure.md');
   assert.deepStrictEqual(pairs(findings), [
-    'anchor-missing@15', // cross-file: defects-target.md#not-there
+    'anchor-missing@17', // cross-file: defects-target.md#not-there
     'anchor-missing@7', // #no-such-heading
     'anchor-missing@9', // case mismatch
-    'bare-url@25',
-    'def-orphan@27',
+    'bare-url@27',
+    'def-orphan@29',
     'file-missing@11', // ./no-such-file.md
     'file-missing@13', // dead image
-    'heading-duplicate@33', // second "## Setup" — anchor silently points to first
+    'heading-duplicate@35', // second "## Setup" — anchor silently points to first
     'heading-multiple-h1@5',
     'heading-skip@3',
-    'ref-undefined@23',
-    'table-ragged@21',
+    'image-alt-missing@15', // ![](https://example.com/logo.png), empty alt
+    'ref-undefined@25',
+    'table-ragged@23',
   ].sort());
+});
+
+test('defects-structure.md: the planted image-alt-missing finding is SUSPECTED, never CONFIRMED', () => {
+  const f = run('defects-structure.md').find((x) => x.check === 'image-alt-missing');
+  assert.ok(f, 'image-alt-missing must fire on the planted empty-alt image');
+  assert.strictEqual(f.suspected, true);
+  assert.ok(/WCAG 1\.1\.1/.test(f.message), f.message);
 });
 
 test('defects-structure.md: the case-mismatch finding says so', () => {
@@ -123,6 +131,63 @@ test('heading-duplicate prints the real Unicode anchor, not an ASCII-only slug',
     assert.ok(printed, `message shape changed, anchor not locatable: ${f.message}`);
     assert.strictEqual(printed[1], githubSlug(heading), `anchor printed for "${heading}"`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// image-alt-missing (SUSPECTED-only, always-on, no config toggle — main
+// ruling on PR #11/#12: skip-not-important / fill-what-matters, never
+// on/off; decorative-vs-content is a human call, so the finding never
+// becomes CONFIRMED regardless of how it is configured)
+// ---------------------------------------------------------------------------
+
+test('image-alt-missing fires on an empty-alt image', () => {
+  const findings = checkDocument('# T\n\n![](./x.png)\n');
+  assert.strictEqual(findings.length, 1);
+  assert.strictEqual(findings[0].check, 'image-alt-missing');
+  assert.strictEqual(findings[0].suspected, true);
+});
+
+test('image-alt-missing is silent when alt text is present', () => {
+  const findings = checkDocument('# T\n\n![a logo](./x.png)\n');
+  assert.ok(!findings.some((f) => f.check === 'image-alt-missing'));
+});
+
+test('image-alt-missing fires on whitespace-only alt (trimmed to empty)', () => {
+  const findings = checkDocument('# T\n\n![   ](./x.png)\n');
+  assert.strictEqual(findings.filter((f) => f.check === 'image-alt-missing').length, 1);
+});
+
+test('image-alt-missing fires on the imageReference node type (full reference form)', () => {
+  // Full reference is the one reference form whose alt is independent of its
+  // label (![alt][label]) -- alt empty is meaningful here.
+  const src = ['# T', '', '![][full-ref]', '', '[full-ref]: ./a.png', ''].join('\n');
+  const findings = checkDocument(src).filter((f) => f.check === 'image-alt-missing');
+  assert.strictEqual(findings.length, 1);
+  assert.strictEqual(findings[0].suspected, true);
+});
+
+test('image-alt-missing is silent on collapsed/shortcut forms, whose alt IS the label text', () => {
+  // ![label][] and ![label] use the bracket content as BOTH the reference
+  // label and the alt -- structurally never empty when the label resolves.
+  const src = [
+    '# T', '', '![collapsed-ref][]', '![shortcut-ref]', '',
+    '[collapsed-ref]: ./a.png', '[shortcut-ref]: ./b.png', '',
+  ].join('\n');
+  const findings = checkDocument(src).filter((f) => f.check === 'image-alt-missing');
+  assert.strictEqual(findings.length, 0, JSON.stringify(findings, null, 2));
+});
+
+test('image-alt-missing is silent on a code span or fenced block (AST-native, not regex)', () => {
+  const src = '# T\n\n`![](x.png)` and:\n\n```\n![](x.png)\n```\n';
+  const findings = checkDocument(src);
+  assert.ok(!findings.some((f) => f.check === 'image-alt-missing'));
+});
+
+test('CONFIRMED checks never carry a suspected field (backward compat — old finding shape unchanged)', () => {
+  const findings = checkDocument('# T\n\n[dead](./gone.md)\n', { filePath: path.join(FIX, 'virtual.md') });
+  assert.strictEqual(findings.length, 1);
+  assert.strictEqual(findings[0].check, 'file-missing');
+  assert.ok(!('suspected' in findings[0]));
 });
 
 // ---------------------------------------------------------------------------
