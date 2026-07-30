@@ -2,7 +2,7 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
-## [Unreleased]
+## [0.3.0-beta.2] - 2026-07-30
 
 ### Added
 - **`doc-structure` catches images with no alt text (`image-alt-missing`).** Design credit to community contributor **mehvetero**, who first raised this gap (#11, #12) — this project's own contribution is the classification: the finding is **SUSPECTED-only, always, with no config toggle**. An empty `alt` is the WCAG 1.1.1-*correct* choice for a purely decorative image, so the engine can confirm alt is empty but never whether that is right; only a human can tell decorative from content. Covers `image` and every `imageReference` form (full/collapsed/shortcut), AST-native so a code span or fenced block showing `![](x)` as documentation stays silent, and whitespace-only alt counts as empty. The finding shape gained a backward-compatible `suspected` field — every existing CONFIRMED check omits it, unchanged. Message: "image has empty alt — intentional for purely decorative images (WCAG 1.1.1); a content image needs a description (MD045)".
