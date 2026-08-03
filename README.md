@@ -11,13 +11,13 @@
 ![status](https://img.shields.io/badge/status-beta-orange)
 
 ![Claude Code: validated](https://img.shields.io/badge/Claude_Code-validated-brightgreen)
-![Antigravity: wired](https://img.shields.io/badge/Antigravity-wired-yellow)
-![Cursor: manual](https://img.shields.io/badge/Cursor-manual-blue)
-![Codex: manual](https://img.shields.io/badge/Codex-manual-blue)
-![Gemini CLI: manual](https://img.shields.io/badge/Gemini_CLI-manual-blue)
-![Cline: manual](https://img.shields.io/badge/Cline-manual-blue)
-![Copilot: manual](https://img.shields.io/badge/Copilot-manual-blue)
-![claude.ai: manual](https://img.shields.io/badge/claude.ai-manual-blue)
+![Antigravity: works with](https://img.shields.io/badge/Antigravity-works_with-blue)
+![Cursor: works with](https://img.shields.io/badge/Cursor-works_with-blue)
+![Codex: works with](https://img.shields.io/badge/Codex-works_with-blue)
+![Gemini CLI: works with](https://img.shields.io/badge/Gemini_CLI-works_with-blue)
+![Cline: works with](https://img.shields.io/badge/Cline-works_with-blue)
+![Copilot: works with](https://img.shields.io/badge/Copilot-works_with-blue)
+![claude.ai: works with](https://img.shields.io/badge/claude.ai-works_with-blue)
 
 [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalLedger/releases)
 
@@ -65,9 +65,9 @@ This is the DOCS half of a pair: [CoalMine](https://github.com/HetCreep/CoalMine
 
 ## 🧭 Compatibility
 
-Cross-agent by design — the canaries are plain SKILL.md contracts and the engine is zero-dependency Node scripts any agent can run. The activation ladder is capability-keyed, never a platform table: **has lifecycle hooks** → wire the shipped session-start conductor (Claude Code — validated; Antigravity — wired via a ported adapter, live delivery not yet validated) and the canaries offer themselves at the right moment; **no hooks** → best-effort agent-driven (an always-loaded instruction can offer the right canary — probabilistic, not hook parity); **always** → manual (invoke `doc-structure`, `doc-grounding`, … or ask for a docs scan).
+Cross-agent by design — the canaries are plain SKILL.md contracts and the engine is zero-dependency Node scripts any agent can run. The activation ladder is capability-keyed, never a platform table: **has lifecycle hooks** → wire the shipped session-start conductor (Claude Code — validated; Antigravity — works with, via a ported adapter that is built and hermetically tested but has not yet run end-to-end live) and the canaries offer themselves at the right moment; **no hooks** → best-effort agent-driven (an always-loaded instruction can offer the right canary — probabilistic, not hook parity); **always** → manual (invoke `doc-structure`, `doc-grounding`, … or ask for a docs scan).
 
-Support tiers, honestly labeled: **Claude Code — validated** (live plugin, launched + dogfooded 2026-07-09) · **Antigravity — wired** (the conductor's offers ride AG 2.0's `PreInvocation` hook through a ported adapter, built and hermetically tested against the current AG contract — see Install for the wiring caveat) · **every other skill-reading platform — manual** (the file-copy install below suffices, because read/analyze canaries need only a platform that reads SKILL.md — but nothing has been run end-to-end there, so no higher claim). Gemini CLI is business-tier only (Standard/Enterprise — individual tiers ended 2026-06-18).
+Support tiers, honestly labeled — **`validated`** (a real end-to-end run has happened) or **`works with`** (built for it, not yet proven there): **Claude Code — validated** (live plugin, launched + dogfooded 2026-07-09) · **every other platform — works with** (Antigravity's conductor offers ride AG 2.0's `PreInvocation` hook through a ported adapter, built and hermetically tested against the current AG contract — see Install for the wiring caveat — but no live AG session has run it end-to-end yet; every other skill-reading platform needs only the file-copy install below, since read/analyze canaries need a platform that reads SKILL.md — none has been run end-to-end there either, so no higher claim exists anywhere but Claude Code). Gemini CLI is business-tier only (Standard/Enterprise — individual tiers ended 2026-06-18).
 
 ## 🚀 Install
 
@@ -80,13 +80,13 @@ claude plugin install coalledger@coalledger
 
 **Antigravity** — file-copy: copy the built skill folders from [`plugin/skills/`](plugin/skills) into `~/.gemini/config/skills/` (global) or `<workspace>/.agents/skills/` (project). Each folder is self-contained — `doc-structure` carries the AST engine beside itself in its own `lib/`, so nothing else has to travel with it. (Copy from `plugin/skills/`, not the repo's `skills/`: the latter holds the contracts only, without the engine.)
 
-**Auto conductor on AG (wired — live AG validation pending):** AG 2.0 shipped a real hook engine, so the canary offers can ride Antigravity's `PreInvocation` too, through [`hooks/ag-conductor.js`](hooks/ag-conductor.js) (requires its sibling [`hooks/coalledger-conductor.js`](hooks/coalledger-conductor.js) — one offer text for both platforms). The conductor is the one piece that needs more than a skill folder: copy `hooks/` **and** `scripts/lib/` side by side (the hooks resolve the shared config library at `../scripts/lib`), then copy [`platform-configs/hooks.json`](platform-configs/hooks.json) into place and replace `__COALLEDGER_DIR__` with the directory holding them. **Known caveat:** the wire location itself regressed on an AG update (2026-07-12 → 07-16) — the two previously-documented locations (global `~/.gemini/config/hooks.json`, project `<workspace>/.agents/hooks.json`) stopped executing, and the AG state dir moved — so re-derive the current hooks.json location from AG's own docs before wiring (the template carries the same note). Wiring at a dead path is inert-harmless: the adapter simply never runs, and manual canary invocation is unaffected either way. Once wired, the directive fires at most once per session; delivery into the agent is not yet live-validated. The self-update nudge is deliberately not ported (its payload is Claude-Code plugin machinery); on AG, update by re-copying.
+**Auto conductor on AG (works with — live AG validation pending):** AG 2.0 shipped a real hook engine, so the canary offers can ride Antigravity's `PreInvocation` too, through [`hooks/ag-conductor.js`](hooks/ag-conductor.js) (requires its sibling [`hooks/coalledger-conductor.js`](hooks/coalledger-conductor.js) — one offer text for both platforms). The conductor is the one piece that needs more than a skill folder: copy `hooks/` **and** `scripts/lib/` side by side (the hooks resolve the shared config library at `../scripts/lib`), then copy [`platform-configs/hooks.json`](platform-configs/hooks.json) into place and replace `__COALLEDGER_DIR__` with the directory holding them. **Known caveat:** the wire location itself regressed on an AG update (2026-07-12 → 07-16) — the two previously-documented locations (global `~/.gemini/config/hooks.json`, project `<workspace>/.agents/hooks.json`) stopped executing, and the AG state dir moved — so re-derive the current hooks.json location from AG's own docs before wiring (the template carries the same note). Wiring at a dead path is inert-harmless: the adapter simply never runs, and manual canary invocation is unaffected either way. Once wired, the directive fires at most once per session; delivery into the agent is not yet live-validated. The self-update nudge is deliberately not ported (its payload is Claude-Code plugin machinery); on AG, update by re-copying.
 
 **Other agents** — the same file-copy from `plugin/skills/` into your platform's skill directory. No `install.mjs` step — the canaries are plain SKILL.md contracts over the zero-dep engine.
 
 **claude.ai** — read/analyze skills (like CoalLedger's canaries) upload as a custom skill: ZIP one folder from `plugin/skills/` (already complete — `doc-structure` includes its engine) and add it in claude.ai's skill settings (paid plan with code execution on). Per-surface — an upload doesn't sync across surfaces.
 
-The conductor hook wires automatically on Claude Code (validated) and, once you complete the AG wiring above, on Antigravity (wired, pending live validation); every other surface runs the canaries **manually** (invoke `doc-structure`, `doc-grounding`, … or ask for a docs scan). No API keys, no network, no `npm install`.
+The conductor hook wires automatically on Claude Code (validated) and, once you complete the AG wiring above, on Antigravity (works with, pending live validation); every other surface runs the canaries **manually** (invoke `doc-structure`, `doc-grounding`, … or ask for a docs scan). No API keys, no network, no `npm install`.
 
 ## Commands
 
