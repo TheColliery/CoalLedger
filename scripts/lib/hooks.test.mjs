@@ -174,6 +174,21 @@ test('Stop emits the QUIET drift note when docs changed, MEMORY.md was not updat
   } finally { clean(home, tmp, proj); }
 });
 
+test('Stop drift note ROUTES the action (board #25): still names the fact, no longer commands a forbidden write', () => {
+  const { home, tmp, proj } = sandbox();
+  try {
+    withMemory(proj);
+    runHook(TRACK, trackPayload('D1b', path.join(proj, 'README.md'), proj), tmp, home, proj);
+    const r = runHook(STOP, stopPayload('D1b', proj), tmp, home, proj);
+    assertGraceful(r);
+    assert.ok(driftEmitted(r.stdout), `expected the quiet additionalContext note, got: ${r.stdout}`);
+    const out = JSON.parse(r.stdout);
+    const line = out.hookSpecificOutput.additionalContext;
+    assert.ok(line.includes('report the drift'), `expected the station-worker routing clause, got: ${line}`);
+    assert.ok(!line.includes('if this doc work is worth keeping, update the project MEMORY/status line before ending'), `the old unconditional imperative must be GONE, not just supplemented, got: ${line}`);
+  } finally { clean(home, tmp, proj); }
+});
+
 test('Stop is SILENT when MEMORY.md WAS updated this session (the satisfier clears the drift)', () => {
   const { home, tmp, proj } = sandbox();
   try {

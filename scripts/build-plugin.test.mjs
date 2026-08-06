@@ -48,3 +48,51 @@ test('checkDist fails loud in both directions: stale file and orphan', () => {
     assert.ok(drift.some((d) => d.includes('orphan top-level')), drift.join('; '));
   } finally { fs.rmSync(dist, { recursive: true, force: true }); }
 });
+
+test('checkDist is EOL-agnostic on TEXT_EXTS: a CRLF-only dist copy reads as in sync (board #47)', () => {
+  const dist = scratchDist();
+  try {
+    buildDist(dist);
+    const target = path.join(dist, 'commands', 'stats.md');
+    const lf = fs.readFileSync(target, 'utf8');
+    assert.ok(lf.includes('\n'), 'fixture must have multiple lines for a meaningful CRLF test');
+    fs.writeFileSync(target, lf.replace(/\n/g, '\r\n'));
+    const drift = checkDist(dist);
+    assert.ok(!drift.some((d) => d.includes('commands/stats.md') || d.includes('commands\\stats.md')), drift.join('; '));
+  } finally { fs.rmSync(dist, { recursive: true, force: true }); }
+});
+
+test('checkDist negative control: a LONE bare \\r (not followed by \\n) still causes a mismatch, never blanket-stripped', () => {
+  // Discriminating construction: INSERT a lone \r (never replace/delete a
+  // char) so that a WRONG blanket \r-strip would remove exactly that byte and
+  // reconstruct the untouched repo text -- a false MATCH. Only a strip scoped
+  // to \r\n PAIRS correctly leaves this lone \r in place and still sees a
+  // mismatch. A same-length replace (space -> \r) cannot discriminate the two
+  // algorithms: either strip strategy shortens the tampered side relative to
+  // the untouched original, so both would "pass" for the wrong reason.
+  const dist = scratchDist();
+  try {
+    buildDist(dist);
+    const target = path.join(dist, 'commands', 'stats.md');
+    const orig = fs.readFileSync(target, 'utf8');
+    assert.ok(orig.length > 1 && orig[1] !== '\n', 'fixture shape must allow inserting a \\r not followed by \\n');
+    const withLoneCr = orig.slice(0, 1) + '\r' + orig.slice(1); // insert, never replace
+    fs.writeFileSync(target, withLoneCr);
+    const drift = checkDist(dist);
+    assert.ok(drift.some((d) => d.includes('stale in plugin/') && (d.includes('commands/stats.md') || d.includes('commands\\stats.md'))), drift.join('; '));
+  } finally { fs.rmSync(dist, { recursive: true, force: true }); }
+});
+
+test('checkDist negative control: a REAL content edit under CRLF still fails loud, not just line endings', () => {
+  const dist = scratchDist();
+  try {
+    buildDist(dist);
+    const target = path.join(dist, 'commands', 'stats.md');
+    const lf = fs.readFileSync(target, 'utf8');
+    const tampered = lf.replace(/\n/g, '\r\n').replace(/---/, 'XXX');
+    assert.notStrictEqual(tampered, lf.replace(/\n/g, '\r\n'), 'the edit must actually change a character, not just line endings');
+    fs.writeFileSync(target, tampered);
+    const drift = checkDist(dist);
+    assert.ok(drift.some((d) => d.includes('stale in plugin/') && (d.includes('commands/stats.md') || d.includes('commands\\stats.md'))), drift.join('; '));
+  } finally { fs.rmSync(dist, { recursive: true, force: true }); }
+});

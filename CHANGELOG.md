@@ -2,6 +2,12 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.3.0-beta.3] - 2026-08-06
+
+### Fixed
+- **The docs memory-drift Stop advisory unconditionally COMMANDED "update MEMORY.md" — including to a production-line station worker forbidden by org law to write it.** The line now ROUTES instead: the session owner is told to update MEMORY.md before ending; a station worker who cannot write it is told to report the drift in their return instead. The drift signal itself is never lost — it still fires on the same conditions, only the requested action changed.
+- **`.claude-plugin/plugin.json`'s `description` never mentioned the docs memory-drift reminder**, and PRIVACY.md's "Local files only" bullet named only 2 of 5 real state files (the update-check stamp and the config), omitting the docs-drift session state (`.docs`/`.docmemmoved`) and the Antigravity conductor marker. The description now names the reminder explicitly as NOT a canary (no scan, no findings — 6+1 stays 6+1); PRIVACY.md's list is now complete — the same four write targets SECURITY.md's own Structural Safety enumeration names, plus the config file, which PRIVACY.md additionally covers because a user can read it (SECURITY.md's list is write targets only, and CoalLedger never writes its config).
+
 ## [0.3.0-beta.2] - 2026-07-30
 
 ### Added

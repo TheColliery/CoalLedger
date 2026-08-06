@@ -41,7 +41,14 @@ function lib(name) {
 // is model-facing, not shown verbatim). DISTINCT from CoalMine's CODE note (this
 // names DOCS) so a session that edited both code and docs gets two
 // non-redundant notes, one per axis.
-const DRIFT_LINE = '[CoalLedger] Docs memory-drift: documentation changed this session but no MEMORY.md update was recorded — if this doc work is worth keeping, update the project MEMORY/status line before ending. (Advisory; disable: docsDriftNudge=false in .coalledger.json)';
+//
+// ROUTED, not commanded (board #25): the hook cannot tell whether the
+// responder holding this Stop owns MEMORY.md or is a production-line station
+// worker forbidden to write it (org law — writes gate to the room-gate OUT
+// step). An unconditional "update MEMORY.md" either tells a station worker to
+// violate that law or reads as noise it correctly ignores. The line states the
+// fact (drift never lost) and branches the ACTION on who can act on it.
+const DRIFT_LINE = "[CoalLedger] Docs memory-drift: documentation changed this session but no MEMORY.md update was recorded. If you own this session's record, update MEMORY.md before ending; if you are a station worker who cannot write it, report the drift in your return instead. (Advisory; disable: docsDriftNudge=false in .coalledger.json)";
 
 // Clear the edit BATCH, never the session-long SATISFIER. CC's Stop fires per
 // RESPONSE (many per session), so deleting `.docmemmoved` here would forget a

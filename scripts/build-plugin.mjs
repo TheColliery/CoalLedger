@@ -55,6 +55,31 @@ export const GENERATED = new Map(
 
 const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 
+// TEXT_EXTS grounded in what actually ships: every extension found under
+// DIST_ITEMS today. Non-text/unlisted extensions stay strict byte-compare —
+// the mechanism must not silently normalize a future binary asset.
+const TEXT_EXTS = new Set(['.js', '.json', '.md', '.mjs']);
+
+// Byte-compare two files, EOL-agnostic on TEXT_EXTS only (board #47's
+// `.gitattributes` eol=lf can still leave a stale core.autocrlf checkout with
+// CRLF bytes for byte-identical content). Never a blanket \r strip -- a LONE
+// bare \r (not followed by \n) is real content, not a line-ending artifact,
+// and must still cause a mismatch.
+function filesMatch(a, b) {
+  const bufA = fs.readFileSync(a);
+  const bufB = fs.readFileSync(b);
+  if (bufA.compare(bufB) === 0) return true;
+  const ext = path.extname(a);
+  if (ext !== path.extname(b) || !TEXT_EXTS.has(ext)) return false;
+  // latin1, not utf8: utf8 maps every INVALID byte to U+FFFD, so two files
+  // differing only in invalid-UTF-8 bytes would decode to the SAME string and
+  // report a false match -- exactly the corruption class this gate exists to
+  // catch. latin1 is a lossless 1:1 byte<->char mapping (no byte class ever
+  // collapses); CRLF bytes normalize identically to utf8 for the ASCII range.
+  const crlfToLf = (buf) => buf.toString('latin1').replace(/\r\n/g, '\n');
+  return crlfToLf(bufA) === crlfToLf(bufB);
+}
+
 export function buildDist(distRoot = dist) {
   fs.rmSync(distRoot, { recursive: true, force: true });
   for (const rel of DIST_ITEMS) {
@@ -87,7 +112,7 @@ export function checkDist(distRoot = dist) {
     for (const rel of filesUnder(repo, item)) {
       const d = path.join(distRoot, rel);
       if (!fs.existsSync(d)) out.push(`missing in plugin/: ${rel}`);
-      else if (fs.readFileSync(path.join(repo, rel)).compare(fs.readFileSync(d)) !== 0) out.push(`stale in plugin/: ${rel}`);
+      else if (!filesMatch(path.join(repo, rel), d)) out.push(`stale in plugin/: ${rel}`);
     }
     for (const rel of filesUnder(distRoot, item)) {
       if (GENERATED.has(rel)) continue; // build output, byte-checked against its own source below
@@ -98,7 +123,7 @@ export function checkDist(distRoot = dist) {
   for (const [distRel, srcRel] of GENERATED) {
     const d = path.join(distRoot, distRel);
     if (!fs.existsSync(d)) out.push(`missing in plugin/ (generated from ${srcRel}): ${distRel}`);
-    else if (fs.readFileSync(path.join(repo, srcRel)).compare(fs.readFileSync(d)) !== 0) out.push(`stale in plugin/ (generated from ${srcRel}): ${distRel}`);
+    else if (!filesMatch(path.join(repo, srcRel), d)) out.push(`stale in plugin/ (generated from ${srcRel}): ${distRel}`);
   }
   const allowedTops = new Set(DIST_ITEMS.map((rel) => rel.split(path.sep)[0]));
   if (fs.existsSync(distRoot)) {
