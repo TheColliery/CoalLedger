@@ -7,10 +7,24 @@
 // (coalledger-<sid>.docs, written by the doc-tracker) but MEMORY.md has not been
 // updated at any point this session (no coalledger-<sid>.docmemmoved marker —
 // it deliberately OUTLIVES each batch, see cleanup) and the project uses the
-// MEMORY.md convention, emit ONE quiet model-context line via
-// hookSpecificOutput.additionalContext — no report, no severity table, no
-// skill-invoke, no fix menu, and it never blocks the stop (the SAME quiet
-// channel + JSON shape CoalMine's revamped drift note uses; one flock).
+// MEMORY.md convention, emit ONE quiet advisory line — no report, no severity
+// table, no skill-invoke, no fix menu, and it never blocks the stop (no
+// decision:block, ever).
+//
+// board #82 (2026-08-09): the emit is `systemMessage`, NOT
+// hookSpecificOutput.additionalContext — empirically proven that a Stop hook
+// returning a non-empty additionalContext forces Claude Code to run ONE MORE
+// agent turn to "digest" the injected context; under `-p --output-format
+// json` that extra turn REPLACES the real final `result` with whatever the
+// model says in reaction to the injected note (observed: a genuine answer
+// discarded, `result` came back empty). additionalContext on
+// SessionStart/UserPromptSubmit does NOT do this — the extra turn is
+// specific to the STOP event. A prior
+// version of this file used additionalContext here on the mistaken premise
+// that "never decision:block" meant "never disruptive" — it still forced a
+// second turn that stole the real result. systemMessage carries the same
+// text to the same surfaces (the session transcript, an interactive user)
+// without forcing that extra turn.
 // Off-switchable via docsDriftNudge=false.
 //
 // It is NOT a canary: it does no doc scan and produces no findings — just this
@@ -112,10 +126,12 @@ async function main() {
   try {
     const root = findProjectRoot(cwd);
     if (!fs.existsSync(base + '.docmemmoved') && fs.existsSync(path.join(root, 'MEMORY.md'))) {
-      // The quiet, non-blocking Stop channel (CC v2.1.15x+ — Stop/SubagentStop
-      // additionalContext). Same JSON shape as CoalMine's revamped drift note:
-      // never decision:block, never a fix menu.
-      out.hookSpecificOutput = { hookEventName: 'Stop', additionalContext: DRIFT_LINE };
+      // systemMessage, not hookSpecificOutput.additionalContext (board #82) —
+      // additionalContext on Stop forces an extra agent turn that eats the
+      // real result under -p --output-format json; systemMessage does not,
+      // and still surfaces (session transcript, interactive UI). Never
+      // decision:block, never a fix menu.
+      out.systemMessage = DRIFT_LINE;
     }
   } catch {}
 

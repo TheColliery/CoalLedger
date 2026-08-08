@@ -2,6 +2,11 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [Unreleased]
+
+### Fixed
+- **The docs memory-drift Stop advisory could silently discard a resident's real final answer under `-p --output-format json` (board #82).** The hook emitted the note via `hookSpecificOutput.additionalContext`, which — specifically on the Stop event, not on SessionStart/UserPromptSubmit — forces Claude Code to run one more agent turn to "digest" the injected context; under `-p --output-format json` that extra turn REPLACES the real final `result` with whatever the model says in reaction (observed: a genuine answer discarded, `result` came back empty). The hook now emits the identical text via `systemMessage` instead, which does not force that extra turn and still reaches the same surfaces (the session transcript, an interactive user). Firing conditions (coalledgerMode/disabledCanaries/docsDriftNudge gates, the MEMORY.md-update check) are unchanged.
+
 ## [0.3.0-beta.5] - 2026-08-09
 
 ### Added

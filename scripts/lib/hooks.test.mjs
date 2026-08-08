@@ -5,7 +5,7 @@
 //   (1) exit code 0 on every path (Phoenix #4);
 //   (2) stderr silent — stdout only on the sanctioned channel (Phoenix #13);
 //   (3) the expected state effect (.docs recorded, .docmemmoved satisfier, the
-//       quiet additionalContext emit, or nothing).
+//       quiet systemMessage emit, or nothing).
 //
 // The pair mirrors CoalMine's rot-canary-touch/-stop, reversed for DOCS:
 //   coalledger-doctrack.js  (PostToolUse) records DOC edits + the MEMORY.md satisfier
@@ -59,13 +59,16 @@ function assertGraceful(r) {
   assert.strictEqual(r.signal, null, 'hook must not be killed by a signal');
 }
 // Parse a Stop emit and answer "did it carry the quiet drift note?"
+// board #82: the note rides `systemMessage`, never hookSpecificOutput.
+// additionalContext — the latter forces an extra agent turn on Stop that
+// eats the real `result` under -p --output-format json. Assert both the
+// shape used and the shape's ABSENCE, so a future "simplification" back to
+// additionalContext fails loud here instead of shipping silently.
 function driftEmitted(stdout) {
   const out = JSON.parse((stdout || '{}').trim() || '{}');
   assert.ok(!('decision' in out), 'the docs-drift nudge is QUIET — never decision:block');
-  return !!(out.hookSpecificOutput
-    && out.hookSpecificOutput.hookEventName === 'Stop'
-    && typeof out.hookSpecificOutput.additionalContext === 'string'
-    && out.hookSpecificOutput.additionalContext.includes('Docs memory-drift'));
+  assert.ok(!('hookSpecificOutput' in out), 'board #82: additionalContext on Stop forces a phantom second agent turn — never emit it here');
+  return !!(typeof out.systemMessage === 'string' && out.systemMessage.includes('Docs memory-drift'));
 }
 
 // --------------------------------------------------------------------------
@@ -168,9 +171,26 @@ test('Stop emits the QUIET drift note when docs changed, MEMORY.md was not updat
     runHook(TRACK, trackPayload('D1', path.join(proj, 'README.md'), proj), tmp, home, proj);
     const r = runHook(STOP, stopPayload('D1', proj), tmp, home, proj);
     assertGraceful(r);
-    assert.ok(driftEmitted(r.stdout), `expected the quiet additionalContext note, got: ${r.stdout}`);
+    assert.ok(driftEmitted(r.stdout), `expected the quiet systemMessage note, got: ${r.stdout}`);
     // once-per-session: state cleaned up after the emit
     assert.strictEqual(fs.existsSync(path.join(tmp, 'coalledger-D1.docs')), false, 'state cleaned after emit');
+  } finally { clean(home, tmp, proj); }
+});
+
+test('Stop emits via systemMessage, never hookSpecificOutput.additionalContext (board #82 — the latter forces a second agent turn under -p and eats the real result)', () => {
+  const { home, tmp, proj } = sandbox();
+  try {
+    withMemory(proj);
+    runHook(TRACK, trackPayload('D1c', path.join(proj, 'README.md'), proj), tmp, home, proj);
+    const r = runHook(STOP, stopPayload('D1c', proj), tmp, home, proj);
+    assertGraceful(r);
+    const out = JSON.parse(r.stdout.trim());
+    // (a) the sanctioned advisory still fires — nothing was muted.
+    assert.strictEqual(typeof out.systemMessage, 'string', `systemMessage must be present, got: ${r.stdout}`);
+    assert.ok(out.systemMessage.length > 0, 'systemMessage must be non-empty');
+    // (b) the specific field proven to force the phantom second turn is gone.
+    assert.ok(!('hookSpecificOutput' in out), `hookSpecificOutput must be absent, got: ${r.stdout}`);
+    assert.ok(!('decision' in out), `decision must be absent, got: ${r.stdout}`);
   } finally { clean(home, tmp, proj); }
 });
 
@@ -181,9 +201,9 @@ test('Stop drift note ROUTES the action (board #25): still names the fact, no lo
     runHook(TRACK, trackPayload('D1b', path.join(proj, 'README.md'), proj), tmp, home, proj);
     const r = runHook(STOP, stopPayload('D1b', proj), tmp, home, proj);
     assertGraceful(r);
-    assert.ok(driftEmitted(r.stdout), `expected the quiet additionalContext note, got: ${r.stdout}`);
+    assert.ok(driftEmitted(r.stdout), `expected the quiet systemMessage note, got: ${r.stdout}`);
     const out = JSON.parse(r.stdout);
-    const line = out.hookSpecificOutput.additionalContext;
+    const line = out.systemMessage;
     assert.ok(line.includes('report the drift'), `expected the station-worker routing clause, got: ${line}`);
     assert.ok(!line.includes('if this doc work is worth keeping, update the project MEMORY/status line before ending'), `the old unconditional imperative must be GONE, not just supplemented, got: ${line}`);
   } finally { clean(home, tmp, proj); }
