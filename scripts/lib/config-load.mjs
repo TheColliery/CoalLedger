@@ -1,5 +1,8 @@
 // CoalLedger config path resolution — the flock-canonical cascade (global
-// ~/.claude/.coalledger.json overlaid by the nearest project .coalledger.json).
+// ~/.claude/.coalledger.json overlaid by the nearest project config). Per-
+// project config now lives under an agent dir (namespace campaign #69+#39,
+// owner-designated 2026-08-08) — see `projectConfigPath`'s own header for
+// the full read order and the LEGACY root-dotfile fallback it still honors.
 // The project walk STOPS AT HOME (an upward config search that doesn't stop at
 // home once escaped a HOME-overridden test sandbox into the real global config)
 // and compares PHYSICAL paths on both sides (macOS /var -> /private/var symlink:
@@ -26,21 +29,67 @@ export function physicalDir(p) {
   try { return fs.realpathSync(p); } catch { return path.resolve(p); }
 }
 
-// Walk up from startDir looking for `.coalledger.json` or `.git` (project root
-// marker); NEVER walk above `home` — stop there and fall back to startDir.
+// Fixed agent-dir search order (namespace campaign #69+#39, owner-designated
+// 2026-08-08) — shared by findProjectRoot's marker check below AND
+// projectConfigCandidates, so the two can never drift apart (DRY).
+const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
+
+// Walk up from startDir looking for a project-root marker (`.git`, the LEGACY
+// `.coalledger.json`, or a per-agent-dir config under AGENT_DIR_ORDER); NEVER
+// walk above `home` — stop there and fall back to startDir. The three
+// agent-dir markers were added by the namespace campaign alongside the
+// legacy dotfile: a project configured ONLY through the new shape (no
+// `.git`, and — since it migrated — no root `.coalledger.json` either) would
+// otherwise match nothing and fall through to the raw startDir fallback.
+// Adding a marker can only make the walk stop LOWER — a narrower anchor —
+// never higher; it never widens the search past what `.git`/the legacy file
+// already covers.
 export function findProjectRoot(startDir = process.cwd(), home = os.homedir()) {
   let dir = physicalDir(startDir);
   const homeAbs = physicalDir(home);
   while (true) {
-    if (fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, '.coalledger.json'))) return dir;
+    const hasAgentConfig = AGENT_DIR_ORDER.some((d) => fs.existsSync(path.join(dir, d, 'coal', 'coalledger.json')));
+    if (fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, '.coalledger.json')) || hasAgentConfig) return dir;
     if (dir === homeAbs) return startDir;
     const parent = path.dirname(dir);
     if (parent === dir) return startDir; // filesystem root reached
     dir = parent;
   }
 }
+// Namespace campaign (#69+#39, owner-designated 2026-08-08). Per-project
+// config lives under an agent dir, never bare at the project root any more.
+// THE READ ORDER IS A RAIL — identical wording in every room's readCfg
+// comment and README Configure section, one flock:
+//   1. <project>/.<the running agent's OWN dir>/coal/<skill>.json — the dir
+//      of the agent actually executing. loadMergedConfig takes no
+//      agent-identity parameter (cwd only) — the CC hook
+//      (hooks/coalledger-conductor.js) and the ported Antigravity adapter
+//      (hooks/ag-conductor.js) both call it identically, so there is no
+//      signal here to distinguish them; step 1 collapses onto the fixed
+//      `.claude` entry of step 2 below for every caller, not because only
+//      Claude Code can activate this room.
+//   2. Other known agent dirs, fixed order: `.claude` -> `.agents` ->
+//      `.gemini` (first FOUND wins).
+//   3. LEGACY: <project>/.<skill-dotfile>.json at the project root (today's
+//      shape) — read normally, no breakage for an existing user.
+// WRITE target = where the config was found; absent everywhere, the running
+// agent's own dir. Hooks never perform this move on a READ (Phoenix #5, no
+// side effects) — and CoalLedger has NO project-config WRITER anywhere in
+// this codebase to begin with (no configure.mjs, no consent-persistence
+// call): `.coalledger.json` (global or project) is hand-edited by the user,
+// never written by CoalLedger itself. So "move on write" has no code path to
+// hook here — this function is the READ side only, which is this room's
+// entire scope for the campaign.
+export function projectConfigCandidates(cwd = process.cwd(), home = os.homedir()) {
+  const root = findProjectRoot(cwd, home);
+  const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coalledger.json'));
+  candidates.push(path.join(root, '.coalledger.json')); // LEGACY, always last
+  return candidates;
+}
 export function projectConfigPath(cwd = process.cwd(), home = os.homedir()) {
-  return path.join(findProjectRoot(cwd, home), '.coalledger.json');
+  const candidates = projectConfigCandidates(cwd, home);
+  for (const c of candidates) if (fs.existsSync(c)) return c;
+  return candidates[0]; // nothing found anywhere -- own-dir is both the read and write target
 }
 
 function readJsonc(file) {

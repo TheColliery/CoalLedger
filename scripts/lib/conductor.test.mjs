@@ -35,6 +35,10 @@ function run(cwd, home) {
     timeout: 20000,
   });
 }
+// Namespace campaign (#69+#39, owner-designated 2026-08-08): the update-check
+// stamp's new home + the pre-campaign path it migrates from.
+function stampPath(home) { return path.join(home, '.claude', 'coal', 'coalledger', 'update-check'); }
+function oldStampPath(home) { return path.join(home, '.claude', '.coalledger-update-check'); }
 function writeProjCfg(proj, cfg) {
   fs.writeFileSync(path.join(proj, '.coalledger.json'), JSON.stringify(cfg), 'utf8');
 }
@@ -51,7 +55,7 @@ test('coalledgerMode off: fully silent (update scheduling included)', () => {
     const r = run(proj, home);
     assertGraceful(r);
     assert.strictEqual(r.stdout, '');
-    assert.strictEqual(fs.existsSync(path.join(home, '.claude', '.coalledger-update-check')), false, 'no stamp in off mode');
+    assert.strictEqual(fs.existsSync(stampPath(home)), false, 'no stamp in off mode');
   } finally { clean(home, proj); }
 });
 
@@ -68,7 +72,32 @@ test('default boot: all 6+1 canaries offered + update-due directive with the gol
     assert.ok(r.stdout.includes('question tool'), 'offers ride the agent question-box');
     assert.ok(r.stdout.includes('[self-update due]'));
     assert.ok(r.stdout.includes('never assume'), 'gold no-external-assumption wording');
-    assert.ok(fs.existsSync(path.join(home, '.claude', '.coalledger-update-check')), 'crash-safe stamp written');
+    assert.ok(fs.existsSync(stampPath(home)), 'crash-safe stamp written to the new namespace-campaign home');
+  } finally { clean(home, proj); }
+});
+
+test('update stamp: read-new-fallback-old — a recent OLD-path stamp still throttles (migration read)', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(oldStampPath(home), String(Date.now()));
+    const r = run(proj, home);
+    assertGraceful(r);
+    assert.ok(!r.stdout.includes('[self-update due]'), 'a recent OLD-path stamp still throttles the check');
+  } finally { clean(home, proj); }
+});
+
+test('update stamp: write-new-drop-old — a stale OLD-path stamp does not throttle, and gets migrated on write', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    const old = oldStampPath(home);
+    fs.writeFileSync(old, String(Date.now() - 999 * 24 * 60 * 60 * 1000)); // ancient, past any throttle window
+    const r = run(proj, home);
+    assertGraceful(r);
+    assert.ok(r.stdout.includes('[self-update due]'), 'a stale OLD-path stamp does not throttle -- due fires');
+    assert.ok(fs.existsSync(stampPath(home)), 'the new path now holds the value');
+    assert.strictEqual(fs.existsSync(old), false, 'the old path is deleted (no-old-version-leftover)');
   } finally { clean(home, proj); }
 });
 
@@ -166,7 +195,7 @@ test('updateMode off: canary offers inject, no update line, no stamp', () => {
     assertGraceful(r);
     assert.ok(r.stdout.includes('doc-structure'));
     assert.ok(!r.stdout.includes('[self-update due]'));
-    assert.strictEqual(fs.existsSync(path.join(home, '.claude', '.coalledger-update-check')), false);
+    assert.strictEqual(fs.existsSync(stampPath(home)), false);
   } finally { clean(home, proj); }
 });
 
@@ -229,7 +258,7 @@ test('AG: first PreInvocation emits ONE-line injectSteps/ephemeralMessage JSON w
     assert.ok(msg.includes('[CoalLedger] docs-health canary suite installed'));
     for (const c of ALL_CANARIES) assert.ok(msg.includes(`- ${c} (`), `${c} offered on AG`);
     assert.ok(!msg.includes('[self-update due]'), 'KIND 1 is not ported to AG');
-    assert.strictEqual(fs.existsSync(path.join(home, '.claude', '.coalledger-update-check')), false, 'no CC update stamp consumed on AG');
+    assert.strictEqual(fs.existsSync(stampPath(home)), false, 'no CC update stamp consumed on AG');
     assert.strictEqual(markerFiles(tmp).length, 1, 'once-per-session marker created');
   } finally { clean(home, proj, tmp); }
 });

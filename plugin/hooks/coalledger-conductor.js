@@ -57,16 +57,35 @@ function lib(name) {
 // shape): the HOOK only SCHEDULES via a throttled crash-safe stamp — written
 // BEFORE the directive prints so a crash never re-nags; no network ever. The
 // AGENT verifies + offers, consent-gated.
+//
+// Namespace campaign (#69+#39, owner-designated 2026-08-08): the stamp is
+// this room's ONE machine-global scratch state (verified: nothing else under
+// hooks/*.js writes outside os.tmpdir() or this one path) and moves to
+// ~/.claude/coal/coalledger/update-check, same shape as CoalWash's already-
+// shipped #39 (scripts/lib/caliper.mjs readUpdateStamp/writeUpdateStamp).
+// Read-new-fallback-old: try the new path, then the old root dotfile, so a
+// machine that checked recently under the old scheme doesn't immediately
+// re-check the moment this ships — but never write to the old path again.
+// Write-new-drop-old: write the new path, then delete the old one if it
+// exists (no-old-version-leftover). unlinkSync wrapped fail-silent per
+// hooks-safety.md Phoenix #4 (this is hook code).
 function updateDue(cfg, clampedRead) {
   try {
     if (clampedRead(cfg, 'updateMode') === 'off') return false;
     const days = clampedRead(cfg, 'updateCheckDays');
-    const stamp = path.join(os.homedir(), '.claude', '.coalledger-update-check');
+    const stamp = path.join(os.homedir(), '.claude', 'coal', 'coalledger', 'update-check');
+    const oldStamp = path.join(os.homedir(), '.claude', '.coalledger-update-check');
     let last = 0;
-    try { last = Number(String(fs.readFileSync(stamp, 'utf8')).trim()) || 0; } catch {}
+    try { last = Number(String(fs.readFileSync(stamp, 'utf8')).trim()) || 0; } catch {
+      try { last = Number(String(fs.readFileSync(oldStamp, 'utf8')).trim()) || 0; } catch {}
+    }
     const now = Date.now();
     if (last && now - last < days * DAY_MS) return false;
-    try { fs.mkdirSync(path.dirname(stamp), { recursive: true }); fs.writeFileSync(stamp, String(now)); } catch {}
+    try {
+      fs.mkdirSync(path.dirname(stamp), { recursive: true });
+      fs.writeFileSync(stamp, String(now));
+      try { fs.unlinkSync(oldStamp); } catch {} // best-effort, fail-silent
+    } catch {}
     return true;
   } catch { return false; }
 }

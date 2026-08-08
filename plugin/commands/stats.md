@@ -9,7 +9,7 @@ CoalLedger keeps no persistent findings store — this report is assembled from 
 - **Scans this session:** one row per canary run (canary · scope · tier Quick/Full · findings CONFIRMED/SUSPECTED · fixes applied via the choice-gated menu). No scans run → skip the table.
 - **Findings by severity:** totals across this session's scans (CRITICAL/HIGH/MEDIUM/LOW · CONFIRMED vs SUSPECTED). Severity was judged by context at report time — these are counts, not a re-grade.
 - **Suite state (from `.coalledger.json`, global + project merge):** `coalledgerMode` · `disabledCanaries` · `docLeak` gate · `severityFloor` · `quickVsFull` · `publicMode` — so the user sees which canaries can fire here and at what floor.
-- **Self-update:** last check stamp `~/.claude/.coalledger-update-check` (date, or "never") and the effective `updateMode`.
+- **Self-update:** last check stamp `~/.claude/coal/coalledger/update-check` (date, or "never") and the effective `updateMode`.
 
 Honest empty state: nothing scanned this session and no stamp → say exactly that in one line.
 

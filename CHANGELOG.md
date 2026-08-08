@@ -2,6 +2,11 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [Unreleased]
+
+### Added
+- **Per-project config now lives under an agent dir, never bare at the project root (namespace campaign #69+#39).** Read order, first found wins: `.claude/coal/coalledger.json` (the running agent's own dir — the config loader takes no agent-identity signal, so this always collapses onto `.claude` whether Claude Code or the ported Antigravity adapter is running) → other known agent dirs, `.agents/coal/coalledger.json` → `.gemini/coal/coalledger.json` → LEGACY: a root `.coalledger.json` (the pre-2026-08-08 shape), still read normally so an existing user's config keeps working — backward-compatible, nothing breaks. The machine-global self-update throttle stamp moved the same way, to `~/.claude/coal/coalledger/update-check`, reading an old `~/.claude/.coalledger-update-check` once as a migration fallback and then dropping it on the next write. The global config itself (`~/.claude/.coalledger.json`) is unchanged.
+
 ## [0.3.0-beta.4] - 2026-08-08
 
 ### Fixed

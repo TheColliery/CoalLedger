@@ -100,7 +100,7 @@ Slash commands are the Claude Code form. Everywhere else the canaries are invoke
 
 ## 🔧 Configure
 
-Every tool in the series supports two config levels — a global `~/.claude/.coalledger.json` and a per-project `.coalledger.json` override (project wins) — so a globally-installed skill can be tuned or **shut off per project** (`coalledgerMode: "off"` is the off-switch; a project can also disable single canaries or raise the severity floor instead) — a skill you don't need in a given project stops loading (and burning tokens) there. The keys:
+Every tool in the series supports two config levels — a global `~/.claude/.coalledger.json` and a per-project config, resolved in this order (first found wins): `.claude/coal/coalledger.json` (the running agent's own dir — the config loader takes no agent-identity signal, so this always collapses onto `.claude` regardless of whether Claude Code or the ported Antigravity adapter is running) → other known agent dirs, `.agents/coal/coalledger.json` → `.gemini/coal/coalledger.json` → LEGACY: a root `.coalledger.json` (the pre-2026-08-08 shape, still read, no breakage) — so a globally-installed skill can be tuned or **shut off per project** (`coalledgerMode: "off"` is the off-switch; a project can also disable single canaries or raise the severity floor instead) — a skill you don't need in a given project stops loading (and burning tokens) there. The keys:
 
 | Key | Default | What it does |
 |---|---|---|
