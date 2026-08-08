@@ -11,7 +11,7 @@ Answer in the USER'S language; keep technical terms, commands, paths, and check 
 Find places where the doc set disagrees with itself. Report CONFIRMED contradictions; park tensions in SUSPECTED.
 
 ## Parameters
-- **SCOPE:** a named doc set (default when given) | all docs touching a named topic | whole repo docs (confirm first if > 20 files).
+- **SCOPE:** a named doc set (default when given) | all docs touching a named topic | whole repo docs — `.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org` (confirm first if > 20 files).
 - **TIER:** semantic only — this canary is Full-tier (paid, always consent-gated). There is no meaningful mechanical layer: two sentences can contradict with zero textual overlap.
 
 ## What counts (three drift classes)
@@ -34,6 +34,8 @@ Adjudicating WHICH of two contradicting claims is true = doc-grounding (fetch/re
 | # | doc A (path:line) | doc B (path:line) | class | disagreement | severity |
 
 CONFIRMED table only; SUSPECTED (a tension that may be intended, e.g. an archive vs a live doc) as a separate list.
+
+**Reporting:** call `ReportFindings` when callable — the schema carries ONE `file`/`line` pair per finding, so `file`/`line` MUST be doc A's defect site; doc B's location is cited as `path:line` inside `summary`/`failure_scenario`, never a paraphrase — one contradiction is one finding, never split across two. An unresolvable line reports your best guess, named imprecise in the wrap-up, never dropped. Severity prefixed in `summary` (e.g. `[HIGH] …`) per the severity-by-context rule above, ranked most-severe first, SUSPECTED tensions as `verdict: PLAUSIBLE`; chat then carries only the wrap-up line (counts · SUSPECTED list · overflow past 32) + the fix menu, never a restatement. Not callable → the table above, unchanged. **No safe-fix class exists here** — every fix is a which-side-wins content decision, so an Apply-fixes click degrades to the Let-me-pick path below, never an auto-apply. After any fix round, re-report the same findings with `outcome: fixed`/`skipped`/`no_change_needed`.
 
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.

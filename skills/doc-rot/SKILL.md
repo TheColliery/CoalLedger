@@ -11,7 +11,7 @@ Answer in the USER'S language; keep technical terms, commands, paths, and check 
 Find doc content that time has invalidated. Report CONFIRMED rot; park the merely-old in SUSPECTED.
 
 ## Parameters
-- **SCOPE:** named files (default when given) | touched doc files this session | whole repo docs (confirm first if > 20 files).
+- **SCOPE:** named files (default when given) | touched doc files this session | whole repo docs — `.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org` (confirm first if > 20 files).
 - **TIER:** Quick = mechanical age-markers only (~free) · Full = semantic staleness judgment (paid). Default from `.coalledger.json` `quickVsFull`; Full is always a separate consent.
 
 ## Age-markers (mechanical layer — deterministic detection)
@@ -37,6 +37,8 @@ Whether a claim was EVER true is doc-grounding's job; formal verification of a h
 | # | path:line | marker | evidence (current state) | severity | fix |
 
 CONFIRMED table only; SUSPECTED (old-but-unproven) as a separate list, never the main table.
+
+**Reporting:** call `ReportFindings` when callable — `file`/`line` MUST be the marker's own line, never a paraphrase; an unresolvable line reports your best guess, named imprecise in the wrap-up, never dropped. Severity prefixed in `summary` (e.g. `[HIGH] …`) per the severity-by-context rule above, ranked most-severe first, SUSPECTED (old-but-unproven) as `verdict: PLAUSIBLE`; chat then carries only the wrap-up line (counts · SUSPECTED list · overflow past 32) + the fix menu, never a restatement. Not callable → the table above, unchanged. An Apply-fixes click = consent to the Apply-safe-fixes class below (unambiguous current-value updates only), composing with — never bypassing — Fix mode. After any fix round, re-report the same findings with `outcome: fixed`/`skipped`/`no_change_needed`.
 
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.

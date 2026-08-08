@@ -2,6 +2,12 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.3.0-beta.4] - 2026-08-08
+
+### Fixed
+- **All 7 canaries now wire Claude Code's `ReportFindings` panel when it's callable (board #68)** — severity prefixed in `summary` (`[HIGH] …`), SUSPECTED as `verdict: PLAUSIBLE` (doc-leak: every finding, no exception — it has no CONFIRMED tier), ranked most-severe first, chat carries only a wrap-up line + the fix menu, never a restatement. Not callable → the existing full text table, unchanged; no host detection, failure IS the fallback. An Apply-fixes click routes to each skill's own existing safe-fix tier where one exists (doc-structure, doc-grounding, doc-rot, doc-quality); the three skills with no mechanical safe tier (doc-standard, doc-consistency, doc-leak) degrade the click to their existing pick/draft/propose path instead of inventing an auto-apply that was never safe. After any fix round, the same findings re-report with `outcome: fixed`/`skipped`/`no_change_needed` — no new fix-mode behavior, only how it's surfaced.
+- **The 6 semantic canaries' "whole repo docs" SCOPE default was a vague phrase; doc-structure's default silently missed `.mdx`/`.markdown` (board #50).** Grounded into the room's own already-shipped `DOC_EXTS` list (`hooks/coalledger-doctrack.js`): the 6 semantic canaries now default whole-repo scope to the full 8-extension set (`.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org`); doc-structure narrows to the Markdown-family subset (`.md`/`.mdx`/`.markdown`) since its engine is a CommonMark+GFM parser and cannot meaningfully read the other five dialects. Named/touched-files scope is untouched.
+
 ## [0.3.0-beta.3] - 2026-08-06
 
 ### Fixed

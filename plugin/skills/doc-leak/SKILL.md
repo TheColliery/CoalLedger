@@ -14,7 +14,7 @@ Find prose that may cross the doc's audience boundary. EVERYTHING this canary re
 Runs only when `.coalledger.json` `docLeak` is `true` (the default). A project whose docs never leave the machine sets it `false` and this canary stays silent. `publicMode: true` marks the project's docs as public-facing and raises the stakes of every finding.
 
 ## Parameters
-- **SCOPE:** named files (default when given) | docs about to be published/committed | whole repo public-facing docs (confirm first if > 20 files).
+- **SCOPE:** named files (default when given) | docs about to be published/committed | whole repo public-facing docs — `.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org` (confirm first if > 20 files).
 - **TIER:** semantic only — Full-tier (paid, always consent-gated). Judging "does this belong in front of this audience" is judgment, not pattern-matching.
 
 ## What it hunts (prose-level, past the token scanners)
@@ -39,6 +39,8 @@ Whether the doc's CLAIMS are right is doc-grounding; this canary only asks "shou
 | # | path:line | class | excerpt (redact the sensitive part) | stake if private | suggested action |
 
 All findings SUSPECTED. Redact within the report itself — a leak report must not re-leak.
+
+**Reporting:** call `ReportFindings` when callable — `file`/`line` MUST be the defect site (`summary`/`failure_scenario` carry the redacted excerpt, never the raw sensitive text); an unresolvable line reports your best guess, named imprecise in the wrap-up, never dropped. Severity prefixed in `summary` (e.g. `[HIGH] …`) per the stake-if-private rule above, ranked most-severe first, **every finding as `verdict: PLAUSIBLE`** — doc-leak has no CONFIRMED tier, full stop, no conditional; chat then carries only the wrap-up line (counts · overflow past 32) + the fix menu, never a restatement. Not callable → the table above, unchanged. **No safe-fix class exists here** — every redaction is a content decision, so an Apply-fixes click degrades to the Let-me-pick / propose-redactions path below, never an auto-apply. After any fix round, re-report the same findings with `outcome: fixed`/`skipped`/`no_change_needed`.
 
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc — every redaction is a content decision.

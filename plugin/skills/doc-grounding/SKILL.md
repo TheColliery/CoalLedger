@@ -11,7 +11,7 @@ Answer in the USER'S language; keep technical terms, commands, paths, and check 
 Verify that a doc's claims match their source of truth. Report CONFIRMED mismatches only; never assert what you could not verify.
 
 ## Parameters
-- **SCOPE:** named files (default when given) | touched doc files this session | whole repo docs (confirm first if > 20 files).
+- **SCOPE:** named files (default when given) | touched doc files this session | whole repo docs — `.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org` (confirm first if > 20 files).
 - **TIER:** Quick = mechanical recompute only (~free, deterministic) · Full = semantic claim-by-claim verification (paid). Default from `.coalledger.json` `quickVsFull`; Full is always a separate consent.
 
 ## Source of truth (general — pick per claim, never assume one kind)
@@ -35,6 +35,8 @@ This canary verifies only what it can FETCH or RECOMPUTE. A claim needing formal
 | # | path:line | claim | source checked | verdict | severity | fix |
 
 CONFIRMED table only; `⚠️ unverified` and SUSPECTED go to separate lists, never the main table.
+
+**Reporting:** call `ReportFindings` when callable — `file`/`line` MUST be the claim's own line, never a paraphrase; an unresolvable line reports your best guess, named imprecise in the wrap-up, never dropped. Severity prefixed in `summary` (e.g. `[HIGH] …`) per the severity-by-context rule above, ranked most-severe first, `⚠️ unverified` claims AND SUSPECTED findings both report as `verdict: PLAUSIBLE` (Output's own two non-CONFIRMED lists, same non-CONFIRMED shape); chat then carries only the wrap-up line (counts · unverified + SUSPECTED lists · overflow past 32) + the fix menu, never a restatement. Not callable → the table above, unchanged. An Apply-fixes click = consent to the Apply-safe-fixes class below (only source-unambiguous corrections), composing with — never bypassing — Fix mode. After any fix round, re-report the same findings with `outcome: fixed`/`skipped`/`no_change_needed`.
 
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.

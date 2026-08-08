@@ -11,7 +11,7 @@ Answer in the USER'S language; keep technical terms, commands, paths, and check 
 Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on request.
 
 ## Parameters
-- **SCOPE:** named files (default when given) | touched doc files this session | whole repo `**/*.md` (confirm first if > 50 files).
+- **SCOPE:** named files (default when given) | touched doc files this session | whole repo, Markdown-family only (`.md`/`.mdx`/`.markdown` — the engine is a CommonMark+GFM parser, not a dialect it doesn't speak; confirm first if > 50 files).
 
 ## Method (the code detects, you judge)
 1. **Run the engine** — it ships INSIDE this skill folder at `./lib/`, so the skill works even when it travels alone. Your context carries this skill's **base directory** — substitute it for `<skill base dir>` and run exactly:
@@ -45,6 +45,8 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
 | # | path:line | check | severity | finding | fix |
 
 Then: SUSPECTED list · counts + top 3 to fix.
+
+**Reporting:** call `ReportFindings` when callable — `file`/`line` is already the defect site by construction (the AST engine is line-accurate); an unresolvable line reports your best guess, named imprecise in the wrap-up, never dropped. Severity prefixed in `summary` (e.g. `[HIGH] …`) per the table above, ranked most-severe first, SUSPECTED as `verdict: PLAUSIBLE`; chat then carries only the wrap-up line (counts · SUSPECTED list · overflow past 32) + the fix menu, never a restatement. Not callable → the table above, unchanged. An Apply-fixes click = consent to the Apply-safe-fixes class below (mechanical, fully reversible), composing with — never bypassing — Fix mode. After any fix round, re-report the same findings with `outcome: fixed`/`skipped`/`no_change_needed`.
 
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
