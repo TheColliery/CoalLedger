@@ -129,6 +129,34 @@ try {
   else fail('doc-structure must invoke ./lib/md-checks.mjs — a <plugin root>/ or ../ path breaks the skill when the folder travels alone');
 } catch (e) { fail(`doc-structure engine wiring: ${e.message}`); }
 
+// board #64: this cap lived in the skills/commands FRONTMATTER checks only, so
+// .claude-plugin/plugin.json's own description field could silently exceed 1024 —
+// CoalLedger shipped one at 1067 chars before a human eye caught it (since
+// tightened to 1019/1024 by hand at board #59, but that fix predated any
+// automated check). plugin.json is plain JSON, not YAML frontmatter, so this
+// reads the field directly rather than through frontmatterField; DESC_CAP is
+// the same constant defined above, never redefined. A truthy NON-STRING
+// description (a number, an object, an array) fails loud instead of silently
+// stringifying to length 0 and passing.
+console.log('description length cap (plugin.json):');
+{
+  const pluginJsonPath = path.join(repo, '.claude-plugin', 'plugin.json');
+  try {
+    let raw = fs.readFileSync(pluginJsonPath, 'utf8');
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1); // BOM-strip, same idiom as the factory-config read below
+    const pj = JSON.parse(raw);
+    if (pj.description === undefined || pj.description === null || pj.description === '') {
+      fail('.claude-plugin/plugin.json: description missing');
+    } else if (typeof pj.description !== 'string') {
+      fail(`.claude-plugin/plugin.json: description is not a string (got ${typeof pj.description})`);
+    } else if (pj.description.length > DESC_CAP) {
+      fail(`.claude-plugin/plugin.json: description ${pj.description.length} chars exceeds the ${DESC_CAP}-char cap`);
+    } else {
+      ok(`.claude-plugin/plugin.json: ${pj.description.length} chars (cap ${DESC_CAP})`);
+    }
+  } catch (e) { fail(`.claude-plugin/plugin.json description check: ${e.message}`); }
+}
+
 console.log('version pins (.github issue templates):');
 try {
   const pj = JSON.parse(fs.readFileSync(path.join(repo, '.claude-plugin', 'plugin.json'), 'utf8'));
