@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { parseJsonc } from './jsonc.mjs';
+import { CONFIG_SCHEMA } from './config-schema.mjs';
 
 export function claudeBaseDir(home = os.homedir()) {
   const c = process.env.CLAUDE_CONFIG_DIR;
@@ -155,23 +156,69 @@ const SAFER_ENUM = {
   docLeak: ['false', 'true'], // boolean gate = enum of two; String()+toLowerCase below makes it work unchanged
 };
 const SAFER_UNION = ['disabledCanaries'];
+const SCHEMA_DEFAULT = Object.fromEntries(CONFIG_SCHEMA.map((s) => [s.key, s.def]));
 
 export function mergeSafety(global, project) {
   const out = { ...global, ...project };
   for (const [key, order] of Object.entries(SAFER_ENUM)) {
-    // Constrain only against an EXPLICIT global choice: a global sitting on the
-    // factory default (key absent) leaves the project free to set anything.
-    if (global[key] === undefined || project[key] === undefined) continue;
+    if (project[key] === undefined) continue; // nothing to clamp
+    // board #111: an ABSENT global is its schema default, never "no preference
+    // to defend" (hooks-safety.md §9) — a comment defending the old `continue`
+    // was part of the hole it defended. Per-key effect is NOT uniform: updateMode's
+    // default ('ask', index 2 of 4) sits BELOW its enum's loudest ('auto'), so this
+    // is the real bite — a cloned project can no longer reach 'auto' unclamped when
+    // no global exists anywhere. coalledgerMode/docLeak's defaults ('auto' / true)
+    // already SIT at their own enum's ceiling, so substituting them here changes no
+    // observable output for those two — the fix is still required (closes the
+    // mechanism's own hole structurally, holds for any future default change) but
+    // has no live bite today for those two keys.
+    const effectiveGlobal = global[key] !== undefined ? global[key] : SCHEMA_DEFAULT[key];
     // CASE-FOLD to match the schema's case-insensitive enums (clampedRead
     // lowercases). Comparing raw case let a project 'AUTO'/'Off' miss the
     // lookup (indexOf -> -1) and fall through to the overlay, re-enabling a
     // globally-off skill — CoalWash paid for this one (H5).
-    const gi = order.indexOf(String(global[key]).toLowerCase());
+    let gi = order.indexOf(String(effectiveGlobal).toLowerCase());
+    // board #111 R2 (INSPECT F1/F3/F5, ported from CoalWash's K1 fix,
+    // scripts/lib/config-load.mjs:822-848 — narrowed to this room's simpler
+    // model: readJsonc already collapses a corrupt global file to {} exactly
+    // like an absent one, so no separate "whole file unreadable" state is
+    // needed here). Leaving `gi === -1 || pi === -1` as a bare `continue` (the
+    // old shape) let the RAW junk value ride into `out[key]` for
+    // `clampedRead` to resolve downstream to the SCHEMA DEFAULT, never to the
+    // global the user actually set — a project could defeat an EXPLICIT
+    // global (`coalledgerMode: 'off'`) with a single typo (`'yes'`, null,
+    // `' auto '`), no escalation attempt required. Fixed: an invalid/drifted
+    // effective-global value falls back to its schema default's own index,
+    // then to 0 (safest) as the unreachable-by-construction last resort — the
+    // FALLBACK flag below is what tells the store step this branch, not the
+    // user's own raw spelling, decided the outcome.
+    let giFromFallback = false;
+    if (gi === -1) { gi = order.indexOf(String(SCHEMA_DEFAULT[key]).toLowerCase()); giFromFallback = true; }
+    if (gi === -1) { gi = 0; giFromFallback = true; }
+    // CASE-FOLD to match the schema's case-insensitive enums (clampedRead
+    // lowercases). Comparing raw case let a project 'AUTO'/'Off' miss the
+    // lookup (indexOf -> -1) and fall through to the overlay, re-enabling a
+    // globally-off skill — CoalWash paid for this one (H5).
     const pi = order.indexOf(String(project[key]).toLowerCase());
-    if (gi === -1 || pi === -1) continue; // genuinely unknown value: leave the overlay (clampedRead clamps downstream)
-    out[key] = pi <= gi ? project[key] : global[key]; // project may not move PAST global toward the louder end
+    if (pi !== -1 && pi <= gi) {
+      out[key] = project[key]; // valid project value at or below the ceiling -> raw spelling preserved (unchanged from before this fix)
+    } else if (giFromFallback) {
+      // an invalid PROJECT value gets NO say (junk treated as absent) *and*
+      // gi itself came from a fallback (the effective global was itself
+      // invalid/absent-of-a-valid-member) — store the CANONICAL (order[],
+      // lowercase) value here, never a raw invalid spelling: the fallback
+      // value has no meaningful "user's own casing" to preserve.
+      out[key] = order[gi];
+    } else {
+      out[key] = effectiveGlobal; // project loses to a genuinely explicit, valid global -> raw spelling preserved (unchanged from before this fix)
+    }
   }
   for (const key of SAFER_UNION) {
+    // PRECONDITION for any key added here: its schema default must be the
+    // EMPTY array (board #111 F6) — an absent global is read as `[]` by the
+    // fallthrough below (nothing to union with), so a non-empty default would
+    // silently under-protect exactly like the SAFER_ENUM hole this board
+    // fixed. `disabledCanaries`'s default is `[]` (config-schema.mjs), holds.
     if (!Array.isArray(global[key]) || !Array.isArray(project[key])) continue;
     out[key] = [...new Set([...global[key], ...project[key]])]; // a project may add, never remove
   }

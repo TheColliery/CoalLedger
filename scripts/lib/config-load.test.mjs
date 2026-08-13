@@ -247,11 +247,22 @@ test('clamp: disabledCanaries UNIONs — a project cannot re-enable what global 
   } finally { clean(home, proj); }
 });
 
-test('clamp: an EXPLICIT global is required — with no global key the project is free', () => {
+test('clamp: an ABSENT global substitutes the schema default as the clamp ceiling (board #111)', () => {
   const { home, proj } = sandbox();
   try {
-    assert.strictEqual(cascade(home, proj, {}, { coalledgerMode: 'auto' }).coalledgerMode, 'auto');
-    assert.strictEqual(cascade(home, proj, {}, { updateMode: 'auto' }).updateMode, 'auto');
+    // updateMode's schema default is 'ask' (index 2 of 4, BELOW the enum's
+    // loudest 'auto') — the real bite: a cloned project can no longer reach
+    // 'auto' unclamped just because no global config exists anywhere.
+    assert.strictEqual(cascade(home, proj, {}, { updateMode: 'auto' }).updateMode, 'ask', 'no global -> clamps to schema default, not free');
+    // At or below the schema default, no clamp is needed — the project value
+    // passes through untouched (this fix only stops UPWARD movement).
+    assert.strictEqual(cascade(home, proj, {}, { updateMode: 'remind' }).updateMode, 'remind', 'below the default -> passes through');
+    // coalledgerMode's schema default is 'auto', already the CEILING of its own
+    // enum (['off','manual','auto']) — substituting it as the effective global
+    // still lets the project reach 'auto' with no global present. Same
+    // observable result as before this fix for this one key; the mechanism is
+    // still correct (see mergeSafety's own comment for why).
+    assert.strictEqual(cascade(home, proj, {}, { coalledgerMode: 'auto' }).coalledgerMode, 'auto', 'default already at the ceiling -> no live change for this key');
   } finally { clean(home, proj); }
 });
 
@@ -263,7 +274,7 @@ test('clamp: docLeak is a BOOLEAN GATE — a project cannot re-enable a globally
     // suppresses the same offer, so guarding one without the other was arbitrary.
     assert.strictEqual(cascade(home, proj, { docLeak: false }, { docLeak: true }).docLeak, false);
     assert.strictEqual(cascade(home, proj, { docLeak: true }, { docLeak: false }).docLeak, false, 'quietening still allowed');
-    assert.strictEqual(cascade(home, proj, {}, { docLeak: true }).docLeak, true, 'no explicit global -> project free');
+    assert.strictEqual(cascade(home, proj, {}, { docLeak: true }).docLeak, true, 'schema default IS true (the ceiling) -> nothing in the enum sits above it, not "free" (board #111)');
   } finally { clean(home, proj); }
 });
 
@@ -292,10 +303,33 @@ test('clamp: non-consent keys stay PLAIN project-wins (no over-clamping)', () =>
   } finally { clean(home, proj); }
 });
 
-test('clamp: a genuinely unknown enum value falls through to the overlay (schema clamps downstream)', () => {
+test('clamp: an invalid PROJECT value gets NO say — it does not defeat an explicit global (board #111 F1, INSPECT-found)', () => {
   const { home, proj } = sandbox();
   try {
-    assert.strictEqual(cascade(home, proj, { updateMode: 'off' }, { updateMode: 'banana' }).updateMode, 'banana');
+    // the old shape left the raw junk in place for clampedRead to resolve
+    // downstream to the SCHEMA DEFAULT ('auto'/'ask'/true), never to the
+    // global the user actually set — a single typo defeated an explicit
+    // 'off' with no escalation attempt required. Confirmed via `cascade`
+    // directly (mergeSafety's own output), not just via clampedRead, so a
+    // future consumer that skips clampedRead still sees the clamp hold.
+    assert.strictEqual(cascade(home, proj, { coalledgerMode: 'off' }, { coalledgerMode: 'yes' }).coalledgerMode, 'off');
+    assert.strictEqual(cascade(home, proj, { docLeak: false }, { docLeak: 'yes' }).docLeak, false);
+    assert.strictEqual(cascade(home, proj, { docLeak: false }, { docLeak: 1 }).docLeak, false);
+    assert.strictEqual(cascade(home, proj, { updateMode: 'off' }, { updateMode: 'banana' }).updateMode, 'off');
+    assert.strictEqual(cascade(home, proj, { updateMode: 'off' }, { updateMode: ' auto ' }).updateMode, 'off');
+    assert.strictEqual(cascade(home, proj, { updateMode: 'off' }, { updateMode: null }).updateMode, 'off');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: an invalid GLOBAL value falls back to the schema default, then to the safest index (board #111 F3/F5, INSPECT-found)', () => {
+  const { home, proj } = sandbox();
+  try {
+    // updateMode default is 'ask' (index 2 of 4) -- a typo'd global can no
+    // longer be silently more permissive than the schema default lets it be.
+    assert.strictEqual(cascade(home, proj, { updateMode: 'of' }, { updateMode: 'auto' }).updateMode, 'ask');
+    // below the fallback ceiling still passes through -- the fallback caps,
+    // it does not override a project value that was never trying to escalate.
+    assert.strictEqual(cascade(home, proj, { updateMode: 'of' }, { updateMode: 'off' }).updateMode, 'off');
   } finally { clean(home, proj); }
 });
 
@@ -307,8 +341,10 @@ test('clamp: a genuinely unknown enum value falls through to the overlay (schema
 // (candidate-independence claimed but demonstrated through only one path) —
 // each of these 3 paths runs in its OWN sandbox, not the same path asserted
 // twice. Both the explicit-global branch AND the missing-global-key branch
-// (config-load.mjs:112-115, "a global on its factory default leaves the
-// project free") are covered for every path.
+// (see mergeSafety's own schema-default-substitution comment, board #111 —
+// NOT cited by line number here: a same-file citation rots on the very edit
+// that writes it, per this room's own 2026-07-30 Readiness-round lesson) are
+// covered for every path.
 // --------------------------------------------------------------------------
 
 function cascadeVia(home, proj, projectRelPath, globalCfg, projectCfg) {
@@ -339,14 +375,27 @@ test('clamp: safer-value-wins is candidate-path-independent — explicit global 
   }
 });
 
-test('clamp: safer-value-wins is candidate-path-independent — a MISSING global key leaves the project free via EVERY candidate (:112-115)', () => {
+test('clamp: safer-value-wins is candidate-path-independent — a MISSING global substitutes the schema default via EVERY candidate (coalledgerMode: no-op case, default already at the ceiling)', () => {
   for (const rel of CANDIDATE_PATHS) {
     const { home, proj } = sandbox();
     try {
       assert.strictEqual(
         cascadeVia(home, proj, rel, {}, { coalledgerMode: 'auto' }).coalledgerMode,
         'auto',
-        `no explicit global -> project free via ${rel}`,
+        `default already at the ceiling -> no live change via ${rel}`,
+      );
+    } finally { clean(home, proj); }
+  }
+});
+
+test('clamp: safer-value-wins is candidate-path-independent — a MISSING global clamps updateMode to its schema default via EVERY candidate (board #111, the case with real bite)', () => {
+  for (const rel of CANDIDATE_PATHS) {
+    const { home, proj } = sandbox();
+    try {
+      assert.strictEqual(
+        cascadeVia(home, proj, rel, {}, { updateMode: 'auto' }).updateMode,
+        'ask',
+        `no global -> clamps to schema default 'ask', not free, via ${rel}`,
       );
     } finally { clean(home, proj); }
   }
