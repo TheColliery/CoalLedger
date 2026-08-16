@@ -13,12 +13,20 @@ on:
       - 'v*'
   workflow_dispatch: {} # board #99 findings-back: manual re-run against a tag ref whose push-triggered run already failed
 
+# Minimal top-level token (Scorecard Token-Permissions best practice, board #117
+# CLASS A1 -- the top-level `contents: write` this file inherited from CoalMine's
+# exemplar granted write to every job in the file, not just the one that needs
+# it); only the job that creates the Release and uploads assets escalates. Same
+# idiom as dependabot-auto-merge.yml in this repo -- match it, don't invent a
+# second one.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-zips:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # only this job creates the Release and uploads assets
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
