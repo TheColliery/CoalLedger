@@ -19,6 +19,9 @@ const TESTS = [
   'scripts/lib/md-checks.test.mjs',
   'scripts/lib/conductor.test.mjs',
   'scripts/lib/hooks.test.mjs',
+  'scripts/lib/desc-cap.test.mjs',
+  'scripts/lib/claude-ai-trim.test.mjs',
+  'scripts/lib/build-claude-ai-zips.test.mjs',
   'scripts/build-plugin.test.mjs',
   'scripts/verify.test.mjs',
 ];

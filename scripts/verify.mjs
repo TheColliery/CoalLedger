@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CONFIG_SCHEMA, validateConfig } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
+import { DESC_CAP, frontmatterField } from './lib/desc-cap.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let fails = 0;
@@ -19,6 +20,7 @@ const fail = (m) => { console.log(`  FAIL ${m}`); fails++; };
 const LIBS = [
   'md-ast.mjs', 'md-checks.mjs',
   'config-schema.mjs', 'config-load.mjs', 'jsonc.mjs',
+  'desc-cap.mjs', 'claude-ai-trim.mjs', // board #40
 ];
 
 // The full 6+1 canary set (blueprint §1 + §8) — every entry must ship a SKILL.md.
@@ -68,25 +70,8 @@ try {
   else fail('marketplace entry sets a version — remove it (plugin.json is the only version home)');
 } catch (e) { fail(`marketplace.json: ${e.message}`); }
 
-// Skill-listing description cap: gate at 1024 = cross-platform-safe (agentskills.io / agnix);
-// CC's own listing truncation is 1536 chars combined description+when_to_use
-// (code.claude.com/docs/en/skills, verified 2026-07-16). USER standard 2026-07-16: never exceed.
-const DESC_CAP = 1024;
-function frontmatterField(text, key) {
-  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!m) return null;
-  const lines = m[1].split(/\r?\n/);
-  const i = lines.findIndex((l) => l.startsWith(key + ':'));
-  if (i === -1) return null;
-  let v = lines[i].slice(key.length + 1).trim();
-  if (/^[>|][-+]?$/.test(v)) {
-    const parts = [];
-    for (let j = i + 1; j < lines.length && /^\s+\S/.test(lines[j]); j++) parts.push(lines[j].trim());
-    return parts.join(' ');
-  }
-  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
-  return v;
-}
+// Skill-listing description cap + frontmatterField: shared with build-claude-ai-zips.mjs,
+// board #40 — see scripts/lib/desc-cap.mjs for the cap rationale and parser detail.
 
 console.log('skills (frontmatter contract, all 6+1):');
 for (const name of SKILLS) {

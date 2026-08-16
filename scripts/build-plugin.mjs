@@ -13,7 +13,10 @@
 // engine from there — it runs its OWN self-contained copy at
 // `skills/doc-structure/lib/`, generated below (see GENERATED). Tests are
 // filtered out of the dist; fixtures live under scripts/fixtures/ (outside
-// every DIST_ITEM) so they never ship.
+// every DIST_ITEM) so they never ship. Board #40 fixback: build-time-only
+// libs (desc-cap.mjs, claude-ai-trim.mjs — consumed only by verify.mjs and
+// build-claude-ai-zips.mjs, neither of which ships) are filtered out the
+// same way, per-file (BUILD_ONLY_LIB_NAMES below), not by directory.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -55,6 +58,19 @@ export const GENERATED = new Map(
 
 const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 
+// board #40 fixback (INSPECT F2): unlike every other file under scripts/lib/,
+// these two exist ONLY for build-time tooling (verify.mjs's own frontmatter
+// gate, build-claude-ai-zips.mjs) -- no hook or skill imports them at
+// runtime, so the wholesale scripts/lib DIST_ITEM copy (see the header
+// comment's own stated reason: "the hooks/conductor and the Stop drift hook
+// import those modules at runtime") was shipping dead bytes into every
+// install. Matched by basename, not full path, since fs.cpSync's filter
+// callback receives absolute paths while checkDist's own filesUnder walk
+// uses repo-relative ones -- a basename check is correct either way.
+const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs']);
+const isBuildOnlyLib = (p) => BUILD_ONLY_LIB_NAMES.has(path.basename(p));
+const isDistExcluded = (p) => isTest(p) || isBuildOnlyLib(p);
+
 // TEXT_EXTS grounded in what actually ships: every extension found under
 // DIST_ITEMS today. Non-text/unlisted extensions stay strict byte-compare —
 // the mechanism must not silently normalize a future binary asset.
@@ -86,7 +102,7 @@ export function buildDist(distRoot = dist) {
     const src = path.join(repo, rel);
     const dst = path.join(distRoot, rel);
     fs.mkdirSync(path.dirname(dst), { recursive: true });
-    fs.cpSync(src, dst, { recursive: true, filter: (s) => !isTest(s) }); // recursive always; EXCLUDE *.test.* — dev-only tests never ship (clean-clone)
+    fs.cpSync(src, dst, { recursive: true, filter: (s) => !isDistExcluded(s) }); // recursive always; EXCLUDE *.test.* + build-only libs — dev-only tooling never ships (clean-clone)
   }
   for (const [distRel, srcRel] of GENERATED) {
     const dst = path.join(distRoot, distRel);
@@ -102,7 +118,7 @@ export function buildDist(distRoot = dist) {
 export function checkDist(distRoot = dist) {
   const out = [];
   const filesUnder = (root, rel) => {
-    if (isTest(rel)) return []; // excluded from the dist -> excluded here too, both directions
+    if (isDistExcluded(rel)) return []; // excluded from the dist -> excluded here too, both directions
     const abs = path.join(root, rel);
     if (!fs.existsSync(abs)) return [];
     if (fs.statSync(abs).isDirectory()) return fs.readdirSync(abs).flatMap((n) => filesUnder(root, path.join(rel, n)));

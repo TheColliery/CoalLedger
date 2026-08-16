@@ -1,0 +1,79 @@
+name: claude-ai-zips
+
+# Board #40 / C2-v2 design: claude.ai installs skills as a ZIP only, and its
+# skill-listing description cap is 200 chars vs our own 1024 (desc-cap.mjs).
+# On a version tag: stage every skill with its description deterministically
+# trimmed to the platform cap (scripts/build-claude-ai-zips.mjs — a DERIVED
+# artifact, source skills/*/SKILL.md is never edited), zip each staged
+# directory, and attach the ZIPs to the GitHub Release as assets. The USER
+# downloads a ZIP from the Release and uploads it to claude.ai directly.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {} # board #99 findings-back: manual re-run against a tag ref whose push-triggered run already failed
+
+permissions:
+  contents: write
+
+jobs:
+  build-zips:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Check the tag is STABLE, not a pre-release (fixback, board #40 INSPECT F1 — AGENTS.md/scripts-quality.md: tags = beta + stable, Releases = stable-only; unlike CoalMine, every CoalLedger tag today is a beta, so the unguarded exemplar would have published this room's first-ever GitHub Release for a beta and, with no --prerelease flag, marked it "Latest")
+        id: gate
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            echo "is_stable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${GITHUB_REF_NAME} is a pre-release tag -- Releases are stable-only here, skipping claude.ai ZIP packaging"
+          else
+            echo "is_stable=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify plugin/ dist is current (fail loud, never zip a stale dist)
+        if: steps.gate.outputs.is_stable == 'true'
+        run: node scripts/verify.mjs
+
+      - name: Stage trimmed-description skill directories
+        if: steps.gate.outputs.is_stable == 'true'
+        run: node scripts/build-claude-ai-zips.mjs
+
+      - name: Zip each staged skill directory
+        if: steps.gate.outputs.is_stable == 'true'
+        run: |
+          set -euo pipefail
+          cd dist-claude-ai
+          for d in */; do
+            name="${d%/}"
+            (cd "$name" && zip -r "../${name}.zip" . -x '.*')
+          done
+          ls -la *.zip
+
+      - name: Generate SHA256SUMS.txt for the ZIPs (board #99 — a downloader had no way to verify integrity)
+        if: steps.gate.outputs.is_stable == 'true'
+        run: |
+          set -euo pipefail
+          cd dist-claude-ai
+          sha256sum *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Ensure the GitHub Release exists for this tag (board #99, CoalMine's own history — this trigger fires on the tag push, BEFORE main's separate REST call creates the Release; CoalMine's v3.17.0 run failed here with "release not found". CoalMine's v3.17.1 run then proved the `view || create` form itself unreliable: `gh release view` failed for an unlogged reason on a Release that demonstrably existed, falling through to `create`, which correctly reported "tag_name already exists" (422) and still failed the step. Replaced with a single idempotent `create`, swallowing the one expected failure mode directly instead of probing for it first.)
+        if: steps.gate.outputs.is_stable == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes || \
+            gh release view "${GITHUB_REF_NAME}" >/dev/null || \
+            { echo "::error::release create failed AND release view failed -- this is not the expected already-exists race" >&2; exit 1; }
+
+      - name: Attach ZIPs + SHA256SUMS.txt to the GitHub Release for this tag
+        if: steps.gate.outputs.is_stable == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist-claude-ai/*.zip dist-claude-ai/SHA256SUMS.txt --clobber

@@ -4,6 +4,13 @@ All notable changes to CoalLedger are documented here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.4.0-beta.1] - 2026-08-16
+
+### Added
+- **claude.ai ZIP packaging via CI (board #40, ported from CoalMine — the flock exemplar).** A new `.github/workflows/claude-ai-zips.yml` builds one ZIP per canary on every version tag and attaches them to the GitHub Release as assets, so a claude.ai user downloads a ready-to-upload ZIP instead of hand-zipping a skill folder. The build (`scripts/build-claude-ai-zips.mjs`, backed by new `scripts/lib/claude-ai-trim.mjs`) deterministically trims each canary's frontmatter `description` to claude.ai's 200-char skill-listing cap (our own cross-platform cap is 1024, `scripts/lib/desc-cap.mjs`) — a DERIVED artifact staged under `dist-claude-ai/` (gitignored); the source `skills/*/SKILL.md` files are never edited. Each Release also carries a `SHA256SUMS.txt` covering every ZIP for integrity verification (board #99's fix, inherited). README's claude.ai paragraph now points at the Releases page instead of instructing a hand-zip, and names the real problem it fixes: this room's own descriptions run up to 895 chars, well past claude.ai's cap, so a hand-zipped folder was never guaranteed to work there.
+- **`scripts/lib/desc-cap.mjs` extracted from `verify.mjs`'s own former inline copy** (frontmatter parser + the 1024-char cap), matching CoalMine's actual current shape rather than duplicating the parser a third time for the new build script. Behavior-preserving — `verify.mjs`'s checks are byte-identical in output, only their source moved.
+- **Verification gap, stated plainly (matching CoalMine's own precedent for this workflow): the workflow itself runs on GitHub's runners and cannot be exercised locally.** `build-claude-ai-zips.mjs` was run locally against all 7 skills (7/7 staged, every staged `SKILL.md`'s frontmatter independently re-parsed and confirmed valid) and the workflow YAML shape was hand-validated against the exemplar, but the workflow's first LIVE run happens at this room's next version tag. Not yet claimed validated.
+
 ## [0.3.0-beta.6] - 2026-08-13
 
 ### Security
