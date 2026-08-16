@@ -34,10 +34,32 @@ jobs:
         with:
           node-version: 24
 
-      - name: Check the tag is STABLE, not a pre-release (fixback, board #40 INSPECT F1 — AGENTS.md/scripts-quality.md: tags = beta + stable, Releases = stable-only; unlike CoalMine, every CoalLedger tag today is a beta, so the unguarded exemplar would have published this room's first-ever GitHub Release for a beta and, with no --prerelease flag, marked it "Latest")
+      # Board #40 INSPECT F1 (AGENTS.md/scripts-quality.md: tags = beta + stable,
+      # Releases = stable-only; unlike CoalMine, every CoalLedger tag today is a beta,
+      # so an unguarded exemplar would have published this room's first-ever GitHub
+      # Release for a beta and, with no --prerelease flag, marked it "Latest").
+      #
+      # Board #118 fixback: the hyphen check alone tests tag-NAME shape, never ref
+      # TYPE. workflow_dispatch (board #99) accepts an existing branch or tag, and
+      # the Actions UI defaults its ref picker to the default branch -- exactly the
+      # moment someone re-runs a failed release under pressure -- so GITHUB_REF_TYPE
+      # is checked FIRST, before the pre-release-shape test even runs; the
+      # pre-release check alone would have read a branch named "main" as "stable"
+      # (no hyphen) and let every downstream step fire against it.
+      #
+      # Board #118 divergence, named (ONE FLOCK ONE COLOR): CoalMine's port gates
+      # with a job-level `if: github.ref_type == 'tag'`; this room keeps it inside
+      # the SAME step that already computes `is_stable`, so a wrong dispatch still
+      # gets a specific ::notice:: reason in the run log (checkout/setup-node still
+      # run either way) instead of the whole job silently showing zero steps ran.
+      # Both are correct; this is the room's own choice, not drift.
+      - name: Check the ref is a stable tag (not a pre-release, not a branch)
         id: gate
         run: |
-          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            echo "is_stable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::this run is not against a tag (ref_type=${GITHUB_REF_TYPE}, ref_name=${GITHUB_REF_NAME}) -- skipping claude.ai ZIP packaging"
+          elif [[ "${GITHUB_REF_NAME}" == *-* ]]; then
             echo "is_stable=false" >> "$GITHUB_OUTPUT"
             echo "::notice::${GITHUB_REF_NAME} is a pre-release tag -- Releases are stable-only here, skipping claude.ai ZIP packaging"
           else
