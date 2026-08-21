@@ -28,6 +28,15 @@ Find what a doc is MISSING versus the standard for its kind. Report CONFIRMED ga
 ## Escalation boundary
 Whether content is CORRECT is doc-grounding's job; whether a judgment call needs formal verification is CoalBoard's (`/coalboard`, if that skill is installed). This canary only answers "is it all THERE".
 
+## Grants & denials (CLASSIFY-BLOCK)
+| class | step it powers | grant | on denial |
+|---|---|---|---|
+| read | detect required parts via the AST | `Read`·`Grep`·`Glob` | refuse that file, report it unscanned — never a false clean bill |
+| write | Draft the missing parts (after approval) | `Write`·`Edit` (·`Bash` — checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
+| network | resolving the kind's accepted standard | `WebSearch`·`WebFetch` | already covered — resolving the standard already degrades to `⚠️ unverified: check [source]` when offline (see "The standard" above) |
+
+A denial reaches the WORKER as a visible message and propagates NO further — not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
+
 ## Output
 | # | path | gap | standard source | severity | fix |
 

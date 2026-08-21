@@ -30,6 +30,14 @@ Find places where the doc set disagrees with itself. Report CONFIRMED contradict
 ## Escalation boundary
 Adjudicating WHICH of two contradicting claims is true = doc-grounding (fetch/recompute) or, for the error-not-allowed slice, CoalBoard (`/coalboard`) if that skill is installed. This canary only surfaces the disagreement.
 
+## Grants & denials (CLASSIFY-BLOCK)
+| class | step it powers | grant | on denial |
+|---|---|---|---|
+| read | inventory facts/terms across the doc set, incl. cross-language pairs | `Read`·`Grep`·`Glob` | refuse that file, report it unscanned — never a false clean bill |
+| write | Align to a chosen side (after the user picks) | `Write`·`Edit` (·`Bash` — checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
+
+A denial reaches the WORKER as a visible message and propagates NO further — not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
+
 ## Output
 | # | doc A (path:line) | doc B (path:line) | class | disagreement | severity |
 

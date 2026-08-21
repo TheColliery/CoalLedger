@@ -35,6 +35,14 @@ Runs only when `.coalledger.json` `docLeak` is `true` (the default). A project w
 ## Escalation boundary
 Whether the doc's CLAIMS are right is doc-grounding; this canary only asks "should this audience see it". Legal/regulatory exposure questions go to the human (and their counsel), never adjudicated here.
 
+## Grants & denials (CLASSIFY-BLOCK)
+| class | step it powers | grant | on denial |
+|---|---|---|---|
+| read | scan prose against the audience-boundary table | `Read`·`Grep`·`Glob` | refuse that file, report it unscanned — never a false clean bill |
+| write | Propose redactions (approved per item) | `Write`·`Edit` (·`Bash` — checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied — a "redacted" that was never written is a shipped secret |
+
+A denial reaches the WORKER as a visible message and propagates NO further — not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
+
 ## Output
 | # | path:line | class | excerpt (redact the sensitive part) | stake if private | suggested action |
 

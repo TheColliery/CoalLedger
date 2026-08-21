@@ -4,6 +4,11 @@ All notable changes to CoalLedger are documented here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.5.0-beta.1] - 2026-08-19
+
+### Added
+- **`## Grants & denials (CLASSIFY-BLOCK)` on all 7 canaries (gold-standard F22).** Every skill now declares, per step class it actually uses, which tool grants it needs and what happens on a denial — a permission refusal reaches the worker as a visible message but propagates no further (never to the dispatcher, never as a catchable condition in the skill's own logic), so without a stated branch a denied step is silently indistinguishable from one that simply found nothing. Branch idioms follow `CoalMine/skills/gold-standard/SKILL.md`'s own shipped shape (`skill-authoring.md` §5b states the requirement, not a wording template): read → refuse that file, report it unscanned, never a false clean bill (doc-structure's own `doc-too-large`/`doc-unreadable` idiom, reused as the read row across all 7); write → report + courier the intended change, never claim applied. doc-structure's read step additionally needed a `Bash` grant, not `Read`/`Grep`/`Glob` — the AST engine runs via `node ./lib/md-checks.mjs`, and the skill's own Method step 1 forbids the only fallback ("never re-derive these checks by reading markdown yourself"); every write row's checkpoint (`git stash`/`commit`) needed the same `Bash` annotation — both caught by this unit's own INSPECT, not assumed correct from the shape alone. doc-grounding and doc-standard's pre-existing network-degrade prose (`⚠️ unverified: check [source]`) is pointed at, not restated. No skill in this room spawns — no `spawn` row anywhere. doc-leak's write row names its own stakes explicitly: a "redacted" that was never actually written is a shipped secret. Method/Fix-mode/Output/Escalation-boundary sections are untouched, but the denial path itself now carries real new rails (never report a denied step as done, skipped, or clean) — that is a behavior change on the unhappy path, not merely documentation.
+
 ## [0.4.0-beta.1] - 2026-08-16
 
 ### Added

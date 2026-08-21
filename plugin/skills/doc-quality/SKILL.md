@@ -30,6 +30,14 @@ Find what makes a doc hard to read or mechanically malformed. Report CONFIRMED f
 ## Escalation boundary
 Whether the CONTENT is true is doc-grounding; whether the doc is structurally broken is doc-structure. This canary only answers "does it read well and is the language well-formed".
 
+## Grants & denials (CLASSIFY-BLOCK)
+| class | step it powers | grant | on denial |
+|---|---|---|---|
+| read | scan docs for mechanics + quality, against any house rules | `Read`·`Grep`·`Glob` | refuse that file, report it unscanned — never a false clean bill |
+| write | Apply safe fixes (mechanics only) | `Write`·`Edit` (·`Bash` — checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
+
+A denial reaches the WORKER as a visible message and propagates NO further — not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
+
 ## Output
 | # | path:line | axis | finding | severity | fix |
 

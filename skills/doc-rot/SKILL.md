@@ -33,6 +33,14 @@ Detection is deterministic; whether a marker means ROT is not — an old date on
 ## Escalation boundary
 Whether a claim was EVER true is doc-grounding's job; formal verification of a high-stakes claim escalates to CoalBoard (`/coalboard`) if that skill is installed. This canary only answers "did time break it".
 
+## Grants & denials (CLASSIFY-BLOCK)
+| class | step it powers | grant | on denial |
+|---|---|---|---|
+| read | collect age-markers + check the version source of truth | `Read`·`Grep`·`Glob` | refuse that file, report it unscanned — never a false clean bill |
+| write | Apply safe fixes (unambiguous current-value updates) | `Write`·`Edit` (·`Bash` — checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
+
+A denial reaches the WORKER as a visible message and propagates NO further — not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
+
 ## Output
 | # | path:line | marker | evidence (current state) | severity | fix |
 

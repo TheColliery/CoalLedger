@@ -31,6 +31,15 @@ Verify that a doc's claims match their source of truth. Report CONFIRMED mismatc
 ## Escalation boundary (health ≠ correctness)
 This canary verifies only what it can FETCH or RECOMPUTE. A claim needing formal verification — a proof, high-precision math, any error-not-allowed decision — is flagged and ESCALATED to CoalBoard (`/coalboard`) when that skill is installed — otherwise flagged as needing formal verification. Never adjudicated here.
 
+## Grants & denials (CLASSIFY-BLOCK)
+| class | step it powers | grant | on denial |
+|---|---|---|---|
+| read | extract + verify claims against their source | `Read`·`Grep`·`Glob` | refuse that file, report it unscanned — never a false clean bill |
+| write | Apply safe fixes (source-unambiguous corrections) | `Write`·`Edit` (·`Bash` — checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
+| network | Full-tier live/multi-source verification | `WebSearch`·`WebFetch` | already covered — Method step 3's `⚠️ unverified: check [source]` degrade |
+
+A denial reaches the WORKER as a visible message and propagates NO further — not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
+
 ## Output
 | # | path:line | claim | source checked | verdict | severity | fix |
 

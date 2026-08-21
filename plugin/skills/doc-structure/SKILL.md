@@ -41,6 +41,14 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
 | doc-too-large | input over the size cap — refused before parsing, never a false clean bill on a doc too big to scan safely |
 | doc-unreadable | binary/corrupted input (NUL byte sniffed) — refused before parsing, never a false "0 findings" clean bill |
 
+## Grants & denials (CLASSIFY-BLOCK)
+| class | step it powers | grant | on denial |
+|---|---|---|---|
+| read | scan target docs via the AST engine | `Bash` (the engine runs via `node ./lib/md-checks.mjs`, per Method step 1 — `Read`/`Grep`/`Glob` cannot execute it, and step 1 forbids re-deriving checks by reading markdown yourself) | refuse that file, report it unscanned — never a false clean bill (same posture as `doc-too-large`/`doc-unreadable` above) |
+| write | Apply safe fixes (anchor/path/orphan corrections) | `Write`·`Edit` (·`Bash` — checkpoint via git stash/commit, and the re-run-the-engine revert check) | report + courier the intended change to the dispatcher; never claim applied |
+
+A denial reaches the WORKER as a visible message and propagates NO further — not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
+
 ## Output
 | # | path:line | check | severity | finding | fix |
 
