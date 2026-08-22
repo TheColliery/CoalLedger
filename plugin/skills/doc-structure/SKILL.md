@@ -30,11 +30,11 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
 |---|---|
 | heading-skip | level jumps (h1 -> h3) |
 | heading-multiple-h1 | more than one top-level title |
-| heading-duplicate | same-parent sibling headings with identical text — a plain #slug link reaches only the first heading in the document to claim that slug, which may be neither duplicate (slug claims are text-independent and document-wide; an earlier, differently-worded heading can claim it first — the check itself is sibling-scoped); keep-a-changelog per-release `### Added` repeats under different `## version` parents are deliberately not flagged |
+| heading-duplicate | same-parent sibling headings with identical text; keep-a-changelog per-release `### Added` repeats under different `## version` parents are deliberately not flagged |
 | anchor-missing | #fragment resolves to no heading slug / HTML id (same-file + cross-file, case-mismatch hinted) |
 | file-missing | dead relative link/image/definition target |
-| table-ragged | row with MORE cells than the header (GitHub silently drops them) |
-| ref-undefined | \[text]\[label] with no definition (renders as literal brackets) |
+| table-ragged | row with MORE cells than the header |
+| ref-undefined | \[text]\[label] with no definition |
 | def-orphan | definition never referenced |
 | bare-url | raw URL in prose (MD034 class) |
 | image-alt-missing | image/image-reference with empty or whitespace-only alt (all reference forms). SUSPECTED-only always — empty alt is WCAG-1.1.1-correct for a purely decorative image, so intent is a human call, never CONFIRMED |
