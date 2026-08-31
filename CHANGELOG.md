@@ -4,6 +4,9 @@ All notable changes to CoalLedger are documented here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+### Changed
+- **Sharpened the `quickVsFull`/`severityFloor` "out of reach" wording after a real reader inverted it (CWK-038).** The prior text was technically correct — the consent-cascade clamp cannot PROTECT either key — but a fresh reader (the CoalWorks chief) came away believing the clamp had made them "permanently unsettable" and cut a ticket to restore settability they never lost. Fixed at all three sites a reader meets these keys (`config-load.mjs`'s OUT OF REACH block, `config-schema.mjs`'s `help:` for both keys, the `.coalledger.json` template comments) to state the direction explicitly and first: both keys ARE fully settable per project, with or without a global present — what is absent is protection, never permission. No reasoning was cut; this is the room's own "a claim propagates through prose exactly like through code" lesson, and this ticket is the evidence for it.
+
 ## [0.5.0-beta.3] - 2026-08-31
 
 ### Security

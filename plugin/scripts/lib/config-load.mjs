@@ -144,16 +144,34 @@ function readJsonc(file) {
 //                    floors the value — a second guard over a bounded cadence
 //                    under an already-gated action is the over-hardening
 //                    skill-authoring.md §2 forbids. Settled, not open.
-// OUT OF REACH (not a gap in this list): `quickVsFull` — CL's real paid-tier
-// dial — is read by the AGENT from the raw project file and never passes
-// through this merge, so no clamp here could protect it. §9's scope test is
-// "does a HOOK read it?", not "is it consent-bearing?". It is named where a
-// reader actually meets it (config-schema.mjs `help:` + the .coalledger.json
-// template), because naming it only here would reach nobody.
-//   severityFloor  DOES have real blast (a cloned repo's project file setting
-//                  this HIGH silently narrows what a run reports — a live
-//                  finding suppressed, not merely a spend nobody wanted), and
-//                  it FAILS mechanism-reach for the same structural reason as
+// OUT OF REACH — read this as "the clamp CANNOT PROTECT them," never as
+// "these keys are locked out." Both are FULLY SETTABLE by a project config,
+// with or without a global present — proven at source, not asserted:
+// mergeSafety({}, {quickVsFull:'full'}) and mergeSafety({}, {severityFloor:
+// 'critical'}) both merge the project value untouched, because neither key
+// is inspected by this function at all (CWK-038: a real reader inverted this
+// exact block and cut a ticket to "restore settability" to keys that were
+// never unsettable — what was missing was PROTECTION, not PERMISSION).
+//   `quickVsFull` — CL's real paid-tier dial — is read by the AGENT from
+//   the raw project file and never passes through this merge, so no clamp
+//   here could protect it even if one were added; the setting is honoured
+//   exactly as written. Its OWN backstop is UNCONDITIONAL and run-time, not
+//   merely a documented intent: a paid Full-tier scan cannot be reached from
+//   a config value alone, across all 7 canaries by THREE separate routes —
+//   the 4 mixed-tier canaries (doc-grounding/doc-standard/doc-quality/
+//   doc-rot) each carry "Full is always a separate consent" verbatim in
+//   their own TIER line; doc-consistency and doc-leak are Full-ONLY and
+//   carry their own "paid, always consent-gated" TIER line, so this key
+//   never applies to them at all; doc-structure is Quick-only, so the key
+//   is inert there too. §9's scope test is "does a HOOK read it?", not "is
+//   it consent-bearing?". Named where a reader actually meets it
+//   (config-schema.mjs `help:` + the .coalledger.json template), because
+//   naming it only here would reach nobody.
+//   `severityFloor`  is settable the same way and DOES have real blast (a
+//                  cloned repo's project file setting this HIGH silently
+//                  narrows what a run reports — a live finding suppressed,
+//                  not merely a spend nobody wanted), and it FAILS
+//                  mechanism-reach for the same structural reason as
 //                  quickVsFull: every reader is the AGENT (the "honor
 //                  severityFloor" step in all 7 SKILL.md + commands/stats.md),
 //                  never a hook, so this merge never sees it either (U13/M-2).
@@ -162,12 +180,24 @@ function readJsonc(file) {
 //                  toward the schema default ('low') would also break the
 //                  ordinary user who legitimately sets a high floor on their
 //                  own noisy repo, since the factory-default rule already
-//                  treats an absent global as that same default. So: named
-//                  here, not clamped; the honest mitigation is that
-//                  `/coalledger:stats` surfaces the EFFECTIVE floor so a
-//                  narrowed report is inspectable rather than invisible. The
-//                  residual is stated, not implied covered: a cloned repo CAN
-//                  still narrow what it reports this way.
+//                  treats an absent global as that same default. THE RULING
+//                  RESTS ON THOSE TWO FACTS ALONE — mechanism-reach failure
+//                  plus honest-user breakage — and holds regardless of how
+//                  strong any mitigation is. The mitigation itself is
+//                  honestly WEAKER than quickVsFull's structural one, on two
+//                  independent axes (U13 findings-back, CWK-038 MED-1):
+//                  it is OPT-IN — `/coalledger:stats` must be run; a user
+//                  harmed by a cloned repo's floor sees a clean-looking
+//                  report and has no reason to go looking — and EFFECT-BLIND
+//                  — stats shows the floor's VALUE, never the count of
+//                  findings it withheld, and no SKILL.md instructs the agent
+//                  to disclose that either. So the value the user or the
+//                  cloned repo wrote stands exactly as written, and the
+//                  honest claim is narrower than "inspectable": a narrowed
+//                  report is inspectable ON REQUEST, never visible by
+//                  default. The residual is stated, not implied covered: a
+//                  cloned repo CAN still narrow what it reports this way,
+//                  silently, to a user who never thinks to run stats.
 const SAFER_ENUM = {
   coalledgerMode: ['off', 'manual', 'auto'], // index 0 = safest
   updateMode: ['off', 'remind', 'ask', 'auto'], // order byte-identical to CM/CW

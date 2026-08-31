@@ -14,19 +14,24 @@
 
   // Report findings at or above this severity (low, medium, high, critical).
   // Severity is assigned by context in the report step, never mechanically.
-  // NOTE: like quickVsFull below, this key is NOT covered by the global-vs-
-  // project consent clamp — every reader is the agent, never a hook, so a
-  // project setting a high floor is honoured as written and can silently
-  // narrow what a run reports. `/coalledger:stats` shows the effective floor.
+  // Fully settable per project, same as quickVsFull below (the global-vs-
+  // project consent clamp has no path to this key — every reader is the
+  // agent, never a hook): a project setting a high floor is honoured as
+  // written and can silently narrow what a run reports. Unlike quickVsFull's
+  // spend, which is backstopped unconditionally at run-time regardless of
+  // this file, a narrowed report is inspectable only ON REQUEST via
+  // `/coalledger:stats` — not visible by default, and stats shows the
+  // floor's value, never the count of findings it withheld.
   "severityFloor": "low",
 
   // Default scan tier for the mixed canaries: quick = mechanical layer only
   // (~free, report-only); full = adds the semantic layer (paid; always a
   // separate consent).
-  // NOTE: unlike coalledgerMode / updateMode / disabledCanaries / docLeak, this
-  // key is NOT covered by the global-vs-project consent clamp — the agent reads
-  // it from this file directly, so a project setting "full" is honoured as
-  // written. The per-run consent ask is what gates the actual spend.
+  // Fully settable per project: unlike coalledgerMode / updateMode /
+  // disabledCanaries / docLeak, the global-vs-project consent clamp has no
+  // path to this key — the agent reads it from this file directly, so a
+  // project setting "full" is honoured as written. The per-run consent ask
+  // is what gates the actual spend.
   "quickVsFull": "quick",
 
   // Enable the #7 doc-leak canary (prose-level public/private boundary).
