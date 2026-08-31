@@ -49,13 +49,13 @@ Two tiers, one discipline:
 
 - **Quick** = the mechanical layers — deterministic, ~free, report-only.
 - **Full** = the semantic layers — model judgment, paid, always a separate consent.
-- **Detection is mechanical; severity never is.** A broken link in an archive is LOW; the same link in an install step is CRITICAL — every finding is judged in context, and CONFIRMED findings are reported separately from SUSPECTED ones (anti-cry-wolf).
+- **Where a mechanical layer exists, detection is deterministic; severity never is** (two canaries — `doc-consistency`, `doc-leak` — are semantic-only, no mechanical layer at all). A broken link in an archive is LOW; the same link in an install step is CRITICAL — every finding is judged in context, and CONFIRMED findings are reported separately from SUSPECTED ones (anti-cry-wolf).
 - **Fixes are choice-gated.** Every report ends in a menu (apply safe fixes / let me pick / report only); a live doc is never auto-edited.
 
 > [!IMPORTANT]
 > CoalLedger checks docs-**HEALTH**, not content correctness. It verifies only what it can fetch or recompute; a claim needing formal verification — a proof, high-precision math, an error-not-allowed decision — escalates to [CoalBoard](https://github.com/TheColliery/CoalBoard). And the AST engine's honest ceiling is **CommonMark+GFM fidelity, not "100% GitHub-pixel fidelity"** — known host-specific quirks are flagged as limits, not silently guessed.
 
-Multilingual by construction: the mechanical layers are language-agnostic (an AST does not care what language the prose is; sections are detected by structure, never an English keyword), and the semantic layers work in the doc's own language, degrading to low-confidence flags — never false alarms — on a poorly-handled one. Cross-language drift between a doc and its translation is a first-class check.
+Multilingual by construction: the mechanical layers are language-agnostic — never an English keyword — by structure, position, and meaning; `doc-structure` reads that structure off its AST, the other mechanical layers off an agent's own read of the doc. The semantic layers work in the doc's own language, degrading to low-confidence flags — never false alarms — on a poorly-handled one. Cross-language drift between a doc and its translation is a first-class check.
 
 ### Docs memory-drift reminder
 

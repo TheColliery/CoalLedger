@@ -121,7 +121,33 @@ function main() {
   const isWin = process.platform === 'win32';
   const fCompare = isWin ? normF.toLowerCase() : normF;
   const existingCompare = isWin ? existing.map((x) => x.toLowerCase()) : existing;
-  if (!existingCompare.includes(fCompare)) { try { fs.appendFileSync(docs, normF + '\n'); } catch {} }
+  if (!existingCompare.includes(fCompare)) {
+    // board U13/F2: the sibling .docmemmoved marker above is a 0-byte
+    // ONE-SHOT write, so `wx` (create-only) is free there and refuses a
+    // pre-planted symlink outright. .docs ACCUMULATES one path per line
+    // across the whole session — a literal `wx` here would make every
+    // write AFTER the first throw EEXIST (swallowed below), so only the
+    // FIRST edited doc would ever land and the drift nudge would silently
+    // under-report. lstatSync (does NOT follow a symlink, unlike the plain
+    // appendFileSync this replaces) refuses the write instead of following
+    // it through — the same guard shape as ag-conductor.js's markerDir
+    // check — while still appending normally to a real file every other
+    // time, preserving full accumulate semantics. An absent path (the
+    // FIRST write of the session) makes lstatSync throw ENOENT, which
+    // falls through to create the real file, same as before this fix.
+    // Residual, named rather than hidden: a symlink planted in the narrow
+    // window BETWEEN the lstatSync read and the appendFileSync write
+    // (TOCTOU) is not closed by this check — accepted per the verdict's
+    // own rating (LOW/SUSPECTED: sid-scoped unpredictable filename,
+    // content is plain doc-path strings, Windows symlink creation without
+    // admin is already EPERM-blocked, and fs.constants.O_NOFOLLOW is
+    // documented as unavailable on Windows — verified live on this box:
+    // 'O_NOFOLLOW' in fs.constants === false — so it cannot close this
+    // gap portably either).
+    let isSymlink = false;
+    try { isSymlink = fs.lstatSync(docs).isSymbolicLink(); } catch {}
+    if (!isSymlink) { try { fs.appendFileSync(docs, normF + '\n'); } catch {} }
+  }
 }
 
 try { main(); } catch {}

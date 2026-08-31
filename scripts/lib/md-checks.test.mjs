@@ -6,6 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -229,7 +230,7 @@ test('H1: a pathological inline-link doc parses in bounded (near-linear) time, n
   assert.ok(ms < 1500, `pathological parse should be bounded, took ${ms.toFixed(0)}ms`);
 });
 
-test('H1: checkDocument flags an over-cap doc and does NOT parse it (transitive vector closed)', () => {
+test('H1: checkDocument flags an over-cap doc and does NOT parse it (SIZE-only transitive vector closed — depth is a SEPARATE guard, see doc-too-nested below, board U13/F1)', () => {
   const over = 'x'.repeat(600 * 1024); // > 512 KB
   const t0 = process.hrtime.bigint();
   const f = checkDocument(over);
@@ -240,6 +241,81 @@ test('H1: checkDocument flags an over-cap doc and does NOT parse it (transitive 
   // a benign doc just under the cap still parses normally (no false "too large")
   const ok = checkDocument('# Title\n\nnormal content\n');
   assert.ok(!ok.some((x) => x.check === 'doc-too-large'));
+});
+
+// --- U13/F1 (CoalBoard audit): parser DoS via blockquote DEPTH, not size ---
+// `checkDocument('>'.repeat(8000)+' hi\n')` — an 8,004-byte doc, 0.016x the
+// 512 KB cap — threw RangeError pre-fix. RED-FIRST evidence lives in the
+// dispatch record + this session's own bisect, not repeated as a live test
+// here (re-throwing on purpose in a suite is its own hazard); these tests
+// prove the FIXED behavior: the guard fires, degrades safely, and the CLI
+// batch survives a crafted doc mixed with real ones.
+test('U13/F1: doc-too-nested fires past the container-depth cap, and a benign doc under it is untouched', () => {
+  const deep = checkDocument('>'.repeat(8000) + ' hi\n');
+  assert.strictEqual(deep.length, 1);
+  assert.strictEqual(deep[0].check, 'doc-too-nested');
+  // boundary: exactly at the cap is still fine, one past it fires
+  assert.ok(!checkDocument('>'.repeat(200) + ' hi\n').some((x) => x.check === 'doc-too-nested'));
+  assert.strictEqual(checkDocument('>'.repeat(201) + ' hi\n')[0].check, 'doc-too-nested');
+  // pure list INDENTATION (no marker-run) is NOT the vector this guard
+  // covers — 200 leading spaces before one single `- item` marker never
+  // matches the guard's own {0,3}-leading-space marker recognizer, so it
+  // stays silent, correctly (indentation-only depth doesn't hit the
+  // super-linear container-matching path this guard exists for)
+  const list = '  '.repeat(200) + '- item\n';
+  assert.ok(!checkDocument(list).some((x) => x.check === 'doc-too-nested'));
+  // LOW-1 (findings-back): the cap's defensibility claim, as a permanent
+  // regression — a real 12-level email-quote thread scans clean
+  assert.ok(!checkDocument('> '.repeat(12) + 'text\n').some((x) => x.check === 'doc-too-nested'));
+});
+
+// --- U13/F1 findings-back (INSPECT-caught): the FIRST guard was anchored to
+// a bare leading `>` run only, and was fence-blind. Both are real defects in
+// the guard itself, not the parser it protects — H1 (too narrow, the exact
+// vector it exists to close was still reachable) and M1 (too broad, cry-
+// wolfs on legitimate fenced content and SWALLOWS every other finding in the
+// same doc via the early return). RED-FIRST, reproduced against the guard's
+// FIRST version before this fix (this session's own measurement, not
+// repeated live here — re-triggering a 13s+ hang in a test suite is its own
+// hazard): `checkDocument('- ' + '>'.repeat(3000) + ' hi\n')` -> `[]` in
+// 278ms; the same shape at 20,000 markers (20,006 bytes, 0.04x MAX_DOC_BYTES)
+// -> `[]` in 13,025ms. `checkDocument('```\n' + '>'.repeat(250) + '\n```\n')`
+// -> `['doc-too-nested']` on a document that renders perfectly. Both GREEN
+// below, against the corrected fence-aware, marker-general guard. ---
+test('U13/F1 H1 (findings-back): a list-marker prefix no longer bypasses the container-depth guard', () => {
+  const t0 = process.hrtime.bigint();
+  const f = checkDocument('- ' + '>'.repeat(20000) + ' hi\n'); // the exact 20,000-marker shape measured at 13s pre-fix
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.strictEqual(f.length, 1);
+  assert.strictEqual(f[0].check, 'doc-too-nested');
+  assert.ok(ms < 200, `the pathological case must now be the FAST case (short-circuits at the cap), took ${ms.toFixed(0)}ms`);
+});
+
+test('U13/F1 M1 (findings-back): a `>`-heavy fenced code block does not cry-wolf, and a real finding elsewhere in the same doc survives', () => {
+  const fenced = '```\n' + '>'.repeat(250) + '\n```\n';
+  assert.ok(!checkDocument(fenced).some((x) => x.check === 'doc-too-nested'), 'literal code content, not container markers');
+  // the early-return failure mode named in the finding: a false doc-too-
+  // nested would have swallowed this file-missing finding too
+  const mixed = '```\n' + '>'.repeat(250) + '\n```\n\n[dead link](./nope.md)\n';
+  const findings = checkDocument(mixed, { filePath: path.join(FIX, 'probe.md') });
+  assert.ok(!findings.some((x) => x.check === 'doc-too-nested'));
+  assert.ok(findings.some((x) => x.check === 'file-missing'), 'the real finding after the fence must not be dropped');
+});
+
+test('U13/F1: the CLI batch survives a crafted doc between two real files — no lost findings, no empty stdout', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-f1-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'good.md'), '[dead link](./nope.md)\n');
+    fs.writeFileSync(path.join(dir, 'evil.md'), '>'.repeat(8000) + ' hi\n');
+    fs.writeFileSync(path.join(dir, 'good2.md'), '[also dead](./nope2.md)\n');
+    const r = spawnSync(process.execPath, [CLI, '--json', path.join(dir, 'good.md'), path.join(dir, 'evil.md'), path.join(dir, 'good2.md')], { encoding: 'utf8' });
+    assert.notStrictEqual(r.stdout.trim(), '', 'stdout must not be empty — pre-fix this was 0 bytes');
+    const out = JSON.parse(r.stdout);
+    assert.strictEqual(out.length, 3, 'all three files present in the batch, none lost');
+    assert.ok(out[0].findings.some((f) => f.check === 'file-missing'), "good.md's real finding survives");
+    assert.ok(out[1].findings.some((f) => f.check === 'doc-too-nested'), 'evil.md degrades to a controlled finding, not a crash');
+    assert.ok(out[2].findings.some((f) => f.check === 'file-missing'), "good2.md's real finding survives");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 // --- H11 (CoalBoard nasa audit): processEmphasis / angle-dest / backtick were

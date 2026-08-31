@@ -116,6 +116,18 @@ test('tracker dedups the same doc edited twice (one line)', () => {
   } finally { clean(home, tmp, proj); }
 });
 
+test('tracker ACCUMULATES two DIFFERENT docs across a session (board U13/F2: proves the lstat symlink guard did not break append-accumulate semantics)', () => {
+  const { home, tmp, proj } = sandbox();
+  try {
+    runHook(TRACK, trackPayload('T5', path.join(proj, 'README.md'), proj), tmp, home, proj);
+    runHook(TRACK, trackPayload('T5', path.join(proj, 'GUIDE.md'), proj), tmp, home, proj);
+    const lines = fs.readFileSync(path.join(tmp, 'coalledger-T5.docs'), 'utf8').split('\n').filter(Boolean);
+    assert.strictEqual(lines.length, 2, 'both docs recorded, not just the first (the wx trap named in the code comment)');
+    assert.ok(lines.some((l) => l.includes('README.md')));
+    assert.ok(lines.some((l) => l.includes('GUIDE.md')));
+  } finally { clean(home, tmp, proj); }
+});
+
 test('tracker EXCLUDES a doc resident under os.tmpdir() (lab/scratch never ships) — code and MEMORY.md alike', () => {
   const { home, tmp, proj } = sandbox();
   try {

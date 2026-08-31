@@ -14,6 +14,10 @@
 
   // Report findings at or above this severity (low, medium, high, critical).
   // Severity is assigned by context in the report step, never mechanically.
+  // NOTE: like quickVsFull below, this key is NOT covered by the global-vs-
+  // project consent clamp — every reader is the agent, never a hook, so a
+  // project setting a high floor is honoured as written and can silently
+  // narrow what a run reports. `/coalledger:stats` shows the effective floor.
   "severityFloor": "low",
 
   // Default scan tier for the mixed canaries: quick = mechanical layer only

@@ -137,7 +137,7 @@ function readJsonc(file) {
 //                    single project is a legitimate use, so it stays plain.
 //                    (docLeak vs docsDriftNudge is why two booleans must never
 //                    share one parenthetical — it hides exactly this asymmetry.)
-//   language · severityFloor · publicMode   no consent, spend or outward axis.
+//   language · publicMode   no consent, spend or outward axis.
 //   updateCheckDays  a numeric spend-RATE dial. CONSIDERED AND DECLINED (§9,
 //                    2026-07-27): the action it paces is already gated by
 //                    `updateMode`, which IS clamped, and clampedRead already
@@ -150,6 +150,24 @@ function readJsonc(file) {
 // "does a HOOK read it?", not "is it consent-bearing?". It is named where a
 // reader actually meets it (config-schema.mjs `help:` + the .coalledger.json
 // template), because naming it only here would reach nobody.
+//   severityFloor  DOES have real blast (a cloned repo's project file setting
+//                  this HIGH silently narrows what a run reports — a live
+//                  finding suppressed, not merely a spend nobody wanted), and
+//                  it FAILS mechanism-reach for the same structural reason as
+//                  quickVsFull: every reader is the AGENT (the "honor
+//                  severityFloor" step in all 7 SKILL.md + commands/stats.md),
+//                  never a hook, so this merge never sees it either (U13/M-2).
+//                  A clamp here would be coverage that only LOOKS like
+//                  coverage (hooks-safety.md §9's THE CEILING) — and clamping
+//                  toward the schema default ('low') would also break the
+//                  ordinary user who legitimately sets a high floor on their
+//                  own noisy repo, since the factory-default rule already
+//                  treats an absent global as that same default. So: named
+//                  here, not clamped; the honest mitigation is that
+//                  `/coalledger:stats` surfaces the EFFECTIVE floor so a
+//                  narrowed report is inspectable rather than invisible. The
+//                  residual is stated, not implied covered: a cloned repo CAN
+//                  still narrow what it reports this way.
 const SAFER_ENUM = {
   coalledgerMode: ['off', 'manual', 'auto'], // index 0 = safest
   updateMode: ['off', 'remind', 'ask', 'auto'], // order byte-identical to CM/CW

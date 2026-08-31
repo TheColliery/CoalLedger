@@ -349,11 +349,27 @@ test('empty and whitespace-only documents parse to an empty root', () => {
   assert.deepStrictEqual(md('  \n\t\n').children, []);
 });
 
-test('pathological nesting does not throw: quote > list > quote > code', () => {
-  const t = md('> - item\n>   > deep quote\n>   ```\n>   code\n>   ```\n');
+test('deep blockquote nesting (past the measured stack-overflow floor) does not crash the tree walk', () => {
+  // board U13/F1: the OLD version of this test fed only 4 nesting levels
+  // ("quote > list > quote > code") and called it "pathological" — it never
+  // came close to a real failure depth, and its passing green is exactly
+  // what made the hole look covered (the room's own md-checks.mjs shipped
+  // "parser-DoS root fix" / "never throws" comments this same round proved
+  // false). Measured live: a bare `>`-marker run throws RangeError from
+  // walk()'s own recursion somewhere between ~4,000 and ~5,050 nested
+  // levels (varies by environment — a separate measurement put the floor at
+  // ~4,000). 6,000 is comfortably past BOTH observed floors.
+  // RED-FIRST: run against walk()'s PRE-FIX recursive form (one call frame
+  // per tree level) — 6,000 threw `RangeError: Maximum call stack size
+  // exceeded`, reproduced live before this fix landed. walk() is now
+  // iterative (explicit stack, not recursive) and this passes GREEN.
+  // Scope, stated honestly: this only proves the low-level parser no longer
+  // CRASHES on the shape that used to — it does NOT prove the work is fast
+  // (measured separately: deep nesting still goes super-linear in CPU time).
+  // Real DoS PREVENTION — refusing to even attempt the work — is
+  // md-checks.mjs's job; see md-checks.test.mjs's doc-too-nested tests.
+  const t = md('>'.repeat(6000) + ' hi\n');
   assert.ok(first(t, 'blockquote'));
-  assert.ok(first(t, 'listItem'));
-  assert.ok(first(t, 'code'));
 });
 
 test('unbalanced emphasis and brackets stay literal without hanging', () => {

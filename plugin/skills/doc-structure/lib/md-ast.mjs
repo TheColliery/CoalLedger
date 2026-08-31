@@ -1,8 +1,12 @@
-// CoalLedger md-ast — VENDORED-MINIMAL CommonMark + GFM parser producing an
-// mdast-shaped tree with positions. The ONE genuinely-new engine component of
-// the suite (blueprint §7) — and it serves the doc-structure canary ONLY:
-// every structure check (md-checks.mjs, its sole consumer) runs on THIS tree,
-// never on regex over raw text (regex cry-wolfs on things that render fine).
+// CoalLedger md-ast — VENDORED-MINIMAL parser for CommonMark 0.31.2 + GFM,
+// producing an mdast-shaped tree with positions. Written in-house against the
+// spec text: zero imports, zero network, not derived from any third-party
+// parser. The ONE genuinely-new engine component of the suite (design record:
+// the repo's own COALLEDGER_BLUEPRINT.md §7 — a dev-only file, not shipped to
+// an installed plugin; this header is the provenance a dist consumer gets) —
+// and it serves the doc-structure canary ONLY: every structure check
+// (md-checks.mjs, its sole consumer) runs on THIS tree, never on regex over
+// raw text (regex cry-wolfs on things that render fine).
 //
 // HONEST CEILING: CommonMark+GFM fidelity, NOT 100% GitHub-pixel fidelity —
 // GitHub-specific quirks are flagged as known-limits, never silently claimed:
@@ -18,7 +22,7 @@
 //   - Strikethrough pairs only on exact `~~` runs (the dominant GFM form).
 // Language-neutral BY DESIGN: structure is derived from AST position and
 // punctuation classes (Unicode property escapes), never from English keywords —
-// Thai/CJK/RTL prose flows through untouched (§4 of the blueprint).
+// Thai/CJK/RTL prose flows through untouched (design record: blueprint §4).
 //
 // Zero dependencies (Phoenix #2): no imports at all — pure functions over a
 // string. Node 18+ (Unicode property escapes in regex).
@@ -135,11 +139,25 @@ export function textContent(node) {
 }
 
 // Depth-first visitor with ancestors. fn may return false to skip a subtree.
+// Iterative (explicit stack), NOT one call frame per tree level: a recursive
+// version overflows the CALL STACK on a pathological doc well under
+// MAX_DOC_BYTES (board U13/F1 — an 8,004-byte doc with 5,000+ nested
+// blockquote markers threw RangeError from THIS function, called internally
+// at parse time — see the two walk() calls near the end of parseMarkdown).
+// Depth here is bounded by the array the engine allocates on the heap, not
+// by the call stack, so this closes the recursion at its root rather than
+// only gating one caller.
 export function walk(node, fn, ancestors = []) {
-  if (fn(node, ancestors) === false) return;
-  if (Array.isArray(node.children)) {
-    const next = ancestors.concat(node);
-    for (const c of node.children) walk(c, fn, next);
+  const stack = [[node, ancestors]];
+  while (stack.length) {
+    const [n, anc] = stack.pop();
+    if (fn(n, anc) === false) continue;
+    if (Array.isArray(n.children)) {
+      const next = anc.concat(n);
+      // push in reverse so pop() still visits children left-to-right
+      // (preserves the original pre-order traversal every caller depends on)
+      for (let i = n.children.length - 1; i >= 0; i--) stack.push([n.children[i], next]);
+    }
   }
 }
 

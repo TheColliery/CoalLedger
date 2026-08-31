@@ -42,19 +42,42 @@
 //                       purely decorative image, so decorative-vs-content
 //                       intent is a human call the engine cannot make (MD045)
 //   doc-too-large       pre-parse short-circuit: input over MAX_DOC_BYTES is
-//                       refused, never parsed (the parser-DoS root fix)
+//                       refused, never parsed. Covers SIZE only — a small
+//                       doc with deep container nesting is a SEPARATE
+//                       parser-DoS vector, gated by doc-too-nested below
+//                       (board U13/F1)
+//   doc-too-nested      pre-parse short-circuit: blockquote/list container
+//                       nesting over MAX_CONTAINER_DEPTH is refused, never
+//                       parsed — deep container-marker runs (any mix of
+//                       `>`, `-`/`+`/`*`, `N.`/`N)`, NOT blockquote alone)
+//                       make the block parser go super-linear (measured:
+//                       30,000 markers ~38s) well under MAX_DOC_BYTES;
+//                       fence-aware (never fires on `>` inside a fenced
+//                       code block); a try/catch around parseMarkdown is
+//                       the backstop for whatever this guard doesn't
+//                       enumerate (board U13/F1, corrected in the
+//                       findings-back round: the first version was
+//                       blockquote-only and fence-blind)
 //   doc-unreadable      pre-parse short-circuit: a NUL byte in the first 8 KB
-//                       (binary/corrupted input) is refused, never parsed
+//                       (binary/corrupted input) is refused, never parsed —
+//                       ALSO the label used when parseMarkdown itself throws
+//                       past the doc-too-nested guard (an unenumerated
+//                       structural pathology), never a silent crash
 //
 // Known limits (honest ceiling, mirrors md-ast.mjs):
 //   - site-root-relative targets (/path) are SKIPPED — resolving them needs a
 //     repo root this module does not assume (no-external-assumption).
 //   - bare-url columns inside multi-line text nodes are line-accurate,
 //     column-approximate.
-//   - this is a STRUCTURAL scanner, not a content validator: parseMarkdown
-//     never throws, so garbled-but-NUL-free text (valid UTF-8, no real
-//     structure) still parses to a near-empty tree — "0 findings" there means
-//     "nothing structurally broken found," not "content verified sane."
+//   - this is a STRUCTURAL scanner, not a content validator: garbled-but-NUL-
+//     free text (valid UTF-8, no real structure) parses to a near-empty tree
+//     — "0 findings" there means "nothing structurally broken found," not
+//     "content verified sane." (CORRECTED, board U13/F1: an earlier version
+//     of this note claimed "parseMarkdown never throws" — false; it throws
+//     RangeError on pathological nesting. checkDocument's own guards catch
+//     that before it reaches a caller — see doc-too-nested above — but
+//     parseMarkdown called directly, bypassing checkDocument, has no such
+//     protection.)
 //   - anchorsOf's catch->null treats every unreadable linked target alike
 //     (missing, permission-denied, bad encoding) — a cross-file anchor check
 //     is silently skipped rather than reported as its own finding.
@@ -122,6 +145,74 @@ export function collectAnchors(root) {
 // READMEs/specs sit far under this.
 const MAX_DOC_BYTES = 512 * 1024; // 512 KB
 
+// board U13/F1: nested container markers (blockquote `>`, list `-`/`+`/`*`/
+// `N.`/`N)`) build one AST level each, and the block parser's own container-
+// matching goes SUPER-LINEAR against a deep `open` stack well under
+// MAX_DOC_BYTES — measured live: an 8,004-byte doc (0.016x the cap) took
+// ~1.9s, 30,000 markers (59 KB) took ~38s. This is a WIDTH (CPU-time)
+// hazard, not the depth/stack-overflow one below (that one is now closed at
+// its root — see walk()'s own header in md-ast.mjs), and MAX_DOC_BYTES alone
+// cannot catch it (both docs are tiny).
+//
+// CORRECTED (board U13/F1 findings-back, INSPECT-caught): the first version
+// of this guard only counted a leading `>` run, ANCHORED at line start. Two
+// real defects, one root cause (a pre-parse scan that was simultaneously
+// too NARROW and too BROAD):
+//   H1 — too narrow: `'- ' + '>'.repeat(N)` (a list marker before the `>`
+//        run) was INVISIBLE to the old regex — the exact super-linear
+//        vector this guard exists to close, still reachable through any
+//        container-marker prefix, not only a bare blockquote.
+//   M1 — too broad: `>` characters inside a FENCED CODE BLOCK are literal
+//        text, not container markers, but the old scan was fence-blind and
+//        cry-wolfed on ordinary fenced content — worse, because the finding
+//        RETURNS EARLY, every real finding in that document was silently
+//        dropped along with it.
+// Fixed by tracking fence state in the SAME single pass (never scanning
+// containers while fenced — an unclosed fence swallows to EOF exactly as
+// the real parser does, so this stays behaviorally aligned, not a bypass)
+// and by counting ANY run of container-opening markers at line start
+// (blockquote OR list, mixed and nested), not `>` alone. Still O(doc
+// length) worst case, and SHORT-CIRCUITS the instant one line's depth
+// crosses the cap — the pathological case (huge N) is now the FASTEST
+// case, not the slowest.
+//
+// Known limit (honest ceiling, findings-back LOW-1): FENCE_OPEN_RE is
+// start-anchored, so a fence nested INSIDE a container (e.g. a fenced block
+// opened after a leading `> `) is never tracked as a fence — its contents
+// still get scanned as container markers. A container-nested fence holding
+// 201+ markers on one line can therefore still false-fire doc-too-nested.
+// Direction is SAFE: this can only make the guard OVER-count (a false
+// refusal), never under-count (never a bypass) — the unfenced-scanning
+// fallback is the same "when unsure, count it" behavior this guard already
+// has everywhere else. Real container-nested fences with that many markers
+// on one line are not a realistic document shape; closing this properly
+// needs real container-state tracking pre-parse, which is the parser's own
+// job and defeats the point of a cheap O(lines) scan.
+const MAX_CONTAINER_DEPTH = 200; // defensible per-doc: a real 12-level email-quote thread scans 0 findings in 0ms; 200 is ~17x that headroom, and the crash floor this guard backstops sits far higher (~4,000-5,000 markers) — the number is chosen for realistic-document headroom, not to chase either floor (see the try/catch backstop below for the crash axis; this guard's own job is the CPU-time axis, whose floor is materially LOWER — measured live: 278ms already at 3,000 markers on the pre-fix bypass path)
+const FENCE_OPEN_RE = /^[ \t]{0,3}(`{3,}|~{3,})/;
+const CONTAINER_OPENER_RE = /[ \t]{0,3}(?:>[ \t]?|[-+*][ \t]|[0-9]{1,9}[.)][ \t])/y; // sticky — advances lastIndex on match, never zero-length
+function maxContainerDepth(src) {
+  let max = 0;
+  let fenceChar = null;
+  let fenceLen = 0;
+  for (const line of src.split('\n')) {
+    const fm = FENCE_OPEN_RE.exec(line);
+    if (fenceChar) {
+      if (fm && fm[1][0] === fenceChar && fm[1].length >= fenceLen) { fenceChar = null; fenceLen = 0; }
+      continue; // inside a fence: `>` etc. here is literal code text, never a container marker
+    }
+    if (fm) { fenceChar = fm[1][0]; fenceLen = fm[1].length; continue; } // opening fence line itself isn't scanned either
+    CONTAINER_OPENER_RE.lastIndex = 0;
+    let depth = 0;
+    while (CONTAINER_OPENER_RE.test(line)) {
+      depth++;
+      if (depth > MAX_CONTAINER_DEPTH) return depth; // short-circuit: no need to keep counting once over cap
+    }
+    if (depth > max) max = depth;
+  }
+  return max;
+}
+
 export function checkDocument(src, opts = {}) {
   const filePath = opts.filePath ? path.resolve(opts.filePath) : null;
   const fileExists = opts.fileExists || ((p) => { try { return fs.existsSync(p); } catch { return false; } });
@@ -136,7 +227,24 @@ export function checkDocument(src, opts = {}) {
   if (typeof src === 'string' && src.slice(0, 8000).includes('\0')) {
     return [{ check: 'doc-unreadable', line: 1, column: 1, message: 'document contains a NUL byte in its first 8000 characters — likely binary or corrupted, not scannable as markdown' }];
   }
-  const root = parseMarkdown(src);
+  if (typeof src === 'string') {
+    const depth = maxContainerDepth(src);
+    if (depth > MAX_CONTAINER_DEPTH) {
+      return [{ check: 'doc-too-nested', line: 1, column: 1, message: `container nesting (blockquote/list) reaches at least ${depth} levels (> ${MAX_CONTAINER_DEPTH}) — too deep for a structural scan; deep nesting makes parsing pathologically slow/unsafe well before this document is otherwise large` }];
+    }
+  }
+  // Backstop for any depth/structure pathology this guard did not enumerate
+  // (board U13/F1's own note: the guard above is scoped to the ONE
+  // reproduced vector; this catches whatever comes next). A parse failure
+  // here degrades to a controlled finding instead of crashing the caller —
+  // see the CLI loop below, which would otherwise lose every OTHER file's
+  // findings in the same batch to one crafted doc.
+  let root;
+  try {
+    root = parseMarkdown(src);
+  } catch (e) {
+    return [{ check: 'doc-unreadable', line: 1, column: 1, message: `document could not be parsed (${e && e.constructor ? e.constructor.name : 'error'}: ${e && e.message ? e.message : 'unknown'}) — a structural pathology the depth guard did not catch; not scannable` }];
+  }
   const findings = [];
   const at = (node) => (node && node.position ? node.position.start : { line: 1, column: 1 });
   const add = (check, node, message, extra = {}) => {
@@ -364,7 +472,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exitCode = 1;
       continue;
     }
-    const findings = checkDocument(src, { filePath: f });
+    let findings;
+    try {
+      findings = checkDocument(src, { filePath: f });
+    } catch (e) {
+      // Backstop of the backstop: checkDocument itself should never throw
+      // (both guards above degrade to a finding), but the batch must not
+      // lose every OTHER file's findings to one file's bug either way.
+      console.error(`FAIL ${f}: ${e && e.message ? e.message : e}`);
+      process.exitCode = 1;
+      continue;
+    }
     total += findings.length;
     if (json) {
       out.push({ file: f, findings });
