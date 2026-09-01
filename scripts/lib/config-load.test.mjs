@@ -149,20 +149,30 @@ test('findProjectRoot widening is additive-only: never stops HIGHER than a neare
   } finally { clean(home, proj); }
 });
 
-test('structural: no source file under scripts/ or hooks/ writes the config filename (no project-config writer exists)', () => {
+test('structural: no HOOK writes the project config — only configure.mjs (CWK-023: this room now HAS a writer, by design; the invariant that survives is Phoenix #5, never a hook)', () => {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
   const offenders = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) { walk(full); continue; }
+      if (entry.name === 'configure.mjs') continue; // the ONE deliberate exception, by NAME (see below)
       if (!/\.[cm]?js$/.test(entry.name) || /\.test\.[cm]?js$/.test(entry.name)) continue;
       const text = fs.readFileSync(full, 'utf8');
       if (/(writeFileSync|appendFileSync)\([^)]*coalledger\.json/.test(text)) offenders.push(full);
     }
   };
+  // CWK-023 correction: this used to walk `scripts` too, and dropping that
+  // half of the walk to "fix" the false "no writer" claim would have thrown
+  // away real coverage — a future literal-path writer anywhere else under
+  // scripts/lib/ would go undetected. Walk BOTH trees; exclude configure.mjs
+  // BY NAME (an explicit CLI write the user/agent runs on purpose). The
+  // exclusion is belt-and-braces documentation of intent, not what
+  // currently keeps the assertion green — the grep is still literal-text-
+  // based (a path VARIABLE like `writePath` never matches `coalledger\.json`
+  // in configure.mjs's own source text anyway).
   for (const r of ['scripts', 'hooks']) walk(path.join(repoRoot, r));
-  assert.deepStrictEqual(offenders, [], `unexpected config writer(s): ${offenders.join(', ')}`);
+  assert.deepStrictEqual(offenders, [], `unexpected config writer(s) outside configure.mjs (Phoenix #5 for hooks; no OTHER script should write this file either): ${offenders.join(', ')}`);
 });
 
 test('corrupt, BOM-prefixed, or missing config degrades to {} (never throws)', () => {

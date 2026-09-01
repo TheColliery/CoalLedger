@@ -73,24 +73,48 @@ export function findProjectRoot(startDir = process.cwd(), home = os.homedir()) {
 //      `.gemini` (first FOUND wins).
 //   3. LEGACY: <project>/.<skill-dotfile>.json at the project root (today's
 //      shape) — read normally, no breakage for an existing user.
-// WRITE target = where the config was found; absent everywhere, the running
-// agent's own dir. Hooks never perform this move on a READ (Phoenix #5, no
-// side effects) — and CoalLedger has NO project-config WRITER anywhere in
-// this codebase to begin with (no configure.mjs, no consent-persistence
-// call): `.coalledger.json` (global or project) is hand-edited by the user,
-// never written by CoalLedger itself. So "move on write" has no code path to
-// hook here — this function is the READ side only, which is this room's
-// entire scope for the campaign.
-export function projectConfigCandidates(cwd = process.cwd(), home = os.homedir()) {
-  const root = findProjectRoot(cwd, home);
+// WRITE target = where the config was found; absent everywhere, ownDirDefault
+// below (CWK-023: the write side now exists — `scripts/configure.mjs` — and
+// a hook never performs this move on a mere READ, Phoenix #5; only
+// configure.mjs's own explicit write can trigger a legacy-file migration,
+// exactly the move-on-CONFIG-WRITE-only rail this comment already named
+// before there was a writer to exercise it).
+function candidatesForRoot(root) {
   const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coalledger.json'));
   candidates.push(path.join(root, '.coalledger.json')); // LEGACY, always last
   return candidates;
 }
+export function projectConfigCandidates(cwd = process.cwd(), home = os.homedir()) {
+  return candidatesForRoot(findProjectRoot(cwd, home));
+}
+// Fresh-default / migration write target when NO config exists anywhere yet
+// (ported from CoalMine's INSPECT MEDIUM 2, 2026-08-08, CWK-023): the design
+// doc's own intent is "nests under whichever agent config dir the project
+// ALREADY HAS" — candidates[0] alone always means `.claude`, which plants a
+// foreign `.claude/` into a project that only uses `.agents`/`.gemini` and
+// has never touched Claude Code. Pick the first AGENT_DIR_ORDER entry that
+// already exists as a DIRECTORY on disk (the agent dir itself, not the
+// config file inside it); none present -> `.claude` (AGENT_DIR_ORDER[0]),
+// the same default a never-configured project got before this fix.
+function isDir(p) {
+  try { return fs.statSync(p).isDirectory(); } catch { return false; }
+}
+export function ownDirDefault(root) {
+  const dir = AGENT_DIR_ORDER.find((d) => isDir(path.join(root, d))) ?? AGENT_DIR_ORDER[0];
+  return path.join(root, dir, 'coal', 'coalledger.json');
+}
 export function projectConfigPath(cwd = process.cwd(), home = os.homedir()) {
-  const candidates = projectConfigCandidates(cwd, home);
+  // root resolved ONCE and shared with both the candidate list and the
+  // fallback (CWK-023 correction: calling findProjectRoot twice per read
+  // walks the tree twice — a hook-path cost with no benefit).
+  const root = findProjectRoot(cwd, home);
+  const candidates = candidatesForRoot(root);
   for (const c of candidates) if (fs.existsSync(c)) return c;
-  return candidates[0]; // nothing found anywhere -- own-dir is both the read and write target
+  // nothing found anywhere -- READS: behaviour-identical to the old
+  // candidates[0] fallback (both this and `.claude` are equally absent, so
+  // readJsonc returns {} either way — this change is only observable on a
+  // WRITE, where configure.mjs uses this same path as its target).
+  return ownDirDefault(root);
 }
 
 function readJsonc(file) {
