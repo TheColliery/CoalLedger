@@ -100,7 +100,7 @@ Slash commands are the Claude Code form. Everywhere else the canaries are invoke
 
 ## 🔧 Configure
 
-Every tool in the series supports two config levels — a global `~/.claude/.coalledger.json` and a per-project config, resolved in this order (first found wins): `.claude/coal/coalledger.json` (the running agent's own dir — the config loader takes no agent-identity signal, so this always collapses onto `.claude` regardless of whether Claude Code or the ported Antigravity adapter is running) → other known agent dirs, `.agents/coal/coalledger.json` → `.gemini/coal/coalledger.json` → LEGACY: a root `.coalledger.json` (the pre-2026-08-08 shape, still read, no breakage) — so a globally-installed skill can be tuned or **shut off per project** (`coalledgerMode: "off"` is the off-switch; a project can also disable single canaries or raise the severity floor instead) — a skill you don't need in a given project stops loading (and burning tokens) there. The keys:
+Every tool in the series supports two config levels — a global `~/.claude/.coalledger.json` and a per-project config, resolved in this order (first found wins): `.claude/coal/coalledger.json` (the running agent's own dir — the config loader takes no agent-identity signal, so this always collapses onto `.claude` regardless of whether Claude Code or the ported Antigravity adapter is running) → other known agent dirs, `.agents/coal/coalledger.json` → `.gemini/coal/coalledger.json` → LEGACY: a root `.coalledger.json` (the pre-2026-08-08 shape, still read, no breakage) — so a globally-installed skill can be tuned or **shut off per project** (`coalledgerMode: "off"` is the off-switch; a project can also disable single canaries or raise the severity floor instead) — a skill you don't need in a given project stops loading (and burning tokens) there. Write with `node scripts/configure.mjs <flags>` (the project config) or `--global <flags>` (the global layer); a write lands back wherever the config was found, except a config sitting at the LEGACY root path migrates to the project's own agent-dir home on that write (the old file removed). A project with no config anywhere yet gets the first agent dir it **already has** on disk (`.claude` → `.agents` → `.gemini`), never a bare `.claude` planted into a project that has never touched Claude Code — nothing is ever auto-moved on a mere read. The keys:
 
 | Key | Default | What it does |
 |---|---|---|
@@ -115,7 +115,7 @@ Every tool in the series supports two config levels — a global `~/.claude/.coa
 | `updateMode` | `ask` | Self-update behavior at session start (`ask` \| `auto` \| `remind` \| `off`) |
 | `updateCheckDays` | `14` | Days between self-update checks/reminders |
 
-Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) and the commented template [`platform-configs/.coalledger.json`](platform-configs/.coalledger.json).
+Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) and the commented template [`platform-configs/.coalledger.json`](platform-configs/.coalledger.json) — or run `node scripts/configure.mjs --help` (every flag, value and default derive from that same schema table, so a key added there is settable and documented from one source).
 
 ## Permissions
 

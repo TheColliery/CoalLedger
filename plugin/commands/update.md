@@ -6,4 +6,4 @@ Kind-1 self-update — the **agent** verifies (online), the **hook** only schedu
 
 1. **Check.** Web-check the latest published CoalLedger tag (any means available — the GitHub releases/tags page or API) vs the installed `version` in `.claude-plugin/plugin.json`.
 2. **Offer (consent-gated — the only token spend).** Newer available → OFFER `claude plugin update coalledger@coalledger` (then restart); on a file-copy install, offer to re-copy the updated files instead. Already current → say so in one line.
-3. **Cadence.** To change how updates are handled, set `updateMode` (`ask` | `auto` | `remind` | `off`) and `updateCheckDays` in `.coalledger.json`. `auto` lets this check run when due without re-asking; `off` silences it entirely.
+3. **Cadence.** Save the pick (no forced check — the chosen mode drives future sessions): `node scripts/configure.mjs --updateMode <ask|auto|remind|off>` (run from the CoalLedger repo, or wherever `.coalledger.json` lives) — or hand-edit `updateMode` and `updateCheckDays` in `.coalledger.json` directly if you have no repo checkout. `auto` lets this check run when due without re-asking; `off` silences it entirely.
