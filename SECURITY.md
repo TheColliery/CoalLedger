@@ -4,7 +4,7 @@ CoalLedger is verified under the same framework as its TheColliery siblings — 
 
 ## Reporting a Vulnerability
 
-Open an issue on this repository. For a sensitive PoC, request a private channel in the issue before posting details.
+Report a security issue in this repo through GitHub's private vulnerability reporting — [Security → Report a vulnerability](https://github.com/TheColliery/CoalLedger/security/advisories/new) — never a public issue. In scope: the 6+1 canary skills, the shipped hooks (the Claude Code `SessionStart` conductor, `PostToolUse` docs tracker, and `Stop` docs-drift reminder, plus the Antigravity conductor adapter), `scripts/` — including the vendored CommonMark+GFM AST engine under `scripts/lib/` and the `scripts/configure.mjs` config CLI — `commands/`, and the `plugin/` dist built from them. Out of scope: a vulnerability in a third-party doc, repo, or codebase a canary merely scans — report that to its own maintainer. This is a one-person-maintained project: expect the report to be read and acknowledged, triaged against the scope above, and disclosed once a fix ships, with no fixed response-time SLA. A public GitHub issue remains the right channel for an ordinary, non-security bug.
 
 ## Commit & Tag Signatures
 
