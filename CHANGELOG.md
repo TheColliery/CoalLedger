@@ -2,6 +2,11 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.6.0-beta.2] - 2026-09-02
+
+### Fixed
+- **The docs memory-drift tracker went silently blind on any project rooted under `os.tmpdir()` — a CI runner workspace, a container build dir, a `mktemp -d` checkout, or this org's own `%TEMP%/claude/<project>/` convention (CWK-054, INSPECT-reproduced with a control row proving the probe wasn't dead).** `hooks/coalledger-doctrack.js`'s temp-scratch exclusion tested only whether the EDITED FILE's path sat under tmp, never whether the file's own PROJECT lived there too — so in that whole workspace class every doc edit, and the `MEMORY.md` satisfier gated by the same check, was silently dropped: a session with a genuine drift obligation produced output byte-identical to one where nothing was edited. Fixed by widening the predicate to exclude a file only when it is under tmp AND its own project root is not (a `findProjectRootLocal` walk mirroring `config-load.mjs`'s marker set, `.git` included) — an ordinary throwaway scratch file outside any project is excluded exactly as before; a real project that merely happens to be checked out under tmp now tracks its docs and sets its satisfier normally, in this room's hook layer. CoalMine's own code-pole fix for the identical law — a suppressed scan must not read identical to a clean one — shipped the same day.
+
 ## [0.6.0-beta.1] - 2026-09-02
 
 ### Added

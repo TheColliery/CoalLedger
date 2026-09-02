@@ -67,6 +67,58 @@ function isUnderTmpdir(absPath) {
   return p === t || p.startsWith(t + path.sep);
 }
 
+// board CWK-054/MED-1: isUnderTmpdir(file) alone tests the PATH, not whether
+// the file is scratch INSIDE A REAL PROJECT — "tmp file" and "tmp path" are
+// different sets. A CI runner workspace, a container build dir, a `mktemp -d`
+// checkout, or this org's own %TEMP%/claude/<project>/ convention puts a
+// WHOLE real project under os.tmpdir(); there every doc edit — and the
+// MEMORY.md satisfier, gated by the same check below — was being silently
+// excluded although the drift obligation genuinely exists (reproduced live,
+// INSPECT probe054.mjs: row 2 byte-identical to row 5's true-clean session).
+// The exclusion's ORIGINAL intent stays correct and is preserved exactly: a
+// scratch doc is one whose OWN PROJECT lives outside temp. So the predicate
+// widens from "is the file under tmp" to "is the file under tmp AND its
+// project is NOT itself under tmp" — never firing at all for the common
+// case (short-circuited: this walk runs only once isUnderTmpdir(file) is
+// already true, which most edits never reach).
+//
+// Mirrors config-load.mjs's findProjectRoot MARKER SET only (not its HOME-
+// stop rail, which exists for a different reason — bounding an upward config
+// search — that does not apply here). Duplicated, not imported: this is a
+// CJS hook and config-load.mjs is ESM (node/runtime.md §3, no require() of
+// an ESM module); staying CONFIG-FREE (this file's own header, :17-25) rules
+// out `await import()` too — that would make every edit pay an async ESM
+// load exactly to answer a question a handful of sync existsSync calls
+// already answer. Keep the marker list in sync by hand if AGENT_DIR_ORDER or
+// the LEGACY filename ever changes in config-load.mjs.
+//
+// COST, stated rather than left implicit (CWK-054/LOW-1): unlike the rest of
+// this file, this walk is UNBOUNDED upward — no HOME-stop (config-load.mjs's
+// own HOME-stop bounds an upward CONFIG search, a different question this
+// walk never asks). Measured worst case (tmp file, no marker anywhere up to
+// the filesystem root, 9 levels deep): 70 existsSync calls, 7.4 ms — over
+// Phoenix #3's <=5ms per-edit budget. Accepted, not a blocker: it runs ONLY
+// once isUnderTmpdir(file) is already true (the short-circuit above), so an
+// ordinary edit outside tmp pays zero, and a real tmp-rooted project finds
+// its `.git` in one or two levels. Declared exception, not a redesign target
+// — do not chase the budget by adding a HOME-stop here.
+const ROOT_MARKERS_REL = [
+  '.git',
+  path.join('.claude', 'coal', 'coalledger.json'),
+  path.join('.agents', 'coal', 'coalledger.json'),
+  path.join('.gemini', 'coal', 'coalledger.json'),
+  '.coalledger.json',
+];
+function findProjectRootLocal(startDir) {
+  let dir = path.resolve(startDir);
+  while (true) {
+    if (ROOT_MARKERS_REL.some((m) => fs.existsSync(path.join(dir, m)))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return startDir; // filesystem root reached, no marker found
+    dir = parent;
+  }
+}
+
 function main() {
   let raw = '';
   try { raw = fs.readFileSync(0, 'utf8'); } catch { return; }
@@ -88,9 +140,18 @@ function main() {
   const normF = path.resolve(baseDir, f);
 
   // Throwaway temp never counts — checked BEFORE anything is recorded, ahead of
-  // both the MEMORY.md marker branch and the doc-extension gate (a tmp-resident
-  // MEMORY.md must not set the satisfier either).
-  if (isUnderTmpdir(normF)) return;
+  // both the MEMORY.md marker branch and the doc-extension gate, so the SAME
+  // rule applies to both (board CWK-054/MED-1, PROBE-VERIFIED — an earlier
+  // draft of this comment stated the opposite of both clauses below, caught
+  // by INSPECT re-running the probe rather than trusting the prose):
+  //   - a tmp-resident MEMORY.md in a REAL (non-tmp) project is excluded, same
+  //     as any other scratch file there — the satisfier is NOT set.
+  //   - a MEMORY.md inside a TMP-ROOTED project is NOT excluded (its project
+  //     root is itself under tmp) — the satisfier IS set, or a session in
+  //     that class of workspace could record drift it can never clear.
+  // Excluded only when the file's OWN PROJECT is outside tmp too — a project
+  // rooted under tmp tracks normally, file AND satisfier alike.
+  if (isUnderTmpdir(normF) && !isUnderTmpdir(findProjectRootLocal(baseDir))) return;
 
   // conversationId = the current AG spec's session field; session_id (CC's core
   // field) + camelCase sessionId stay as fallbacks. MUST match the Stop hook's

@@ -141,6 +141,53 @@ test('tracker EXCLUDES a doc resident under os.tmpdir() (lab/scratch never ships
   } finally { clean(home, tmp, proj); }
 });
 
+// CWK-054/MED-1 (split per LOW-2: one skippable-or-throwing assertion class
+// per behaviour — the original single test's two assertions were SEQUENTIAL,
+// so a sabotage that throws on the trigger assertion never reaches the
+// satisfier one; INSPECT had to close that gap by probe, not by the suite.
+// Two independent tests now, each sabotage-provable on its own: reverting
+// doctrack.js's predicate to `if (isUnderTmpdir(normF)) return;` (dropping
+// `&& !isUnderTmpdir(findProjectRootLocal(baseDir))`) makes BOTH go red on
+// their own assertion line — verified this session, not merely asserted.
+test('tracker RECORDS a doc when the PROJECT ITSELF is rooted under os.tmpdir() — board CWK-054/MED-1 (trigger)', () => {
+  const { home, tmp, proj } = sandbox();
+  try {
+    // A CI runner workspace / %TEMP%/claude/<project>/ / container build dir:
+    // the WHOLE project lives under the hook's own os.tmpdir(), .git marking
+    // it as a real project root (findProjectRootLocal's own marker set).
+    // isUnderTmpdir(file) alone would exclude every doc here — the exact
+    // defect INSPECT reproduced (probe054.mjs row 2, byte-identical to a
+    // true-clean session).
+    const tmpProj = path.join(tmp, 'ciworkspace', 'proj');
+    fs.mkdirSync(path.join(tmpProj, '.git'), { recursive: true });
+    const doc = path.join(tmpProj, 'README.md');
+    fs.writeFileSync(doc, '# r\n');
+    const r1 = runHook(TRACK, trackPayload('K1', doc, tmpProj), tmp, home, tmpProj);
+    assertGraceful(r1);
+    const docsFile = path.join(tmp, 'coalledger-K1.docs');
+    assert.ok(fs.existsSync(docsFile), 'a doc in a tmp-ROOTED PROJECT must still be tracked (the project is real, only its location is under tmp)');
+    assert.ok(fs.readFileSync(docsFile, 'utf8').includes('README.md'));
+  } finally { clean(home, tmp, proj); }
+});
+
+test('tracker sets the MEMORY.md satisfier when the PROJECT ITSELF is rooted under os.tmpdir() — board CWK-054/MED-1 (satisfier)', () => {
+  const { home, tmp, proj } = sandbox();
+  try {
+    // Independent of the trigger test above — its own tmp-rooted project, own
+    // sid — so this branch fails (or passes) entirely on its own assertion,
+    // never masked by an earlier throw in the same test. The satisfier sits
+    // behind the SAME shared gate as the trigger; it must stay consistent
+    // with it or a tmp-rooted session could record drift but never clear it.
+    const tmpProj = path.join(tmp, 'ciworkspace', 'proj2');
+    fs.mkdirSync(path.join(tmpProj, '.git'), { recursive: true });
+    const mem = path.join(tmpProj, 'MEMORY.md');
+    fs.writeFileSync(mem, '# mem\n');
+    const r2 = runHook(TRACK, trackPayload('K2', mem, tmpProj), tmp, home, tmpProj);
+    assertGraceful(r2);
+    assert.ok(fs.existsSync(path.join(tmp, 'coalledger-K2.docmemmoved')), 'MEMORY.md in a tmp-rooted project must still set the satisfier');
+  } finally { clean(home, tmp, proj); }
+});
+
 test('tracker: a <tmp>-PREFIX sibling dir is NOT wrongly excluded (boundary-safe)', () => {
   const { home, tmp, proj } = sandbox();
   const sibling = tmp + 'X'; // shares the tmp prefix but is a different dir
