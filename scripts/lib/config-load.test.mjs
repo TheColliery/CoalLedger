@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { globalConfigPath, findProjectRoot, projectConfigCandidates, projectConfigPath, loadMergedConfig } from './config-load.mjs';
+import { clampedRead } from './config-schema.mjs'; // CWK-057: the clamp and the schema validator compose; one test asserts the composed result
 
 // realpath'd sandboxes: on macOS os.tmpdir() is a symlink (/var -> /private/var);
 // resolving here keeps assertions in the same physical form the walk sees.
@@ -285,6 +286,45 @@ test('clamp: docLeak is a BOOLEAN GATE — a project cannot re-enable a globally
     assert.strictEqual(cascade(home, proj, { docLeak: false }, { docLeak: true }).docLeak, false);
     assert.strictEqual(cascade(home, proj, { docLeak: true }, { docLeak: false }).docLeak, false, 'quietening still allowed');
     assert.strictEqual(cascade(home, proj, {}, { docLeak: true }).docLeak, true, 'schema default IS true (the ceiling) -> nothing in the enum sits above it, not "free" (board #111)');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: scanEverything — a project cannot ESCALATE past an absent global (board #111 substitution has REAL bite here, CWK-057)', () => {
+  const { home, proj } = sandbox();
+  try {
+    // Direction: `true` is the LOUDER side (forces report treatment to
+    // severityFloor 'low' for the run), so index 0 = 'false' = safest. Unlike
+    // coalledgerMode/docLeak — whose schema defaults already SIT at their own
+    // enum's ceiling, so the absent-global substitution changes nothing
+    // observable — scanEverything's default sits at the FLOOR, so this is the
+    // case where board #111's fix genuinely blocks an escalation.
+    assert.strictEqual(cascade(home, proj, {}, { scanEverything: true }).scanEverything, false,
+      'absent global reads as the schema default (false), NOT as "no preference to defend"');
+    assert.strictEqual(cascade(home, proj, { scanEverything: false }, { scanEverything: true }).scanEverything, false,
+      'an explicit global false is not escalatable by a clone-borne project file');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: scanEverything — a project may still QUIETEN true->false, and a global true survives project SILENCE (CWK-057)', () => {
+  const { home, proj } = sandbox();
+  try {
+    assert.strictEqual(cascade(home, proj, { scanEverything: true }, { scanEverything: false }).scanEverything, false,
+      'quietening toward the safe index stays allowed');
+    assert.strictEqual(cascade(home, proj, { scanEverything: true }, {}).scanEverything, true,
+      'project SILENCE must never clamp a global true away -- the clamp loop only fires when the project sets the key');
+    // Case-folding is what stops a project '"TRUE"' from MISSING the lookup
+    // (indexOf -> -1) and winning through the overlay unclamped -- CoalWash's
+    // H5. It matches the ceiling, so the clamp passes it through with its RAW
+    // spelling preserved (the documented behaviour on this branch). The value
+    // is then a STRING against a `bool` spec, so clampedRead degrades it to the
+    // factory default downstream: the two layers compose, and neither alone is
+    // the whole guard.
+    assert.strictEqual(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }).scanEverything, 'TRUE',
+      'case-folded match rides through with raw spelling (clampedRead is what rejects the wrong TYPE later)');
+    assert.strictEqual(clampedRead(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }), 'scanEverything'), false,
+      'the composed result: a wrong-typed project value cannot turn the key on');
+    assert.strictEqual(cascade(home, proj, {}, { scanEverything: 'yes' }).scanEverything, false,
+      'an INVALID project value gets no say and the CANONICAL member is stored, never the raw junk (board #111 R2)');
   } finally { clean(home, proj); }
 });
 

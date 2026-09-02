@@ -155,6 +155,47 @@ function readJsonc(file) {
 //                    index. Attack it closes: a global `docLeak:false` (the
 //                    private-project case the template itself documents) that a
 //                    cloned repo flips back to `true`.
+//   scanEverything   CWK-057, the owner's antivirus-scope law. Boolean gate =
+//                    enum of two, same mechanism as docLeak, OPPOSITE polarity:
+//                    coalledgerMode/docLeak's factory defaults already SIT at
+//                    their own enum's ceiling (board #111's substitution had no
+//                    live bite for those two — see the comment on that line).
+//                    scanEverything's default (false) sits at the FLOOR instead
+//                    — the substitution has REAL bite here: an absent global
+//                    genuinely blocks a project's escalation attempt, it is not
+//                    a structural-only fix. Direction: `true` is the LOUDER
+//                    side (forces report treatment to severityFloor 'low' for
+//                    the run, regardless of the configured floor) — MORE
+//                    report volume and MORE disclosure a clone-borne project
+//                    config did not have the owner's consent to force. That is
+//                    the same escalation SHAPE docLeak already guards (a
+//                    project unlocking what the global did not permit),
+//                    applied here to report size/disclosure-consent instead of
+//                    a canary offer — not a scan-file-count blast (this room
+//                    has no auto-scan pipeline to bypass; CoalMine's identical
+//                    key protects THAT variable, ours protects this one). So
+//                    index 0 = 'false'; a project may only quieten toward it,
+//                    never escalate past whatever the global (or its schema
+//                    default) already permits. One flock, one colour with
+//                    CoalMine's scanEverything order/default/name — reached
+//                    independently from this room's own variable, not copied.
+//                    HONEST CEILING (naming it the way THE CEILING below
+//                    already does for severityFloor, so this entry cannot be
+//                    over-claimed the moment it lands): this clamp is proven
+//                    correct against `mergeSafety` directly, by test — but AS
+//                    OF THIS UNIT it has ZERO live readers anywhere. No hook
+//                    calls clampedRead(cfg,'scanEverything'); the agent-facing
+//                    severityFloor-bypass wiring is a LATER station's to build,
+//                    not this one's. If that wiring reads scanEverything the
+//                    way severityFloor itself is read today — the agent
+//                    reading the raw project file per SKILL.md prose, never
+//                    loadMergedConfig() — this clamp is OUT OF REACH exactly
+//                    like severityFloor's own: coverage that only LOOKS like
+//                    coverage. It becomes LIVE only if that later wiring routes
+//                    through loadMergedConfig()/clampedRead() instead. Named
+//                    now so that station decides with the residue already in
+//                    view, rather than discovering it after shipping prose
+//                    that silently bypasses this clamp.
 // NOT clamped, and each for its OWN reason — the classifier is BLAST, not type:
 //   docsDriftNudge   also a boolean, but it suppresses ONE quiet model-only
 //                    line: no offer, no scan, no spend. Re-enabling that in a
@@ -226,6 +267,7 @@ const SAFER_ENUM = {
   coalledgerMode: ['off', 'manual', 'auto'], // index 0 = safest
   updateMode: ['off', 'remind', 'ask', 'auto'], // order byte-identical to CM/CW
   docLeak: ['false', 'true'], // boolean gate = enum of two; String()+toLowerCase below makes it work unchanged
+  scanEverything: ['false', 'true'], // CWK-057, index 0=safest — see the comment block above for the direction justification and its honest reach ceiling
 };
 const SAFER_UNION = ['disabledCanaries'];
 const SCHEMA_DEFAULT = Object.fromEntries(CONFIG_SCHEMA.map((s) => [s.key, s.def]));

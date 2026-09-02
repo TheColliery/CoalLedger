@@ -26,7 +26,7 @@ Verify that a doc's claims match their source of truth. Report CONFIRMED mismatc
 1. **Extract** checkable claims (assertions a source can confirm or refute — skip opinions and intent).
 2. **Verify** each against its source per the table. Mechanical layer first: RECOMPUTE stated arithmetic and unit/dimension sanity — deterministic, catches "2+2=5" for free.
 3. **Degrade safe:** offline, source unreachable, or low-confidence language → mark `⚠️ unverified: check [source]`. NEVER report an unverified claim as CONFIRMED; never fill the gap from memory.
-4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: a wrong security or install instruction = CRITICAL; doc ≠ source on a surface readers actively rely on = HIGH; a stale minor claim = MEDIUM; cosmetic = LOW. `publicMode: true` raises the stakes of public-facing docs.
+4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: a wrong security or install instruction = CRITICAL; doc ≠ source on a surface readers actively rely on = HIGH; a stale minor claim = MEDIUM; cosmetic = LOW. `publicMode: true` raises the stakes of public-facing docs. `scanEverything: true` bypasses the floor this run — report everything down to `low` — and say so: state that `severityFloor` was bypassed, never that every scope cut was bypassed (this canary has none to bypass).
 
 ## Escalation boundary (health ≠ correctness)
 This canary verifies only what it can FETCH or RECOMPUTE. A claim needing formal verification — a proof, high-precision math, any error-not-allowed decision — is flagged and ESCALATED to CoalBoard (`/coalboard`) when that skill is installed — otherwise flagged as needing formal verification. Never adjudicated here.

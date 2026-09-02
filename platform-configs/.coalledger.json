@@ -50,6 +50,21 @@
   // set false to silence.
   "docsDriftNudge": true,
 
+  // scanEverything (CWK-057, the owner's antivirus-scope law — one flock, one
+  // colour with CoalMine's key of the same name, polarity and default). ON for
+  // a run, every finding is reported down to severityFloor "low" regardless of
+  // the floor you configured. Positive polarity: true = MORE disclosure, never
+  // a double negative.
+  //
+  // BOUNDED, and deliberately narrower than its name suggests elsewhere in the
+  // flock: CoalLedger has no automatic scan-scope cut to bypass at all (every
+  // canary is agent-invoked, never auto-batch-scanned), so this key reaches
+  // severityFloor and NOTHING else. It does NOT re-enable a canary you turned
+  // off via disabledCanaries / docLeak / coalledgerMode — those are ON/OFF
+  // consent switches, not scan scope — and it does NOT force quickVsFull to
+  // "full", because that would escalate PAID spend through a scope key.
+  "scanEverything": false,
+
   // Self-update (series standard). The session-start hook only SCHEDULES a check
   // via a throttled local stamp (no network); the AGENT verifies the latest tag
   // and offers the update, consent-gated. ask = offer when due; auto = standing

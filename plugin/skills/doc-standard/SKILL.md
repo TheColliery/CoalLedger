@@ -23,7 +23,7 @@ Find what a doc is MISSING versus the standard for its kind. Report CONFIRMED ga
 1. **Identify the doc's kind** (README, policy, reference, report, letter, ...) and resolve its standard (above).
 2. **Mechanical layer:** required parts PRESENT — an agent read detects sections by structure, position, and meaning, NEVER by an English keyword (a section may carry its heading in any language). No parser: doc-standard ships no engine (doc-structure's AST is that skill's own, not shared).
 3. **Semantic layer (Full):** completeness of substance — is the public surface the source ships actually covered (commands, config keys, exported APIs, the steps a reader needs); are stated sections empty shells.
-4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: a missing security-reporting channel or install step = HIGH-CRITICAL; an undocumented public key = MEDIUM-HIGH; a nice-to-have section = LOW.
+4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: a missing security-reporting channel or install step = HIGH-CRITICAL; an undocumented public key = MEDIUM-HIGH; a nice-to-have section = LOW. `scanEverything: true` bypasses the floor this run — report everything down to `low` — and say so: state that `severityFloor` was bypassed, never that every scope cut was bypassed (this canary has none to bypass).
 
 ## Escalation boundary
 Whether content is CORRECT is doc-grounding's job; whether a judgment call needs formal verification is CoalBoard's (`/coalboard`, if that skill is installed). This canary only answers "is it all THERE".

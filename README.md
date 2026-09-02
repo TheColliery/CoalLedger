@@ -108,6 +108,7 @@ Every tool in the series supports two config levels — a global `~/.claude/.coa
 | `language` | `auto` | Language for prompts and reports (`auto` \| `th` \| `en` \| `ja` \| `zh` \| `es`); technical terms stay verbatim |
 | `disabledCanaries` | `[]` | Canary names to disable (e.g. `["doc-quality"]`); `"conductor"` or `"all"` silences the conductor entirely |
 | `severityFloor` | `low` | Report findings at or above this severity (judged by context, never mechanically) |
+| `scanEverything` | `false` | Bypass `severityFloor` for this run — report everything down to `low` (does not re-enable a disabled canary, and does not force `quickVsFull` to `full`). An agent-followed instruction, not a code-enforced gate — CoalLedger has no automatic scan-scope cut to bypass in the first place |
 | `quickVsFull` | `quick` | Default scan tier for mixed canaries: `quick` = mechanical only (~free) · `full` = adds the semantic layer (paid; always a separate consent) |
 | `docLeak` | `true` | The #7 doc-leak canary's gate — a private-only project (docs never published) turns it off |
 | `publicMode` | `false` | Treat this project's docs as public-facing (raises leak/grounding stakes in severity context) |

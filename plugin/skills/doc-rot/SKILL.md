@@ -28,7 +28,7 @@ Detection is deterministic; whether a marker means ROT is not — an old date on
 1. **Quick:** collect age-markers per the table. Old ≠ rotten: a marker alone lands in SUSPECTED.
 2. **Full:** judge each marker in context, and hunt UNDATED rot — instructions for a surface that has changed, claims a later doc superseded (pure contradiction between live docs belongs to doc-consistency; rot is the time axis).
 3. **Confirm before CONFIRMED:** a finding is CONFIRMED only when the current state contradicts the doc (the version source names a newer version; the referenced surface is gone). Anything inferred stays SUSPECTED.
-4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: rotten install/security steps readers follow = HIGH-CRITICAL; a stale badge or version mention = MEDIUM; an old date in an archived doc = LOW.
+4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: rotten install/security steps readers follow = HIGH-CRITICAL; a stale badge or version mention = MEDIUM; an old date in an archived doc = LOW. `scanEverything: true` bypasses the floor this run — report everything down to `low` — and say so: state that `severityFloor` was bypassed, never that every scope cut was bypassed (this canary has none to bypass).
 
 ## Escalation boundary
 Whether a claim was EVER true is doc-grounding's job; formal verification of a high-stakes claim escalates to CoalBoard (`/coalboard`) if that skill is installed. This canary only answers "did time break it".

@@ -30,7 +30,7 @@ Runs only when `.coalledger.json` `docLeak` is `true` (the default). A project w
 ## Method
 1. **Establish the audience** per doc (public repo file, published page, internal note) — from the user or the doc's placement; unknown → treat as public and say so.
 2. **Scan prose against the table.** Conservative bias: when unsure whether something is sensitive, FLAG it as SUSPECTED with the reason — a false flag costs a glance, a miss costs an incident.
-3. **No CONFIRMED tier exists here:** detection can be certain ("this IS an email address") but sensitivity never is — every finding ships as SUSPECTED for human judgment. Severity is the human-judged stake IF private (personal data / a live secret = CRITICAL; internal infrastructure = HIGH; unpublished intent = MEDIUM-HIGH), then honor `severityFloor`.
+3. **No CONFIRMED tier exists here:** detection can be certain ("this IS an email address") but sensitivity never is — every finding ships as SUSPECTED for human judgment. Severity is the human-judged stake IF private (personal data / a live secret = CRITICAL; internal infrastructure = HIGH; unpublished intent = MEDIUM-HIGH), then honor `severityFloor`. `scanEverything: true` bypasses the floor this run — report everything down to `low` — and say so: state that `severityFloor` was bypassed, never that every scope cut was bypassed (this canary has none to bypass).
 
 ## Escalation boundary
 Whether the doc's CLAIMS are right is doc-grounding; this canary only asks "should this audience see it". Legal/regulatory exposure questions go to the human (and their counsel), never adjudicated here.

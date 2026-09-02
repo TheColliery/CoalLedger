@@ -25,7 +25,7 @@ Find what makes a doc hard to read or mechanically malformed. Report CONFIRMED f
 2. **Quick (mechanics):** deterministic checks per the table — a mechanics finding is CONFIRMED only when it is objectively wrong in the doc's language (a decomposed character, a doubled space), not a stylistic preference.
 3. **Full (quality):** judge bloat/clarity for the doc's audience and purpose. A cut proposal must not change meaning — quality fixes trim fat, never meat. Grammar/typo judgment runs in the doc's own language.
 4. **Word-choice is a MEANING decision, not a typo:** an unusual-but-intentional word, register, or voice gets flagged as SUSPECTED with a question, never "corrected".
-5. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: an ambiguous instruction readers must execute = HIGH; heavy bloat on a front-door doc = MEDIUM; a typo in prose = LOW (a typo inside a command or identifier is doc-grounding territory — it breaks, it does not just read badly).
+5. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: an ambiguous instruction readers must execute = HIGH; heavy bloat on a front-door doc = MEDIUM; a typo in prose = LOW (a typo inside a command or identifier is doc-grounding territory — it breaks, it does not just read badly). `scanEverything: true` bypasses the floor this run — report everything down to `low` — and say so: state that `severityFloor` was bypassed, never that every scope cut was bypassed (this canary has none to bypass).
 
 ## Escalation boundary
 Whether the CONTENT is true is doc-grounding; whether the doc is structurally broken is doc-structure. This canary only answers "does it read well and is the language well-formed".

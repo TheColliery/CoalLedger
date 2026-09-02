@@ -23,6 +23,7 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
    - HIGH: a real breakage on a doc readers actively use (broken anchor in a live README, dropped table cells with content).
    - MEDIUM: structural debt (skipped heading level, multiple H1, undefined ref in secondary docs).
    - LOW: style/hygiene (bare URL, orphan definition, anything in an archived/internal doc).
+   `scanEverything: true` bypasses the floor this run — report everything down to `low` — and say so: state that `severityFloor` was bypassed, never that every scope cut was bypassed (this canary has none to bypass).
 3. **Report** — CONFIRMED table only; anything the engine could not verify (e.g. site-root-relative `/links`, a known engine limit) OR whose correctness the engine cannot itself judge (`image-alt-missing` — decorative-vs-content intent) goes to a separate SUSPECTED list, never the main table. `image-alt-missing` carries `finding.suspected = true` and is SUSPECTED-only ALWAYS — there is no config toggle for it (skip-what-doesn't-matter, fill-what-does, never on/off).
 
 ## Checks (engine ids)

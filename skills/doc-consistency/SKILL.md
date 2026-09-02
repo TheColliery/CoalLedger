@@ -25,7 +25,7 @@ Find places where the doc set disagrees with itself. Report CONFIRMED contradict
 1. **Inventory:** extract the facts and defined terms each in-scope doc asserts (skip opinions; technical terms stay verbatim — a term is only "drifted" when the CONCEPT diverges, not when prose around it varies).
 2. **Cross-compare** the inventory; pair up disagreements. For cross-language pairs, compare MEANING (a free translation is fine; a contradicting one is drift).
 3. **Which side is right is NOT this canary's call** — report the pair and, where a source of truth is obvious, note it; resolving truth is doc-grounding's job (offer to run it on the pair).
-4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: contradictory instructions readers may follow = HIGH-CRITICAL; contradictory descriptions = MEDIUM; naming inconsistency = LOW.
+4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: contradictory instructions readers may follow = HIGH-CRITICAL; contradictory descriptions = MEDIUM; naming inconsistency = LOW. `scanEverything: true` bypasses the floor this run — report everything down to `low` — and say so: state that `severityFloor` was bypassed, never that every scope cut was bypassed (this canary has none to bypass).
 
 ## Escalation boundary
 Adjudicating WHICH of two contradicting claims is true = doc-grounding (fetch/recompute) or, for the error-not-allowed slice, CoalBoard (`/coalboard`) if that skill is installed. This canary only surfaces the disagreement.
