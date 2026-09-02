@@ -63,6 +63,11 @@
   // off via disabledCanaries / docLeak / coalledgerMode — those are ON/OFF
   // consent switches, not scan scope — and it does NOT force quickVsFull to
   // "full", because that would escalate PAID spend through a scope key.
+  //
+  // REACH: this is an instruction your agent FOLLOWS, not a gate the code
+  // enforces. Like severityFloor, it is read from this file directly rather
+  // than through the global+project consent cascade, so the clamp that stops a
+  // cloned repo escalating other keys has no path to this one.
   "scanEverything": false,
 
   // Self-update (series standard). The session-start hook only SCHEDULES a check

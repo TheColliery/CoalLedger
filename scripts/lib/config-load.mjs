@@ -186,16 +186,21 @@ function readJsonc(file) {
 //                    OF THIS UNIT it has ZERO live readers anywhere. No hook
 //                    calls clampedRead(cfg,'scanEverything'); the agent-facing
 //                    severityFloor-bypass wiring is a LATER station's to build,
-//                    not this one's. If that wiring reads scanEverything the
-//                    way severityFloor itself is read today — the agent
-//                    reading the raw project file per SKILL.md prose, never
-//                    loadMergedConfig() — this clamp is OUT OF REACH exactly
-//                    like severityFloor's own: coverage that only LOOKS like
-//                    coverage. It becomes LIVE only if that later wiring routes
-//                    through loadMergedConfig()/clampedRead() instead. Named
-//                    now so that station decides with the residue already in
-//                    view, rather than discovering it after shipping prose
-//                    that silently bypasses this clamp.
+//                    not this one's. SETTLED, same commit, and the answer is
+//                    the unhappy one (CWK-057 INSPECT MED-1): that wiring
+//                    landed as SKILL.md PROSE — the agent reads this key the
+//                    way it reads severityFloor, from instruction text, never
+//                    through loadMergedConfig(). So this clamp is OUT OF REACH
+//                    on EVERY shipped route, exactly like severityFloor's own:
+//                    it is proven correct against mergeSafety by test and
+//                    protects nothing any agent actually traverses. Do NOT
+//                    read the tests below it as evidence the shipped path is
+//                    guarded — they are evidence about mergeSafety alone.
+//                    It would become LIVE only if a future reader routes
+//                    through loadMergedConfig()/clampedRead(); until then this
+//                    is a named gap, never coverage. Kept rather than deleted
+//                    because the day such a reader lands, the guard must
+//                    already be correct and the direction already argued.
 // NOT clamped, and each for its OWN reason — the classifier is BLAST, not type:
 //   docsDriftNudge   also a boolean, but it suppresses ONE quiet model-only
 //                    line: no offer, no scan, no spend. Re-enabling that in a

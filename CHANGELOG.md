@@ -2,6 +2,11 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.7.0-beta.1] - 2026-09-03
+
+### Added
+- **`scanEverything`, a boolean config key that bypasses `severityFloor` for one run — report everything down to `low` — and nothing else (CWK-057, owner's antivirus-scope law; default `false`, positive polarity: `true` = MORE disclosure, never a double negative; one flock one colour with CoalMine's key of the same name/polarity/default, shipped the same day).** CoalLedger has NO automatic scan-scope cut to bypass at all — every canary is agent-invoked, never auto-batch-scanned the way CoalMine's touch/stop pipeline is — so the key's honest reach is narrower than its name suggests elsewhere in the flock: it does NOT re-enable a canary turned off via `disabledCanaries`/`docLeak`/`coalledgerMode` (those are ON/OFF consent switches, not scan scope), and does NOT force `quickVsFull` to `full` (that would escalate PAID spend through a scope-widening key). A consent-cascade clamp was added and is correct against `mergeSafety` by test, but it is honestly OUT OF REACH on every shipped route: like `severityFloor`, this key is read by the AGENT from the project file directly, per SKILL.md prose, never through the global+project consent cascade — so it is an instruction the agent follows, not a gate the code enforces. All 7 SKILL.md carry the bypass in their own "then honor `severityFloor`" step, and each carries the disclosure in the same clause: when the key is on, the run says `severityFloor` was bypassed — never that every scope cut was, since these canaries have none to bypass.
+
 ## [0.6.0-beta.2] - 2026-09-02
 
 ### Fixed

@@ -317,12 +317,32 @@ test('clamp: scanEverything — a project may still QUIETEN true->false, and a g
     // H5. It matches the ceiling, so the clamp passes it through with its RAW
     // spelling preserved (the documented behaviour on this branch). The value
     // is then a STRING against a `bool` spec, so clampedRead degrades it to the
-    // factory default downstream: the two layers compose, and neither alone is
-    // the whole guard.
+    // factory default downstream.
+    // CORRECTED (CWK-057 INSPECT LOW-2): this case is NOT a composition, and
+    // the earlier comment over-credited the clamp. Measured -- clampedRead
+    // ALONE on the raw value returns false, so the validator is sufficient
+    // here; the clamp alone returns the string "TRUE" and is neither necessary
+    // nor sufficient. The genuine composition case is the INVALID value below
+    // ('yes'), where the clamp does the canonical-member substitution the
+    // validator cannot.
     assert.strictEqual(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }).scanEverything, 'TRUE',
       'case-folded match rides through with raw spelling (clampedRead is what rejects the wrong TYPE later)');
     assert.strictEqual(clampedRead(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }), 'scanEverything'), false,
       'the composed result: a wrong-typed project value cannot turn the key on');
+  } finally { clean(home, proj); }
+});
+
+test('clamp: scanEverything — an INVALID project value gets no say and the CANONICAL member is stored (CWK-057, split per INSPECT LOW-1)', () => {
+  const { home, proj } = sandbox();
+  try {
+    // SPLIT OUT DELIBERATELY (CWK-057 INSPECT LOW-1, the same class this room
+    // closed at CWK-054 LOW-2 and did not apply to its own next test): this is
+    // the ONLY assertion in the pair that DISCRIMINATES -- every other one
+    // above passes with the SAFER_ENUM entry removed, because they exercise
+    // the plain overlay or clampedRead rather than the clamp. Sitting last in
+    // a five-assertion test, a throw on any earlier line would have left the
+    // clamp's only real guard silently unexercised while the suite reported a
+    // red for an unrelated reason.
     assert.strictEqual(cascade(home, proj, {}, { scanEverything: 'yes' }).scanEverything, false,
       'an INVALID project value gets no say and the CANONICAL member is stored, never the raw junk (board #111 R2)');
   } finally { clean(home, proj); }
