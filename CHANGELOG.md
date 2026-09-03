@@ -2,6 +2,11 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.8.0-beta.1] - 2026-09-03
+
+### Added
+- **A `verify.mjs` gate that fails the build when ship-text names a config key that does not exist in the schema (CWK-060, ported from CoalMine's CWK-059/061 — four rooms hit this defect class in one night, ours among them).** It scans **8 doc surfaces (the 7 `SKILL.md` + `README.md`) and 4 hooks**, plus a structured pass over README's Configure key table where a first-cell backtick is a key claim regardless of shape; `CHANGELOG.md` is deliberately OUT — it names retired and planned keys BY DESIGN, so a red there would fire on accurate history. **It under-fires on purpose.** Detection needs an internal capital, so a single lowercase key is invisible to it — measured on our own surfaces: a naive rule flags 144 tokens / 133 non-keys (92% noise), the capital rule 12 / 2. A gate that cries wolf is a dead gate; a miss is a bug, a flood is worse. `language` is that blind spot and it is DECLARED, not hidden — an undeclared shape-invisible key is a hard FAIL, and the pass line reads "every DETECTABLE config key" with a visible SKIP naming what it could not see. Three allowlists expire on EVENTS rather than dates: a planned key that now exists FAILS, a never-a-key that becomes one FAILS, a declared blind key the rule can now see FAILS, and a declaration nothing references FAILS — so they cannot rot into bypasses. The proof is SYNTHETIC, and this says so: our history has never contained this defect class (checked per key — the schema-add commit and the first ship-text commit are the same commit, 11/11).
+
 ## [0.7.0-beta.1] - 2026-09-03
 
 ### Added

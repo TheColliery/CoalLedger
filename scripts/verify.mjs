@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CONFIG_SCHEMA, validateConfig } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 import { DESC_CAP, frontmatterField } from './lib/desc-cap.mjs';
+import { checkConfigKeys } from './lib/config-keys.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let fails = 0;
@@ -174,6 +175,57 @@ try {
   }
   if (CONFIG_SCHEMA.every((s) => s.key in cfg && JSON.stringify(cfg[s.key]) === JSON.stringify(s.def))) ok('factory template carries every schema key at its default');
 } catch (e) { fail(`factory config: ${e.message}`); }
+
+// config-key drift (CWK-060, ported from CoalMine's CWK-059): every config
+// key NAMED on a user-facing surface must RESOLVE in config-schema.mjs, or
+// be declared in PENDING_KEYS / NOT_CONFIG / BLIND_KEYS (config-keys.mjs).
+// Born from CoalMine's own CWK-054 MEDIUM and this room's own CWK-057
+// residue (scanEverything landed correctly-clamped while nothing yet read
+// it) -- the same drift class from opposite directions.
+//
+// SCOPE DERIVATION, stated rather than implied (AGENTS.md, THE
+// MEASUREMENT'S OWN FOURTH TENSE): mdFiles is SKILLS + README.md, both
+// already this file's own existing rosters (SKILLS above; this room has no
+// listSkills() walk the way CoalMine does, so a new skill dir joins SKILLS
+// at the top of this file the same way it already must for every other
+// check here -- not a new roster this gate invents). hookFiles is WALKED
+// via readdirSync, so a new hook is covered the day it lands with no
+// roster to keep complete. What neither reaches is stated in
+// config-keys.mjs's own surface list, with the measurement behind each
+// exclusion. Source only; plugin/ twins are byte-identical by the dist
+// check below, so scanning them would double every finding.
+console.log('config keys:');
+try {
+  const skillMd = SKILLS.map((s) => path.join('skills', s, 'SKILL.md'));
+  skillMd.push('README.md');
+  const hooksDir = path.join(repo, 'hooks');
+  const hookJs = (fs.existsSync(hooksDir) ? fs.readdirSync(hooksDir) : [])
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => path.join('hooks', f));
+  const findings = checkConfigKeys({
+    schemaKeys: CONFIG_SCHEMA.map((e) => e.key),
+    mdFiles: skillMd,
+    hookFiles: hookJs,
+    read: (f) => fs.readFileSync(path.join(repo, f), 'utf8'),
+    // This room's own key table: a first cell there is a key CLAIM
+    // regardless of shape. Region-bounded on the '## 🔧 Configure' heading
+    // (a substring match, emoji-agnostic) — measured: 11/11 rows resolve,
+    // zero false positives, the Commands table (which precedes Configure
+    // in this README) falls outside by construction.
+    keyTables: [{ file: 'README.md', heading: 'Configure' }],
+  });
+  const hard = findings.filter((f) => f.level !== 'SKIP');
+  // The pass line is QUALIFIED when the gate has declared blind spots: an
+  // unqualified "every config key ... resolves" is false while a declared
+  // key is being read and discarded.
+  const blindSkips = findings.filter((f) => f.level === 'SKIP' && f.msg.startsWith('blind to'));
+  const scope = blindSkips.length ? 'every DETECTABLE config key' : 'every config key';
+  if (hard.length === 0) ok(`${scope} named across ${skillMd.length} doc + ${hookJs.length} hook surfaces resolves in the schema`);
+  for (const f of findings) {
+    if (f.level === 'SKIP') console.log('  --   ' + f.msg);
+    else fail(f.msg);
+  }
+} catch (e) { fail(`config-key check crashed: ${e.message}`); }
 
 console.log('libs (import check):');
 for (const l of LIBS) {
