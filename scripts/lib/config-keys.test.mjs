@@ -5,7 +5,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkConfigKeys, PENDING_KEYS, NOT_CONFIG, BLIND_KEYS, noticeRegion } from './config-keys.mjs';
+import { checkConfigKeys, PENDING_KEYS, NOT_CONFIG, BLIND_KEYS, noticeRegion, checkConfigReadPath, READ_PATH_EXCEPTIONS } from './config-keys.mjs';
 
 // In-memory surfaces: `read` is injected, so these drive the checker with no disk IO.
 const mem = (files) => (f) => {
@@ -453,3 +453,153 @@ test('config-keys: an absent surface is a visible SKIP, never a silent pass and 
   assert.ok(!out.some((f) => /protects nothing/.test(f.msg)),
     'and it must NOT convict the declaration -- a 0-hit proves nothing when the scope was incomplete');
 });
+
+// ===========================================================================
+// CWK-064: checkConfigReadPath -- ONE CONFIG-READ PATH PER ROOM. A key
+// mentioned beside `.coalledger.json` with no cascade language is a BARE,
+// unclamped read path.
+const readMem = (files) => (f) => {
+  if (!(f in files)) throw new Error('ENOENT ' + f);
+  return files[f];
+};
+
+test('read-path: THE DEFECT -- a key named beside .coalledger.json with no cascade language FAILs', () => {
+  const out = checkConfigReadPath({
+    schemaKeys: ['severityFloor'],
+    mdFiles: ['a.md'],
+    read: readMem({ 'a.md': 'honor `.coalledger.json` `severityFloor`:' }),
+    exceptions: {},
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].level, 'FAIL');
+  assert.match(out[0].msg, /severityFloor/);
+  assert.match(out[0].msg, /a\.md/);
+});
+
+test('read-path: naming the CASCADE (global + project) is silent', () => {
+  const out = checkConfigReadPath({
+    schemaKeys: ['severityFloor'],
+    mdFiles: ['a.md'],
+    read: readMem({ 'a.md': 'from `.coalledger.json`, global + project merge: `severityFloor`' }),
+    exceptions: {},
+  });
+  assert.deepEqual(out, [], 'both words present -> the cascade is named, not a bare read');
+});
+
+test('read-path: a line naming ONLY "global" or ONLY "project" is still a FAIL -- both words are required', () => {
+  const globalOnly = checkConfigReadPath({
+    schemaKeys: ['severityFloor'],
+    mdFiles: ['a.md'],
+    read: readMem({ 'a.md': 'the global `.coalledger.json` `severityFloor`' }),
+    exceptions: {},
+  });
+  const projectOnly = checkConfigReadPath({
+    schemaKeys: ['severityFloor'],
+    mdFiles: ['a.md'],
+    read: readMem({ 'a.md': 'the project `.coalledger.json` `severityFloor`' }),
+    exceptions: {},
+  });
+  assert.equal(globalOnly.length, 1, 'one word alone does not describe a merge');
+  assert.equal(projectOnly.length, 1);
+});
+
+test('read-path: a line mentioning .coalledger.json with NO real key is silent', () => {
+  const out = checkConfigReadPath({
+    schemaKeys: ['severityFloor'],
+    mdFiles: ['a.md'],
+    read: readMem({ 'a.md': 'see `.coalledger.json` for the full key list' }),
+    exceptions: {},
+  });
+  assert.deepEqual(out, [], 'no key named -> not a read-path claim at all');
+});
+
+test('read-path: a line naming a key with NO .coalledger.json mention is silent', () => {
+  const out = checkConfigReadPath({
+    schemaKeys: ['severityFloor'],
+    mdFiles: ['a.md'],
+    read: readMem({ 'a.md': 'honor `severityFloor` per the merged config' }),
+    exceptions: {},
+  });
+  assert.deepEqual(out, [], 'the file is never named -> nothing to flag');
+});
+
+test('read-path: TWO keys on one line produce TWO findings, each naming its own key', () => {
+  const out = checkConfigReadPath({
+    schemaKeys: ['docLeak', 'publicMode'],
+    mdFiles: ['a.md'],
+    read: readMem({ 'a.md': 'Runs only when `.coalledger.json` `docLeak` is true. `publicMode` raises stakes.' }),
+    exceptions: {},
+  });
+  assert.equal(out.length, 2);
+  assert.ok(out.some((f) => /docLeak/.test(f.msg)));
+  assert.ok(out.some((f) => /publicMode/.test(f.msg)));
+});
+
+test('read-path: a DECLARED exception makes the honest case silent', () => {
+  const out = checkConfigReadPath({
+    schemaKeys: ['updateMode'],
+    mdFiles: ['commands/update.md'],
+    read: readMem({ 'commands/update.md': 'hand-edit `updateMode` in `.coalledger.json` directly' }),
+    exceptions: { 'commands/update.md:updateMode': 'a write-target fallback, not a read instruction' },
+  });
+  assert.deepEqual(out, [], 'declared with its reason -> silent, the honest case is cheap');
+});
+
+test('read-path: exception matching is PATH-SEPARATOR AGNOSTIC (backslash-joined paths still match a forward-slash key)', () => {
+  // Self-caught while wiring verify.mjs: path.join() on Windows produces
+  // 'commands\\update.md', which would never match a forward-slash
+  // exception key and silently turn a declared exception into a permanent
+  // FAIL on this platform. Regression-pinned here.
+  const out = checkConfigReadPath({
+    schemaKeys: ['updateMode'],
+    mdFiles: ['commands\\update.md'],
+    read: readMem({ 'commands\\update.md': 'hand-edit `updateMode` in `.coalledger.json` directly' }),
+    exceptions: { 'commands/update.md:updateMode': 'a write-target fallback, not a read instruction' },
+  });
+  assert.deepEqual(out, [], 'a backslash-joined path must still resolve to the forward-slash exception key');
+});
+
+test('read-path: SELF-CLEANING -- an exception that matches NOTHING FAILs as dead weight', () => {
+  const out = checkConfigReadPath({
+    schemaKeys: ['updateMode'],
+    mdFiles: ['a.md'],
+    read: readMem({ 'a.md': 'nothing relevant here' }),
+    exceptions: { 'commands/update.md:updateMode': 'stale, nothing names this any more' },
+  });
+  const dead = out.filter((f) => /protects nothing/.test(f.msg));
+  assert.equal(dead.length, 1);
+  assert.match(dead[0].msg, /commands\/update\.md:updateMode/);
+});
+
+test('read-path: a PARTIAL scan (unreadable surface) degrades to SKIP, never convicts a live exception', () => {
+  const out = checkConfigReadPath({
+    schemaKeys: ['updateMode'],
+    mdFiles: ['missing.md'],
+    read: readMem({}),
+    exceptions: { 'commands/update.md:updateMode': 'a write-target fallback' },
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].level, 'SKIP');
+  assert.match(out[0].msg, /missing\.md/);
+  assert.ok(!out.some((f) => /protects nothing/.test(f.msg)),
+    'a partial scan cannot prove the exception is dead');
+});
+
+test("read-path: this room's own READ_PATH_EXCEPTIONS declares exactly the update.md fallback", () => {
+  assert.deepEqual(Object.keys(READ_PATH_EXCEPTIONS).sort(), [
+    'commands/update.md:updateCheckDays',
+    'commands/update.md:updateMode',
+  ]);
+});
+
+// DELIBERATELY NOT a committed test: "does the live tree currently pass
+// checkConfigReadPath" is NOT asserted here. The 7-line defect is real in
+// the tree as this unit hands over (the doc-writer's fix is a SEPARATE,
+// later station) -- a committed test asserting the tree is CURRENTLY
+// broken would itself go red the moment that correct fix lands, planting
+// a landmine under an unrelated, wanted change. The historical red proof
+// belongs in the RETURN file (this unit's own `verify.mjs` run, captured
+// live) — this test file stays 100% green on synthetic fixtures only,
+// matching every other test above and this room's own red-run law (a red
+// CI run is fixed next-turn, never shipped as an expected, permanent
+// state).

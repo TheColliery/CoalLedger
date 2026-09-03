@@ -12,7 +12,7 @@ Verify that a doc's claims match their source of truth. Report CONFIRMED mismatc
 
 ## Parameters
 - **SCOPE:** named files (default when given) | touched doc files this session | whole repo docs — `.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org` (confirm first if > 20 files).
-- **TIER:** Quick = mechanical recompute only (~free, deterministic) · Full = semantic claim-by-claim verification (paid). Default from `.coalledger.json` `quickVsFull`; Full is always a separate consent.
+- **TIER:** Quick = mechanical recompute only (~free, deterministic) · Full = semantic claim-by-claim verification (paid). Default from `quickVsFull` (`.coalledger.json`, global + project merge); Full is always a separate consent.
 
 ## Source of truth (general — pick per claim, never assume one kind)
 | claim about | source of truth |

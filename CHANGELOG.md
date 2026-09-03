@@ -2,6 +2,14 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.9.0-beta.1] - 2026-09-03
+
+### Added
+- **`verify.mjs` now fails the build when a scanned surface names `.coalledger.json` beside a config key without naming the global+project cascade — a BARE, unclamped read path (CWK-064).** It mechanises a flock convention the owner authorised as convention rather than by press: **ONE CONFIG-READ PATH PER ROOM — no key is read from a bare project file, by hook or by agent instruction.** Ships a fourth declaration list (`READ_PATH_EXCEPTIONS`) with the same EVENT-expiry discipline as the other three: an entry whose mention vanished FAILS, an entry protecting nothing FAILS, so it cannot rot into a bypass. **Name its blind spot honestly:** the predicate needs the filename and a key on the same line, so a surface that discusses a key WITHOUT naming the file is invisible to it — that is how `scanEverything`'s own two bare-read claims survived until INSPECT found them by hand.
+
+### Fixed
+- **7 lines across 6 `SKILL.md` told the agent to read the BARE project file; the gate reddened on 8 findings against HEAD** (`doc-leak:14` fires twice, for two keys) **— all 8 now name the cascade**, matching `commands/stats.md:11`'s existing wording. **Why it mattered, plainly:** the owner's `~/.claude/.coalledger.json` carries `scanEverything: true` with no project file, so an agent following the old lines read an absent file and missed the setting entirely. Also corrected: `scanEverything`'s schema `help:` and template comment, which said the key is read *"from the project file directly, never through loadMergedConfig()"* — true about what the CLAMP can ENFORCE, wrong as a READ PATH, and three entries from `severityFloor` saying the opposite about a key read in the same breath. **The bound survives in both:** the gate closes the convention's REGRESSION risk mechanically; the instruction the agent follows is still PROSE-STRENGTH — `hooks-safety.md` §9's clamp has no path to an agent-read key, and that residue is stated on every corrected surface, never claimed closed.
+
 ## [0.8.0-beta.1] - 2026-09-03
 
 ### Added

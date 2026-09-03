@@ -1,7 +1,7 @@
 ---
 name: doc-leak
 description: >-
-  Docs-health audience-safety scan — PROSE-level sensitive content in a doc meant to be public: internal URLs/hostnames/paths, personal data (names, emails, phone numbers in examples or logs), unpublished plans or roadmaps, private figures (pricing, customers), anything whose audience boundary the doc crosses. Catches LEAKED docs. Explicitly NOT a secret scanner: token-shaped secrets (API keys, passwords, private keys) are gitleaks' job — this canary hunts the sensitive PROSE that token scanners and gitignore both miss. Triggers on: "/doc-leak", "doc-leak", "is this safe to publish", "leak check", "anything private in this doc". Semantic, conservative by design: EVERY finding is SUSPECTED — public-vs-private is the human's judgment, never the tool's. Config-gated via the .coalledger.json docLeak key (default on; a private-only project turns it off).
+  Docs-health audience-safety scan — PROSE-level sensitive content in a doc meant to be public: internal URLs/hostnames/paths, personal data (names, emails, phone numbers in examples or logs), unpublished plans or roadmaps, private figures (pricing, customers), anything whose audience boundary the doc crosses. Catches LEAKED docs. Explicitly NOT a secret scanner: token-shaped secrets (API keys, passwords, private keys) are gitleaks' job — this canary hunts the sensitive PROSE that token scanners and gitignore both miss. Triggers on: "/doc-leak", "doc-leak", "is this safe to publish", "leak check", "anything private in this doc". Semantic, conservative by design: EVERY finding is SUSPECTED — public-vs-private is the human's judgment, never the tool's. Config-gated via `docLeak` (`.coalledger.json`, global + project merge; default on; a private-only project turns it off).
 ---
 
 # Doc-Leak
@@ -11,7 +11,7 @@ Answer in the USER'S language; keep technical terms, commands, paths, and check 
 Find prose that may cross the doc's audience boundary. EVERYTHING this canary reports is SUSPECTED — the human judges what is actually private.
 
 ## Gate
-Runs only when `.coalledger.json` `docLeak` is `true` (the default). A project whose docs never leave the machine sets it `false` and this canary stays silent. `publicMode: true` marks the project's docs as public-facing and raises the stakes of every finding.
+Runs only when `docLeak` (`.coalledger.json`, global + project merge) is `true` (the default). A project whose docs never leave the machine sets it `false` and this canary stays silent. `publicMode` (same merge) `true` marks the project's docs as public-facing and raises the stakes of every finding.
 
 ## Parameters
 - **SCOPE:** named files (default when given) | docs about to be published/committed | whole repo public-facing docs — `.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org` (confirm first if > 20 files).

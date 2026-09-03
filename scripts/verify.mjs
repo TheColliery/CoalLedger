@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CONFIG_SCHEMA, validateConfig } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 import { DESC_CAP, frontmatterField } from './lib/desc-cap.mjs';
-import { checkConfigKeys } from './lib/config-keys.mjs';
+import { checkConfigKeys, checkConfigReadPath } from './lib/config-keys.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let fails = 0;
@@ -226,6 +226,36 @@ try {
     else fail(f.msg);
   }
 } catch (e) { fail(`config-key check crashed: ${e.message}`); }
+
+// config read-path (CWK-064): ONE CONFIG-READ PATH PER ROOM -- no key is
+// read from a BARE project config file, by hook or by agent instruction;
+// every read goes through the global+project merge. Owner-authorised as
+// flock convention without a sheet press. SCOPE, deliberately WIDER than
+// the config-key check above: skills/*/SKILL.md + README.md +
+// commands/*.md -- see config-keys.mjs's own header for the full
+// surface-set reasoning (hooks/*.js is OUT here, unlike above -- a hook's
+// notice text is read by the USER, never consulted by the AGENT as an
+// instruction).
+console.log('config read-path (one path per room):');
+try {
+  const mdFiles = SKILLS.map((s) => path.join('skills', s, 'SKILL.md'));
+  mdFiles.push('README.md');
+  const commandsDir = path.join(repo, 'commands');
+  for (const f of fs.readdirSync(commandsDir).filter((n) => n.endsWith('.md'))) {
+    mdFiles.push(path.join('commands', f));
+  }
+  const findings = checkConfigReadPath({
+    schemaKeys: CONFIG_SCHEMA.map((e) => e.key),
+    mdFiles,
+    read: (f) => fs.readFileSync(path.join(repo, f), 'utf8'),
+  });
+  const hard = findings.filter((f) => f.level !== 'SKIP');
+  if (hard.length === 0) ok(`every config-key mention beside .coalledger.json across ${mdFiles.length} surfaces names the global+project cascade, or is a declared exception`);
+  for (const f of findings) {
+    if (f.level === 'SKIP') console.log('  --   ' + f.msg);
+    else fail(f.msg);
+  }
+} catch (e) { fail(`config read-path check crashed: ${e.message}`); }
 
 console.log('libs (import check):');
 for (const l of LIBS) {

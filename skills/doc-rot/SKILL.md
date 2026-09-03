@@ -12,7 +12,7 @@ Find doc content that time has invalidated. Report CONFIRMED rot; park the merel
 
 ## Parameters
 - **SCOPE:** named files (default when given) | touched doc files this session | whole repo docs — `.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org` (confirm first if > 20 files).
-- **TIER:** Quick = mechanical age-markers only (~free) · Full = semantic staleness judgment (paid). Default from `.coalledger.json` `quickVsFull`; Full is always a separate consent.
+- **TIER:** Quick = mechanical age-markers only (~free) · Full = semantic staleness judgment (paid). Default from `quickVsFull` (`.coalledger.json`, global + project merge); Full is always a separate consent.
 
 ## Age-markers (mechanical layer — deterministic detection)
 | marker | signal |

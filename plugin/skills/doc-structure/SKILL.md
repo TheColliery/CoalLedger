@@ -18,7 +18,7 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
    `cd "<skill base dir>" && node ./lib/md-checks.mjs --json <absolute-file.md> [more absolute paths ...]`
    The `cd` is REQUIRED — `./lib/` resolves against the skill folder, never your project cwd (without it: `Cannot find module`). Target docs must be ABSOLUTE paths, since cwd is now the skill folder. Findings do not depend on cwd: each doc's relative links resolve against that DOC's own directory.
    Never re-derive these checks by reading markdown yourself — the AST engine exists so detection matches CommonMark+GFM rendering (regex cry-wolfs on things that render fine). Honest ceiling: CommonMark+GFM fidelity, NOT 100% GitHub-pixel fidelity.
-2. **Contextualize severity** — detection is deterministic; severity is NEVER mechanical. Judge each finding by context, then honor `.coalledger.json` `severityFloor`:
+2. **Contextualize severity** — detection is deterministic; severity is NEVER mechanical. Judge each finding by context, then honor `severityFloor` (`.coalledger.json`, global + project merge):
    - CRITICAL: the breakage misleads harmfully (a dead link in a security/install step a user must follow).
    - HIGH: a real breakage on a doc readers actively use (broken anchor in a live README, dropped table cells with content).
    - MEDIUM: structural debt (skipped heading level, multiple H1, undefined ref in secondary docs).

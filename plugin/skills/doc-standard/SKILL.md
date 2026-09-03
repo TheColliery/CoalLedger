@@ -12,7 +12,7 @@ Find what a doc is MISSING versus the standard for its kind. Report CONFIRMED ga
 
 ## Parameters
 - **SCOPE:** named files (default when given) | touched doc files this session | whole repo docs — `.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org` (confirm first if > 20 files).
-- **TIER:** Quick = mechanical presence checks (~free) · Full = semantic completeness judgment (paid). Default from `.coalledger.json` `quickVsFull`; Full is always a separate consent.
+- **TIER:** Quick = mechanical presence checks (~free) · Full = semantic completeness judgment (paid). Default from `quickVsFull` (`.coalledger.json`, global + project merge); Full is always a separate consent.
 
 ## The standard (resolve in this order — never invent one)
 1. **The project's own** — a style guide, template, pattern doc, or stated convention in the repo binds first.

@@ -12,7 +12,7 @@ Find what makes a doc hard to read or mechanically malformed. Report CONFIRMED f
 
 ## Parameters
 - **SCOPE:** named files (default when given) | touched doc files this session | whole repo docs — `.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org` (confirm first if > 20 files).
-- **TIER:** Quick = mechanical mechanics only (~free) · Full = adds bloat/clarity + grammar-in-context (paid). Default from `.coalledger.json` `quickVsFull`; Full is always a separate consent.
+- **TIER:** Quick = mechanical mechanics only (~free) · Full = adds bloat/clarity + grammar-in-context (paid). Default from `quickVsFull` (`.coalledger.json`, global + project merge); Full is always a separate consent.
 
 ## The two axes
 | axis | layer | catches |

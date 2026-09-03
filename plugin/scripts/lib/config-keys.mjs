@@ -508,3 +508,138 @@ export function checkConfigKeys({
 
   return findings;
 }
+
+// ---------------------------------------------------------------------------
+// CWK-064 — ONE CONFIG-READ PATH PER ROOM. No key is read from a BARE
+// project config file, by hook or by agent instruction: every read goes
+// through the global+project MERGE (config-load.mjs's loadMergedConfig /
+// mergeSafety), so the consent clamp (hooks-safety.md §9) has a path to it
+// at all. Owner-authorised as flock convention without a sheet press —
+// "a measured improvement lands WITHOUT a press if it lands as the one
+// flock convention" — so this check states the rule as binding, not as a
+// proposal.
+//
+// WHY THIS IS A SEPARATE CHECK FROM checkConfigKeys ABOVE, not a branch
+// inside it: that check asks "does a NAMED key resolve in the schema?" —
+// a naming question. This asks "does a resolving key's OWN NAME, mentioned
+// beside the raw file, describe the CLAMPED read path or a bare one?" — a
+// DIFFERENT question about an already-real key, with its own detection
+// rule, its own surface set, and its own declaration list. Sharing one
+// function would conflate two independent failure modes behind one name.
+//
+// WHY IT IS NEEDED: CWK-060's own gate proved the cascade ITSELF is
+// correct — a hermetic probe (a bare global `scanEverything: true`, no
+// project file present) correctly reaches `clampedRead` through
+// `loadMergedConfig`. The defect is a SECOND, UNCLAMPED read path: an
+// agent instruction telling the reader to consult `.coalledger.json`
+// directly, bypassing the merge the clamp exists to protect. Measured
+// live in this room's OWN ship-text, not hypothetical: 7 lines across 6
+// of 7 `skills/*/SKILL.md` name the file bare, beside a real schema key,
+// with no cascade language anywhere in the line.
+//
+// DETECTION RULE, measured on THIS repo's OWN surfaces before being
+// chosen — same discipline as KEY_SHAPE above, and this one needed far
+// less correction because the finite key list is ALREADY known: a
+// candidate LINE mentions the literal string '.coalledger.json' AND a
+// real schema key's name (whole-word match — no shape inference needed,
+// unlike KEY_SHAPE, because we are not discovering an unknown token, we
+// are checking a name we already have).
+//
+//   Measured: 10 candidate lines across 10 doc + command surfaces (the 7
+//   skills/*/SKILL.md + README.md + commands/stats.md + commands/
+//   update.md). 7 are the real defect, reproducing the dispatch's own
+//   count exactly (doc-structure:21 severityFloor · doc-grounding:15,
+//   doc-quality:15, doc-rot:15, doc-standard:15 quickVsFull ·
+//   doc-leak:4, doc-leak:14 docLeak). 2 are legitimately describing the
+//   CASCADE itself — README.md:103's "resolved in this order (first
+//   found wins)" mechanism paragraph, and commands/stats.md:11's own
+//   "global + project merge" wording, the shape every OTHER mention
+//   should match. 1 needs a declared exception — commands/update.md:9's
+//   hand-edit-with-no-checkout fallback, which EDITS the file directly
+//   rather than reading a key FROM it to make a decision.
+//   Zero candidates in CHANGELOG.md / CONTRIBUTING.md / SECURITY.md /
+//   PRIVACY.md (measured, not assumed) — same OUT verdict as
+//   checkConfigKeys above, independently re-confirmed for this rule.
+//
+// THE CASCADE-QUALIFIER TEST: a candidate line is exempt if it ALSO
+// contains both 'global' and 'project' (case-insensitive) — the two
+// words every correct cascade description in this room already uses
+// together, and neither word appears in any of the 7 real defect lines.
+// Chosen over a stricter verbatim-phrase match ("global + project
+// merge") because the two correct exemplars do not share one fixed
+// wording, only the two CONCEPTS — a verbatim match would have missed
+// one of them (README.md:103 never says "merge" at all).
+//
+// RESIDUE, NAMED NOT GUARDED: this is a LINE-level heuristic, not a
+// parser. A future line could mention 'global'/'project' as decoys
+// without genuinely describing the merge (a false exemption), or split a
+// genuine bare-read across two lines (a false miss). Neither is
+// reachable in this repo's CURRENT text — stated as the honest ceiling
+// of a 2-word co-occurrence test, not implied gone.
+//
+// SCOPE: skills/*/SKILL.md + README.md + commands/*.md — surfaces an
+// AGENT READS AS PROSE to decide what to do. Deliberately EXCLUDES
+// hooks/*.js: a hook's own notice strings are DISPLAYED TO THE USER
+// (telling them which key to toggle), never CONSULTED BY THE AGENT as a
+// read instruction — a different risk shape than SKILL.md prose, and the
+// hook's own CODE already reads exclusively through loadMergedConfig
+// (config-load.test.mjs's suite already proves this for every hook-read
+// key). One candidate line WAS found there in this room's own text —
+// `coalledger-drift-stop.js`'s DRIFT_LINE names
+// "docsDriftNudge=false in .coalledger.json" — and is OUT by this
+// reasoning, not by oversight: it tells a HUMAN where a switch lives, it
+// does not instruct anyone to open the file to decide anything.
+// Also excludes platform-configs/.coalledger.json itself, which IS the
+// config file, not prose about reading one.
+export const READ_PATH_EXCEPTIONS = {
+  'commands/update.md:updateMode': 'the hand-edit-with-no-checkout fallback EDITS the file directly (node scripts/configure.mjs, or a manual edit) -- a write target, never a read instruction',
+  'commands/update.md:updateCheckDays': 'same line as updateMode, same reason -- the hand-edit fallback names both keys together',
+};
+
+export function checkConfigReadPath({ schemaKeys, mdFiles = [], read, exceptions = READ_PATH_EXCEPTIONS }) {
+  const findings = [];
+  const seenExceptions = new Set();
+  const unreadable = [];
+  for (const f of mdFiles) {
+    let text;
+    try { text = read(f); } catch { unreadable.push(f); continue; } // absent surface is not a finding
+    // Normalize to '/', matching this module's own declaration convention
+    // (READ_PATH_EXCEPTIONS is keyed 'commands/update.md:...') -- a caller
+    // handing in `path.join(...)`-built paths (as verify.mjs's own callers
+    // for hookFiles/mdFiles already do elsewhere in this file) produces
+    // '\\'-joined paths on Windows, which would otherwise never match a
+    // forward-slash exception key and silently degrade every declared
+    // exception into a permanent FAIL on this platform. Measured live
+    // before this fix: exactly that, on this box.
+    const fNorm = f.replace(/\\/g, '/');
+    const lines = text.split(/\r?\n/);
+    lines.forEach((line, idx) => {
+      if (!line.includes('.coalledger.json')) return;
+      const hitKeys = schemaKeys.filter((k) => new RegExp('\\b' + k + '\\b').test(line));
+      if (!hitKeys.length) return;
+      if (/global/i.test(line) && /project/i.test(line)) return; // the cascade is named -- exempt
+      for (const key of hitKeys) {
+        const id = fNorm + ':' + key;
+        if (Object.hasOwn(exceptions, id)) { seenExceptions.add(id); continue; }
+        findings.push({
+          level: 'FAIL',
+          msg: fNorm + ':' + (idx + 1) + ' names `.coalledger.json` beside the key `' + key
+            + '` with no cascade language (global+project) — a BARE, unclamped read path. Route through '
+            + 'the global+project merge (see commands/stats.md:11 for the correct wording), or declare '
+            + 'the mention in READ_PATH_EXCEPTIONS with the reason it is not a read instruction',
+        });
+      }
+    });
+  }
+  // SELF-CLEANING, same EVENT-expiry discipline as the three lists above:
+  // an exception protecting nothing (no scanned line matches it any more)
+  // is dead weight and FAILs. Gated on a complete scan, same reason.
+  if (unreadable.length) {
+    findings.push({ level: 'SKIP', msg: 'read-path exception pruning not checked: ' + unreadable.length + ' named surface(s) unreadable (' + unreadable.slice(0, 3).sort().join(', ') + (unreadable.length > 3 ? ', ...' : '') + ') — a partial scan cannot prove a declaration is dead' });
+  } else {
+    for (const id of Object.keys(exceptions)) {
+      if (!seenExceptions.has(id)) findings.push({ level: 'FAIL', msg: 'READ_PATH_EXCEPTIONS declares ' + id + ', but no scanned line matches it any more — the declaration protects nothing, delete it' });
+    }
+  }
+  return findings;
+}

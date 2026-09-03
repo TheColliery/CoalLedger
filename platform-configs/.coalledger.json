@@ -14,10 +14,12 @@
 
   // Report findings at or above this severity (low, medium, high, critical).
   // Severity is assigned by context in the report step, never mechanically.
-  // Fully settable per project, same as quickVsFull below (the global-vs-
-  // project consent clamp has no path to this key — every reader is the
-  // agent, never a hook): a project setting a high floor is honoured as
-  // written and can silently narrow what a run reports. Unlike quickVsFull's
+  // Fully settable per project, same as quickVsFull below — the global-vs-
+  // project CODE clamp still has no path to this key (every reader is the
+  // agent, never a hook), but per the one-read-path convention the agent
+  // itself reads it as a global+project merge (project wins when set),
+  // never the project file alone: a project setting a high floor is
+  // honoured as written and can silently narrow what a run reports. Unlike quickVsFull's
   // spend, which is backstopped unconditionally at run-time regardless of
   // this file, a narrowed report is inspectable only ON REQUEST via
   // `/coalledger:stats` — not visible by default, and stats shows the
@@ -28,10 +30,11 @@
   // (~free, report-only); full = adds the semantic layer (paid; always a
   // separate consent).
   // Fully settable per project: unlike coalledgerMode / updateMode /
-  // disabledCanaries / docLeak, the global-vs-project consent clamp has no
-  // path to this key — the agent reads it from this file directly, so a
-  // project setting "full" is honoured as written. The per-run consent ask
-  // is what gates the actual spend.
+  // disabledCanaries / docLeak, the global-vs-project CODE clamp has no
+  // path to this key — but per the one-read-path convention the agent
+  // itself reads it as a global+project merge (project wins when set),
+  // never the project file alone, so a project setting "full" is honoured
+  // as written. The per-run consent ask is what gates the actual spend.
   "quickVsFull": "quick",
 
   // Enable the #7 doc-leak canary (prose-level public/private boundary).
@@ -64,9 +67,10 @@
   // consent switches, not scan scope — and it does NOT force quickVsFull to
   // "full", because that would escalate PAID spend through a scope key.
   //
-  // REACH: this is an instruction your agent FOLLOWS, not a gate the code
-  // enforces. Like severityFloor, it is read from this file directly rather
-  // than through the global+project consent cascade, so the clamp that stops a
+  // REACH: the agent reads this as a global+project merge (project wins
+  // when set), never the project file alone, per the one-read-path
+  // convention. But it is still an instruction your agent FOLLOWS, not a
+  // gate the code enforces — like severityFloor, the clamp that stops a
   // cloned repo escalating other keys has no path to this one.
   "scanEverything": false,
 
