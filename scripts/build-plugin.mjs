@@ -11,7 +11,11 @@
 // conductor and the Stop drift hook import those modules at runtime, so hook
 // and engine can never diverge. The doc-structure SKILL no longer runs the
 // engine from there — it runs its OWN self-contained copy at
-// `skills/doc-structure/lib/`, generated below (see GENERATED). Tests are
+// the dist-only engine dir plugin/skills/doc-structure/lib/, generated below
+// (see GENERATED). CWK-075: that path is written WITHOUT backticks on purpose --
+// it exists only in the built dist, never in source, so a backticked form would be
+// a citation this repo cannot resolve. The source it is generated FROM is
+// `scripts/lib/md-checks.mjs`, which is the durable pointer. Tests are
 // filtered out of the dist; fixtures live under scripts/fixtures/ (outside
 // every DIST_ITEM) so they never ship. Board #40 fixback: build-time-only
 // libs (desc-cap.mjs, claude-ai-trim.mjs — consumed only by verify.mjs and
@@ -67,7 +71,7 @@ const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 // install. Matched by basename, not full path, since fs.cpSync's filter
 // callback receives absolute paths while checkDist's own filesUnder walk
 // uses repo-relative ones -- a basename check is correct either way.
-const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs']);
+const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs']);
 const isBuildOnlyLib = (p) => BUILD_ONLY_LIB_NAMES.has(path.basename(p));
 const isDistExcluded = (p) => isTest(p) || isBuildOnlyLib(p);
 

@@ -6,11 +6,13 @@
 // (scripts-quality.md: CLI = fail loud).
 
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CONFIG_SCHEMA, validateConfig } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 import { DESC_CAP, frontmatterField } from './lib/desc-cap.mjs';
+import { checkPointers } from './lib/pointer-check.mjs';
 import { checkConfigKeys, checkConfigReadPath } from './lib/config-keys.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -256,6 +258,111 @@ try {
     else fail(f.msg);
   }
 } catch (e) { fail(`config read-path check crashed: ${e.message}`); }
+
+// 2.12 POINTER gate (CWK-075) — ship-text naming something unreachable from a clone.
+// DATA, never logic: every input below is derived from THIS tree. The module itself is
+// CoalMine's, ported unchanged; what differs per room is exactly these derivations.
+console.log('pointers (reachable from a clone):');
+try {
+  const lsAll = spawnSync('git', ['ls-files'], { cwd: repo, encoding: 'utf8' });
+  if (lsAll.error || lsAll.status !== 0) {
+    // SKIP, NOT FAIL — and this is a PORT DEFECT found by this room's own fixture
+    // tests, not by reading. The exemplar FAILs here; its wiring assumes git is always
+    // reachable. This room's verify.test.mjs copies part of the tree into a temp dir
+    // that is NOT a git repo, so the gate could not answer and CONVICTED a pristine
+    // fixture — a gate that cannot run must never convict, which is the same rule the
+    // module already applies to an unreadable surface and to declaration-pruning on a
+    // partial scan. The SKIP is VISIBLE, so a genuinely broken git in CI shows as a
+    // gate that did not run rather than as a silent pass.
+    console.log('  --   pointer check SKIPPED: git ls-files unavailable, so reachability cannot be answered here (not a pass)');
+  } else {
+    const tracked = new Set(lsAll.stdout.split('\n').filter(Boolean));
+    const trackedDirs = new Set();
+    for (const f of tracked) {
+      const parts = f.split('/');
+      for (let i = 1; i < parts.length; i++) trackedDirs.add(parts.slice(0, i).join('/'));
+    }
+    const ourRoots = new Set();
+    for (const f of tracked) ourRoots.add(f.split('/')[0]);
+    for (const e of fs.readdirSync(repo, { withFileTypes: true })) {
+      if (e.isDirectory() && !e.name.startsWith('.')) ourRoots.add(e.name);
+    }
+    // ASKED OF GIT, never parsed out of .gitignore — a re-implementation of gitignore
+    // matching would be the second source of truth this gate exists to catch.
+    //
+    // ROOM-SPECIFIC FINDING, stated because the ported derivation is NARROWER here than
+    // it looks: this room gitignores CLAUDE.md, MEMORY*.md, AGENTS.md,
+    // COALLEDGER_BLUEPRINT.md (top-level FILES, not dirs) and .claude/ .agents/ (HIDDEN
+    // dirs). The loop below adds only non-hidden top-level DIRECTORIES plus tracked
+    // roots, so ignoredRoots measures EMPTY today — and a citation into .claude/ falls
+    // out of scope silently rather than FAILing, because .claude is not in ourRoots
+    // either. For CoalMine that is correct: .claude/ is an agent home in the USER's tree.
+    // For us it is BOTH — the agent home AND where this room's own gitignored audit
+    // artefacts live. Same path, opposite meaning, and the ported rule cannot tell them
+    // apart from the token alone. Named as an uncovered class, not silently inherited.
+    const ignoredRoots = new Set();
+    for (const name of ourRoots) {
+      if (tracked.has(name) || trackedDirs.has(name)) continue;
+      const ci = spawnSync('git', ['check-ignore', '-q', '--', name], { cwd: repo, encoding: 'utf8' });
+      if (!ci.error && ci.status === 0) ignoredRoots.add(name);
+    }
+    const walkAny = (dir, re, out = []) => {
+      if (!fs.existsSync(dir)) return out;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const q = path.join(dir, e.name);
+        if (e.isDirectory()) walkAny(q, re, out);
+        else if (re.test(e.name)) out.push(q);
+      }
+      return out;
+    };
+    const relp = (q) => path.relative(repo, q).split(path.sep).join('/');
+    const read = (q) => { try { return fs.readFileSync(q, 'utf8'); } catch { return null; } };
+    const surfaces = [];
+    for (const f of [...walkAny(path.join(repo, 'skills'), /\.md$/), ...walkAny(path.join(repo, 'commands'), /\.md$/)]) {
+      surfaces.push({ label: relp(f), text: read(f) });
+    }
+    for (const d of ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'PRIVACY.md']) {
+      surfaces.push({ label: d, text: read(path.join(repo, d)) });
+    }
+    // COMMENT LINES ONLY: a path inside CODE is exercised by the tests; a path inside a
+    // COMMENT is exercised by nothing at all.
+    for (const f of [...walkAny(path.join(repo, 'scripts'), /\.(mjs|js)$/), ...walkAny(path.join(repo, 'hooks'), /\.(mjs|js)$/)]) {
+      const src = read(f);
+      surfaces.push({ label: relp(f), text: src === null ? null : src.split('\n').filter((l) => /^\s*(\/\/|\*)/.test(l)).join('\n') });
+    }
+    surfaces.push({ label: 'CHANGELOG.md', text: read(path.join(repo, 'CHANGELOG.md')), historyOnly: true });
+
+    // AGENT INSTALL HOMES — and this room has NO TARGETS map to derive one from, which is
+    // itself the finding rather than a reason to hand-write a list. CoalMine derives its
+    // set from scripts/lib/targets.mjs because it ships an installer that WRITES into a
+    // user's tree; this room ships no installer at all (no scripts/install.mjs — its
+    // cross-agent path is a documented file copy). Its two documented destinations are
+    // ~/.gemini/config/skills/ and ~/.claude/, both HOME-anchored, and both are already
+    // dropped upstream by the module's OUTSIDE shape test. So the correct value here is
+    // the EMPTY SET, derived from the absence of an installer rather than asserted, and
+    // the day this room ships one the set must come from that installer's own map.
+    const agentHomes = new Set();
+    const findings = checkPointers({
+      surfaces,
+      ourRoots,
+      ignoredRoots,
+      agentHomes,
+      hasEntry: (relDir, name) => {
+        try { return fs.existsSync(path.join(repo, relDir, name)); } catch { return false; }
+      },
+      resolve: (q) => (tracked.has(q) || trackedDirs.has(q) ? 'tracked'
+        : fs.existsSync(path.join(repo, q)) ? 'untracked' : 'missing'),
+    });
+    const hard = findings.filter((f) => f.level !== 'SKIP');
+    if (hard.length === 0) {
+      ok(`every path this repo points at from ${surfaces.length} surfaces (${findings.checked} in-scope citations) resolves to a TRACKED file — sections and symbols are NOT checked, see scripts/lib/pointer-check.mjs`);
+    }
+    for (const f of findings) {
+      if (f.level === 'SKIP') console.log('  --   ' + f.msg);
+      else fail(f.msg);
+    }
+  }
+} catch (e) { fail(`pointer check crashed: ${e.message}`); }
 
 console.log('libs (import check):');
 for (const l of LIBS) {
