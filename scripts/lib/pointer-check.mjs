@@ -255,6 +255,72 @@ const DOTSEG = /(^|\/)\.\.?(\/|$)/;
 // the character into a segment scan.
 const BACKSLASH = /\\/;
 
+// LAST-SEGMENT SHAPE TEST (CWK-079, ported from CoalMine's own CWK-079 -- 6588d14
+// .. 8fcf443) -- feeds ONLY verify.mjs's ignore-probe candidate-root derivation, NEVER
+// pointerCandidates' own resolve-path population below. Kept OUT of pointerCandidates
+// deliberately: a token this test rejects may still be a real, existing, TRACKED
+// citation (`.github/workflows`, `scripts/lib`) that the ordinary resolve() check must
+// keep seeing -- narrowing pointerCandidates itself would silently drop those from
+// resolution checking too, a different and unrelated regression from the one this test
+// exists to fix.
+//
+// THE DEFECT THIS CLOSES: a token containing a `/` is not necessarily a path -- the
+// no-`/` drop below (:335) proves the token HAS a slash, never what the slash
+// SEPARATES. MEASURED ON THIS REPO (not carried over from CoalMine's own 51/36 -- a
+// different tree, a different count, per THE SOURCE'S VARIABLES ARE NOT OURS): 71
+// distinct backticked candidate tokens across our surfaces, 10 shape-rejected --
+// `log/slog` (a Go package pair), four `js/<codeql-query-id>` tokens, `github/codeql-action`
+// and `DavidAnson/markdownlint-cli2-action` (workflow action refs, an owner/repo pair,
+// not a path), plus `.git/hooks` and `scripts/lib` and `.github/workflows` -- the last
+// two are the DISCOVERY-EXCLUDED-but-still-tracked population named below. Re-derive:
+// walk every surface through `pointerCandidates`, partition by `looksPathShaped`.
+//
+// THIS GATES DISCOVERY ONLY, NOT JUDGEMENT (CoalMine's own findings-back round-2 lesson,
+// ported alongside the mechanism it corrects, so the same defect is not re-discovered
+// here later): this test decides which ROOTS verify.mjs adds to its ignore-probe
+// candidates; it is never consulted by `checkPointers`' own `ignoredRoots.has(first)`
+// branch below, which judges EVERY token reaching it regardless of shape. So a rejected
+// token is NOT excluded from the check -- it is excluded only from CONTRIBUTING ITS OWN
+// ROOT to the set the check runs against. The true property is NON-LOCAL: a citation
+// this test rejects is checked IF AND ONLY IF some OTHER, unrelated, path-shaped
+// citation anywhere in the surface set shares its first segment. PROVEN LIVE in
+// verify.test.mjs with a two-plant pair (a shape-rejected citation planted alone stays
+// silent; the same citation planted beside a shape-qualified sibling under the same
+// gitignored root FAILs both).
+//
+// THE TEST: strip a trailing `:line(-line)?` ref (the same suffix `normalise()` strips
+// for resolution below), then either the token ends in `/` (an explicit directory
+// reference) or its LAST segment carries a `.ext`-shaped suffix (a filename). Both are
+// the deliberate, common path conventions this house's own prose already uses;
+// arithmetic, rule-force pairs, workflow-action refs, and CodeQL query ids carry
+// neither.
+//
+// THE RESIDUE, both directions, named rather than hidden:
+//   - STILL LETS THROUGH: a token ending `/` is accepted with no check on what precedes
+//     it -- `os.tmpdir()/coalledger/` (a function call, not a directory) still reaches
+//     the probe. Harmless in practice (no real `.gitignore` pattern is named that),
+//     named here rather than papered over with a further heuristic. A latent
+//     accept-side case nobody has hit: the LAST-segment test accepts an ALL-DIGIT
+//     "extension" (`.[A-Za-z0-9]{1,10}` matches digits too), so a slash-separated
+//     version-shaped token would pass as filename-shaped. Measured population on this
+//     tree today: ZERO.
+//   - DISCOVERY-EXCLUDED, but NOT check-exempt per the non-locality above: an
+//     extensionless real path with no trailing slash is no longer a source of its own
+//     root. Two such paths are real, cited, tracked citations on this tree today --
+//     `.github/workflows` and `scripts/lib`. Live cost on THIS tree is zero regardless
+//     of the non-locality above -- not because they are covered by some other citation,
+//     but because neither root (`.github`, `scripts`) matches any pattern in this
+//     room's own `.gitignore` today (CLAUDE.md, MEMORY*.md, AGENTS.md, .claude/,
+//     .agents/, COALLEDGER_BLUEPRINT.md, skillspector-*, skills-lock.json,
+//     dist-claude-ai/ -- neither name is on that list). Both are exposed to the
+//     non-locality above the moment a sibling, path-shaped citation under the same
+//     root is ever gitignored.
+export function looksPathShaped(tok) {
+  const t = tok.replace(/:\d+(-\d+)?$/, '');
+  if (t.endsWith('/')) return true;
+  return /\.[A-Za-z0-9]{1,10}$/.test(t.split('/').pop());
+}
+
 // Candidate extraction. Exported so an adopter can measure its OWN funnel with the
 // same instrument rather than re-implementing it and getting different numbers.
 export function pointerCandidates(text) {
@@ -289,7 +355,7 @@ function normalise(tok) {
 export function checkPointers({
   surfaces = [],          // [{ label, text, historyOnly? }]
   ourRoots = new Set(),   // top-level names that belong to THIS repo
-  ignoredRoots = new Set(), // top-level dirs this repo gitignores
+  ignoredRoots = new Set(), // first segments of CITED paths that .gitignore matches (CWK-079: existence-independent -- not a listing of dirs the caller has on disk)
   agentHomes = new Set(), // repo-relative install homes this tool writes INTO A USER's tree
   hasEntry = () => false, // (relDir, name) => boolean -- does `name` exist directly in relDir
   resolve,                // (relPath) => 'tracked' | 'untracked' | 'missing'

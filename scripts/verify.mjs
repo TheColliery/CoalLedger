@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CONFIG_SCHEMA, validateConfig } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 import { DESC_CAP, frontmatterField } from './lib/desc-cap.mjs';
-import { checkPointers } from './lib/pointer-check.mjs';
+import { checkPointers, pointerCandidates, looksPathShaped } from './lib/pointer-check.mjs';
 import { checkConfigKeys, checkConfigReadPath } from './lib/config-keys.mjs';
 import { projectConfigCandidates, physicalDir } from './lib/config-load.mjs';
 
@@ -340,7 +340,7 @@ try {
     // COALLEDGER_BLUEPRINT.md) was never actually at risk either way, before or
     // after this widening: `pointerCandidates`' own shape rule drops every token
     // with no `/` LONG before `ignoredRoots` is ever consulted
-    // (pointer-check.mjs:258 — "a bare filename is the USER's repo's"), so a
+    // (pointer-check.mjs:335 — "a bare filename is the USER's repo's"), so a
     // citation shaped like a bare file can never reach this branch. The dot-dir
     // reach is real and load-bearing; the file half was never reachable to begin
     // with. Read-only reference for the shape: CoalWash/scripts/verify.mjs's own
@@ -348,39 +348,11 @@ try {
     const topAll = fs.readdirSync(repo, { withFileTypes: true }).map((e) => e.name).filter((n) => n !== '.git');
     const ourRoots = new Set(topAll);
     for (const f of tracked) ourRoots.add(f.split('/')[0]);
+    // `ignoredRoots` no longer derives from `topAll` (CWK-079, below, after `surfaces`
+    // exists) -- `ourRoots` above is a SEPARATE SCOPE test (does this first segment
+    // belong to our own tree at all) and stays disk-derived; only the IGNORE question
+    // moved to pattern-based.
 
-    // IGNORED ROOTS: asked of git, never parsed out of .gitignore — a
-    // re-implementation of gitignore matching would be the second source of
-    // truth this gate exists to catch. Agent homes are excluded BEFORE the
-    // question, per the axis correction above.
-    //
-    // CLEAN-CLONE CONSEQUENCE (CWK-078 findings-back F1, CORRECTED at MED-2):
-    // ignoredRoots asks git what EXISTS on THIS disk right now, so it reads 0 on a
-    // BARE clean checkout, before any build step runs — that much is structural.
-    // It is NOT structurally 0 "in CI" as a blanket claim, and reading a nonzero
-    // count as "only ever a maintainer's own box" is false: this room's own
-    // `claude-ai-zips.yml` runs `scripts/build-claude-ai-zips.mjs`, which creates
-    // a gitignored top-level `dist-claude-ai/` (`:19`) — a real CI leg, not a
-    // developer machine. Today's CI reading of 0 is ORDERING (the workflow's own
-    // "Verify plugin/ dist is current" step runs BEFORE the ZIP-build step), never
-    // construction — reorder those two steps, or add a second verify call after
-    // the build, and CI reads nonzero too. Worse than the count: `CHANGELOG.md:66`
-    // already cites `` `dist-claude-ai/` `` in backticks, so on a maintainer's own
-    // box who runs the documented ZIP build BEFORE the gate, the count is not the
-    // symptom at all — the gate hard-FAILs on that pre-existing CHANGELOG line
-    // (reproduced live). This unit did not create that red; it is the first
-    // comment to claim the reading is benign, which it is not on every path this
-    // room itself ships. CWK-079 (widening the check to reason about a user's
-    // tree by PATTERN, not by what this disk holds) is still a separate ticket;
-    // fixing `dist-claude-ai/`'s own hold-out is a separate one too, named here
-    // and not attempted in this unit.
-    const ignoredRoots = new Set();
-    for (const name of topAll) {
-      if (tracked.has(name) || trackedDirs.has(name) || agentHomes.has(name)) continue;
-      const ci = spawnSync('git', ['check-ignore', '-q', '--', name], { cwd: repo, encoding: 'utf8' });
-      if (!ci.error && ci.status === 0) ignoredRoots.add(name);
-    }
-    console.log(`  --   top-level entries fed to git check-ignore: ${topAll.length} (files + hidden included) — ${ignoredRoots.size} gitignored, held out: ${[...agentHomes].sort().join(' ') || '(none)'} — 0 on a bare clean checkout; a build step that creates a gitignored top-level dir (this room's own build-claude-ai-zips.mjs does) changes that, in CI too, not only on a maintainer's box`);
     const walkAny = (dir, re, out = []) => {
       if (!fs.existsSync(dir)) return out;
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -444,6 +416,129 @@ try {
     // gate's own coverage bookkeeping, not merely a diagnostic.
     if (residueFiles.length) fail(`pointer-gate surface accounting: ${residueFiles.length} tracked file(s) covered by neither a walked surface nor a declared-out class — ${residueFiles.join(', ')}`);
 
+    // IGNORED ROOTS, PATTERN-BASED (CWK-079, ported from CoalMine's own CWK-079) —
+    // asked of the CANDIDATES actually cited in ship-text, never of what EXISTS on this
+    // disk. THE DEFECT THIS CLOSES, and it is CWK-078's own admission made to actually
+    // work: the prior `topAll`-derived `ignoredRoots` could only ever probe a name that
+    // physically existed as a top-level entry on THIS box, so it read structurally 0 on
+    // every fresh clone and every CI leg — CoalBoard measured this directly (28 fed / 7
+    // ignored on a maintainer box against 21 fed / 0 ignored in CI) and this room hit it
+    // too: `.gitignore` lists a gitignored claude.ai ZIP-staging directory that does not
+    // exist on this box right now, so the old disk-derived probe could never see a real
+    // citation into it. `.gitignore` is TRACKED, so `git check-ignore` answers for an
+    // ABSENT path exactly as it would for a present one — the PATTERN is what matters,
+    // never the directory listing.
+    //
+    // MUST run AFTER `surfaces` exists — the candidates this probe needs are not
+    // assembled until here.
+    //
+    // SHAPE-FILTERED AT DISCOVERY, never at judgement (`looksPathShaped`,
+    // pointer-check.mjs — read that function's own comment for the NON-LOCAL residue
+    // this narrowing carries; `checkPointers` below judges every token that DOES reach
+    // it regardless of shape, so narrowing here only decides which roots ENTER the set).
+    //
+    // TRAILING SLASH: every candidate reaching this probe passed `looksPathShaped`, so
+    // its first segment is being treated as a directory — feed `first + '/'`. A
+    // `dir/`-anchored .gitignore pattern does not match the bare name for an ABSENT
+    // path (measured on this tree's own claude.ai staging-dir name: bare, it reads
+    // not-ignored; with the slash, IGNORED — proven again below). THE TRAILING SLASH IS
+    // STRUCTURALLY REQUIRED, not a style choice: this is the exact case CWK-079 exists
+    // to fix (an absent-on-disk directory that IS gitignored), and `git check-ignore`
+    // needs the slash to know an absent candidate is meant as a directory at all.
+    //
+    // FINDINGS-BACK, self-caught: the trailing slash exposed a REAL bug in this room's
+    // OWN local `.gitignore` CHECKOUT, not in the probe. This box's working-tree
+    // `.gitignore` carried CRLF line endings on a "blank" separator line (line 15) --
+    // `.gitattributes` declares `eol=lf` for this file and the TRACKED BLOB is clean LF
+    // (`git hash-object .gitignore` == `git rev-parse HEAD:.gitignore`, confirmed), so
+    // this was a stale, never-renormalized LOCAL checkout artefact (this room's own
+    // "git add --renormalize is not a cure" lesson, one door over), never a defect that
+    // ships. Reproduced in isolation: a `.gitignore` with a CRLF-corrupted blank line
+    // makes `git check-ignore --stdin` report EVERY fed name as ignored against that
+    // blank line the moment a TRAILING SLASH is appended -- the identical bare name with
+    // no slash correctly reads not-ignored. Dropping the trailing slash would have
+    // "fixed" the symptom by reopening the exact vacuity this ticket exists to close (an
+    // absent gitignored directory no longer matches at all without it) -- confirmed live
+    // BOTH ways on this tree: with the corruption present, the claude.ai staging-dir name
+    // matched correctly only WITH the slash; every foreign name ALSO matched (falsely)
+    // only WITH the slash, off the corrupted blank line. The real fix is the checkout,
+    // not the probe: the stray CR was stripped from the working-tree file (now
+    // byte-identical to `HEAD:.gitignore`, nothing to commit), after which the slash
+    // correctly discriminates in both directions. CoalMine's own `scripts/verify.mjs`
+    // (READ-ONLY reference) feeds the identical `n + '/'` shape and carries the
+    // identical LATENT exposure -- dormant only because ITS `.gitignore` has no such
+    // corrupted line today. Reported upward, not fixed there.
+    //
+    // BATCHED, one process for every distinct first segment actually cited, not one per
+    // topAll entry — replaces the CWK-078 per-name spawn loop with a single
+    // `--stdin` call.
+    const candidateRoots = new Set();
+    for (const s of surfaces) {
+      if (typeof s.text !== 'string') continue;
+      for (const tok of pointerCandidates(s.text)) {
+        if (!looksPathShaped(tok)) continue;
+        candidateRoots.add(tok.split('/')[0]);
+      }
+    }
+    let homesPresent = 0;
+    const toProbe = [];
+    for (const name of candidateRoots) {
+      if (agentHomes.has(name)) { homesPresent++; continue; }
+      toProbe.push(name);
+    }
+    const ignoredRoots = new Set();
+    if (toProbe.length) {
+      const ci = spawnSync('git', ['check-ignore', '--stdin'],
+        { cwd: repo, encoding: 'utf8', input: toProbe.map((n) => n + '/').join('\n') + '\n' });
+      // CWK-079 findings-back MED-1 (head-ordered, overruling INSPECT's SHIP-with-MED
+      // verdict on this point): exit 0 (some fed roots matched) and exit 1 (none did) are
+      // both real ANSWERS from git -- the OLD guard here only checked `ci.error` and
+      // `ci.stdout`'s type, never `ci.status`, so a THIRD outcome (measured: status 128,
+      // from a malformed or out-of-repo fed line) also passed the guard: `ci.error` is
+      // unset and `ci.stdout` is a string (empty) on that path too, so it silently read as
+      // "0 gitignored" and the WHOLE `toProbe` batch (up to `candidateRoots.size` roots)
+      // vanished from the gate with no signal at all -- the converse of this module's own
+      // "a gate that cannot run must never convict" rule: a gate that cannot run must also
+      // never silently ACQUIT. This is NOT the same case as the `ls-files` SKIP two
+      // branches above: that SKIP exists because git itself can be genuinely ABSENT (this
+      // room's own non-git test fixtures), an environment gap this gate has no capability
+      // to answer -- `ls-files` already proved git IS reachable here, so a `check-ignore`
+      // refusal on THIS probe is git telling us something is wrong with what was fed it,
+      // not an environment this gate cannot see into. FAIL LOUD (scripts-quality.md §1,
+      // this is a CLI verify gate): treat any status other than 0 or 1 as UNKNOWN, and
+      // convict the run rather than let the batch disappear.
+      if (ci.error || (ci.status !== 0 && ci.status !== 1)) {
+        fail(`git check-ignore --stdin did not answer for ${toProbe.length} candidate root(s) (status ${ci.status}${ci.error ? `, ${ci.error.message}` : ''}) -- treating as UNKNOWN, never as "0 gitignored"`);
+      } else {
+        for (const line of ci.stdout.split('\n')) {
+          const t = line.trim();
+          if (t) ignoredRoots.add(t.replace(/\/$/, ''));
+        }
+      }
+    }
+    // NAMED BOUND -- FOREIGN-NAME COLLISION (CWK-079, ported). `candidateRoots` is fed
+    // from every CITED first segment, unlike the disk-derived shape it replaces, which
+    // could only ever contain a name that physically existed as a top-level entry in
+    // OUR OWN repo listing. That bound is gone: a citation describing ANOTHER project's
+    // tree (this room's own docs cite CoalMine's directory names in compare/contrast
+    // prose — `benchmarks`, `docs`, `fixtures`, `lib`, `references`, `doc-standard`,
+    // `doc-structure` all reach `candidateRoots` today) now probes that name against OUR
+    // `.gitignore`, and if a future pattern of ours happens to share it, the citation
+    // FAILs as "not reachable from a clone" although it was never ours to be wrong
+    // about. MEASURED ON THIS TREE (re-derive: partition `candidateRoots` against
+    // `topAll ∪ tracked ∪ trackedDirs`): 25 distinct shape-qualified first segments
+    // cited, of which 15 are neither an on-disk top-level entry nor a tracked path of
+    // ours — a real, nonzero foreign-name-collision population, not a hypothetical. Of
+    // those 15, the ones that could ACTUALLY collide are only the ones matching a real
+    // `.gitignore` pattern; the live pass line below states how many of THIS run's
+    // `toProbe` actually came back gitignored -- MEASURED TODAY: ZERO (0 of 22 probed),
+    // after the working-tree `.gitignore` corruption above was fixed. Re-derive, never
+    // quote: the pass line prints this every run. No narrowing is added for this
+    // population — an existence- or ourRoots-based test would re-open the exact
+    // vacuity this ticket was built to close (it would specifically re-exclude the
+    // claude.ai staging dir this room already depends on catching).
+    console.log(`  --   gitignored-root citations: ${candidateRoots.size} distinct first segment(s) shape-qualified and cited, ${toProbe.length} probed through one git check-ignore call (${homesPresent} of ${agentHomes.size} agent-home roots held out) — ${ignoredRoots.size} gitignored`);
+
     const findings = checkPointers({
       surfaces,
       ourRoots,
@@ -494,4 +589,18 @@ try {
 } catch (e) { fail(`plugin/ dist check: ${e.message}`); }
 
 console.log(fails ? `\nVERIFY: FAIL (${fails})` : '\nVERIFY: PASS');
-process.exit(fails ? 1 : 0);
+// CWK-071: `process.exit()` truncates pending stdout writes (node/runtime.md §7) --
+// CoalBoard's own scripts/verify.mjs (READ-ONLY reference) already ships the correct
+// shape for a fail-loud CLI gate: set `process.exitCode` and let the process exit
+// naturally, never force it. No runtime truncation was ever reproduced from the old
+// `process.exit(fails ? 1 : 0)` here -- this is a conformance fix (scripts-quality.md
+// §1 fail-loud still holds via the exit CODE; hooks-safety.md §1.0's CLI row was never
+// about truncation risk for a CLI, only node/runtime.md §7's own "never call
+// process.exit()" rule, which binds every surface, CLI included), not a bug reproduced
+// on this tree. SCOPE, named so "binds every surface" is never read as already
+// satisfied here: this unit closes ONLY this call site. Eight more `process.exit()`
+// sites remain unfixed in this room's own `scripts/` (build-plugin.mjs, configure.mjs
+// x4, test.mjs x3 -- re-derive via `grep -rn "process.exit(" scripts/*.mjs`, never
+// trust this count forward) and the other 5 flock rooms are untouched -- both out of
+// scope for CWK-079, not silently closed.
+if (fails) process.exitCode = 1;

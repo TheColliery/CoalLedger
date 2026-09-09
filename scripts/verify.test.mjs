@@ -86,18 +86,60 @@ function pointerScratchRepo() {
   return dir;
 }
 
-test('verify.mjs block 2.12: a citation into a NEW gitignored top-level entry FAILs the gate (CWK-078 findings-back LOW-1)', () => {
+test('verify.mjs block 2.12: a citation into a NEW gitignored top-level entry FAILs the gate, with NO directory ever created on disk -- the CLEAN-CLONE proof (CWK-078 LOW-1, re-proven pattern-based at CWK-079)', () => {
   const dir = pointerScratchRepo();
   try {
     const clean = run(dir);
     assert.strictEqual(clean.status, 0, `pristine copy must PASS, got:\n${clean.stdout}${clean.stderr}`);
-    assert.match(clean.stdout, /top-level entries fed to git check-ignore/, 'block 2.12 must actually run here, not SKIP');
+    assert.match(clean.stdout, /gitignored-root citations:/, 'block 2.12 must actually run here, not SKIP');
 
-    fs.mkdirSync(path.join(dir, 'scratch-out'));
+    // CWK-079: existence-independent by design -- the planted top-level dir (named in
+    // the literal strings below, NOT backticked HERE since this comment is itself a
+    // WALKED surface and a backticked mention would manufacture the exact citation it
+    // describes) is cited and gitignored but NEVER CREATED on disk. A clean clone/CI
+    // runner has exactly this property (a gitignored path that is real in the doc but
+    // absent from the checkout); the OLD disk-derived ignoredRoots (CWK-078) could only
+    // ever probe a name that physically existed, so this exact scenario read as a
+    // silent PASS there. Not creating the directory here is the proof, not an oversight.
     fs.appendFileSync(path.join(dir, '.gitignore'), '\nscratch-out/\n');
     fs.appendFileSync(path.join(dir, 'README.md'), '\nSee `scratch-out/notes.md`.\n');
+    assert.equal(fs.existsSync(path.join(dir, 'scratch-out')), false, 'the directory must stay ABSENT -- that absence is the whole point of this test');
     const red = run(dir);
-    assert.strictEqual(red.status, 1, 'a citation into a NEW gitignored top-level dir must FAIL');
+    assert.strictEqual(red.status, 1, 'a citation into a NEW gitignored top-level dir must FAIL even though the dir never existed on disk');
     assert.match(red.stdout, /README\.md cites `scratch-out\/notes\.md`, which lives under the gitignored `scratch-out\/`/, red.stdout);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// CWK-079 F2: looksPathShaped's own comment (pointer-check.mjs) claims the non-local
+// property is "PROVEN LIVE in verify.test.mjs with a two-plant pair" -- this is that
+// proof. A shape-rejected token (extensionless, no trailing slash) planted ALONE under a
+// gitignored root never enters candidateRoots, so ignoredRoots never learns that root
+// exists, and the citation is silently unresolved (checkPointers still judges it, but
+// against an ignoredRoots set that was never told the root is ignored -- it falls through
+// to the ordinary resolve() path, which reports it MISSING, not gitignored). Planted a
+// SECOND TIME beside a shape-qualified sibling under the SAME root, that same root DOES
+// enter candidateRoots via the sibling, ignoredRoots picks it up, and BOTH citations
+// FAIL -- proving the shape test gates DISCOVERY only, never judgement. (The two planted
+// paths are named only in the literal strings below, never backticked in a comment --
+// this comment is itself a WALKED surface.)
+test('CWK-079 non-locality: a shape-rejected citation planted ALONE under a gitignored root stays silent; the SAME citation beside a shape-qualified sibling FAILs both', () => {
+  const dir = pointerScratchRepo();
+  try {
+    fs.appendFileSync(path.join(dir, '.gitignore'), '\nscratch-lib/\n');
+    // ALONE: the extensionless path below (no trailing slash) is shape-rejected --
+    // looksPathShaped drops it, so this root never reaches the ignore-probe at all.
+    fs.appendFileSync(path.join(dir, 'README.md'), '\nSee `scratch-lib/lib` for the internals.\n');
+    const alone = run(dir);
+    assert.strictEqual(alone.status, 0, `a lone shape-rejected citation under a gitignored root must stay SILENT (discovery-excluded), got:\n${alone.stdout}${alone.stderr}`);
+    assert.doesNotMatch(alone.stdout, /scratch-lib/, 'no finding should name scratch-lib while it is the only citation under that root');
+
+    // BESIDE A SIBLING: the `.md`-suffixed path below IS shape-qualified -- now the root
+    // enters candidateRoots, ignoredRoots picks it up, and the FIRST (shape-rejected)
+    // citation is checked too, non-locally.
+    fs.appendFileSync(path.join(dir, 'README.md'), '\nAlso see `scratch-lib/notes.md`.\n');
+    const both = run(dir);
+    assert.strictEqual(both.status, 1, 'both citations under the now-discovered root must FAIL');
+    assert.match(both.stdout, /README\.md cites `scratch-lib\/lib`, which lives under the gitignored `scratch-lib\/`/, both.stdout);
+    assert.match(both.stdout, /README\.md cites `scratch-lib\/notes\.md`, which lives under the gitignored `scratch-lib\/`/, both.stdout);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
