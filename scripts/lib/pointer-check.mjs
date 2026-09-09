@@ -28,9 +28,17 @@
 //   leave a set of unexplained filters.
 //
 //   COALLEDGER'S OWN MEASUREMENTS, the only first-person numbers in this file, are the
-//   FUNNEL block below (48 surfaces / 1,327 tokens / 141 shaped / 49 in scope / 49
-//   resolving) and the BACKSLASH block further down (14 backslash tokens, 2 path-shaped,
-//   both this module's own fixtures). Re-derive either with the walk in verify.mjs 2.12.
+//   FUNNEL block below (48 surfaces / 49 in scope / 49 resolving -- the four terms the
+//   gate itself PRINTS at run time) and the BACKSLASH block further down (14 backslash
+//   tokens, 2 path-shaped, both this module's own fixtures). Re-derive either with the
+//   walk in verify.mjs 2.12. THE TWO SHAPE-FUNNEL INTERMEDIATES (backticked tokens
+//   before/after fence-stripping) are deliberately NOT quoted here (CWK-078
+//   findings-back MED-3): every `.mjs` comment line in this file is itself a candidate
+//   for that count, so the header measures a population that contains itself and
+//   falsifies on its own next edit -- CWK-075 r2 measured 1,339/146, and this unit's own
+//   +25 comment lines moved it again to 1,347/151 with nobody re-measuring. The four
+//   terms above stay honest because the gate PRINTS them fresh every run; the two
+//   intermediates cannot, so they are cut rather than re-typed to go stale again.
 //
 //   THE FLOCK RULE THIS OBEYS: a source's variables are not ours. A ported number is a
 //   HYPOTHESIS about a different tree until measured here -- so it is labelled, not
@@ -60,10 +68,13 @@
 //       citer (or its parent)     parent) -- structural, so it is never circular
 //
 //   MEASURED ON THIS REPO -- CoalLedger, and these are OURS, re-derived here rather
-//   than carried over with the file: 48 surfaces, 1,327 backticked tokens with fenced
-//   code stripped -> 141 survive the shape funnel -> 49 IN SCOPE -> 49 resolve, 0
-//   non-resolving, 0.0% noise. Re-derive with the walk in verify.mjs 2.12; never quote
-//   these numbers forward.
+//   than carried over with the file: 48 surfaces -> 49 IN SCOPE -> 49 resolve, 0
+//   non-resolving, 0.0% noise. THE TWO SHAPE-FUNNEL INTERMEDIATES (backticked tokens
+//   before/after fence-stripping) are deliberately not quoted here -- see the banner
+//   above (CWK-078 findings-back MED-3): every comment line in this file is itself a
+//   candidate for that count, so it self-invalidates on the file's own next edit, and
+//   this unit's own +25 lines already moved it once without anyone noticing. Re-derive
+//   with the walk in verify.mjs 2.12; never quote a number forward.
 //
 //   PORT NOTE (CWK-075 INSPECT MED-1): this block arrived byte-identical to CoalMine's
 //   own -- 76 surfaces / 1,483 / 121 / 67 -- under the words "MEASURED on this repo",
@@ -171,19 +182,33 @@
 // ADOPTER CONTRACT — DATA, never LOGIC. Six rooms reached six different verdicts on
 // CWK-060's filter and this rule will fare no better, so nothing below hardcodes
 // CoalMine's layout. A room supplies: its own surfaces (walked), its own ourRoots and
-// ignoredRoots (derived from ITS tree), its own agentHomes (derived from whatever map
-// that tool uses to write into a USER's tree — CoalMine's is its own targets map;
-// THIS ROOM HAS NONE, ships no installer, and therefore derives agentHomes as the EMPTY
-// SET, which is what the wiring in verify.mjs 2.12 says and why. The ported line named a
-// file this room does not have, while our own wiring depended on its absence: two files
-// in one unit making opposite claims about the same missing path, CWK-075 INSPECT),
-// its own
-// hasEntry() and resolve(), and its own pending list. Every one of those is DATA read
-// out of the adopting tree; none of them is a decision this module makes for a room.
+// ignoredRoots (derived from ITS tree), its own agentHomes, and its own hasEntry() and
+// resolve(). Every one of those is DATA read out of the adopting tree; none of them is
+// a decision this module makes for a room.
+//
+// agentHomes, CORRECTED (CWK-078) — the FIRST version of this contract derived
+// agentHomes from whatever map a tool uses to WRITE into a user's tree (CoalMine's own
+// targets map), reasoned this room "HAS NONE, ships no installer" and therefore shipped
+// agentHomes as the EMPTY SET. That was the WRONG AXIS: this gate asks what a citation
+// READS a key FROM in a user's tree, and reading needs no installer at all. This room's
+// own cascade (config-load.mjs's projectConfigCandidates) already names its agent-home
+// roots without ever writing to one, and verify.mjs 2.12 now derives agentHomes from
+// exactly that. The empty set was itself the two-files-one-unit defect CWK-075's own
+// INSPECT records elsewhere in this file (a ported line naming a file we lack, paired
+// with our own wiring depending on its absence) — this comment is the corrected half.
 
 // A path this room deliberately points at BEFORE it exists. Ships EMPTY, and the empty
-// list is a MEASUREMENT, not an omission: every in-scope pointer resolves (67 of 67 at
-// the CWK-075 r2 re-measurement), so nothing here has needed a declaration yet.
+// list is a MEASUREMENT, not an omission -- but the "67 of 67 at the CWK-075 r2
+// re-measurement" figure once printed here was COALMINE'S OWN number, not ours: it is
+// byte-identical in CoalMine's own scripts/lib/pointer-check.mjs (diff the two files'
+// comment blocks to re-derive this), carried over unchanged by the port per this file's
+// own attribution banner ("every figure is CoalMine's unless a block says OURS") --
+// never re-measured for this tree, which is exactly the port-defect class that banner
+// exists to name (CWK-078 findings-back F2). THIS ROOM's own figure is the attribution
+// banner's own FUNNEL block above (48 surfaces / 49 in scope / 49 resolving), which
+// matches the live gate's own printed pass line -- re-derive with the walk in verify.mjs
+// 2.12, never trust either number quoted here. The POINT stands unchanged either way:
+// every in-scope pointer resolves, so nothing here has needed a declaration yet.
 //
 // The mechanism exists anyway, and that is a decision with a reason rather than padding:
 // without an escape hatch the first legitimate forward pointer hard-FAILs, and the

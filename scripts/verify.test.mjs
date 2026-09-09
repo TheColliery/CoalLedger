@@ -71,3 +71,33 @@ test('verify.mjs negative path: a missing plugin.json description FAILs, does no
     assert.match(r.stdout, /\.claude-plugin\/plugin\.json: description missing/, r.stdout);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// CWK-078 findings-back LOW-1: block 2.12 (the pointer gate) had ZERO automated
+// coverage -- scratchRepo() above carries no `.git` and no root docs, so the block
+// SKIPs there every time; both reds this unit's own INSPECT ran were by hand. This
+// gives the block a real git repo, a gitignored top-level entry, and a planted
+// citation into it.
+const POINTER_ROOT_DOCS = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'PRIVACY.md', 'CHANGELOG.md', '.gitignore'];
+function pointerScratchRepo() {
+  const dir = scratchRepo();
+  for (const f of POINTER_ROOT_DOCS) fs.cpSync(path.join(repo, f), path.join(dir, f));
+  spawnSync('git', ['init', '-q'], { cwd: dir });
+  spawnSync('git', ['add', '-A'], { cwd: dir });
+  return dir;
+}
+
+test('verify.mjs block 2.12: a citation into a NEW gitignored top-level entry FAILs the gate (CWK-078 findings-back LOW-1)', () => {
+  const dir = pointerScratchRepo();
+  try {
+    const clean = run(dir);
+    assert.strictEqual(clean.status, 0, `pristine copy must PASS, got:\n${clean.stdout}${clean.stderr}`);
+    assert.match(clean.stdout, /top-level entries fed to git check-ignore/, 'block 2.12 must actually run here, not SKIP');
+
+    fs.mkdirSync(path.join(dir, 'scratch-out'));
+    fs.appendFileSync(path.join(dir, '.gitignore'), '\nscratch-out/\n');
+    fs.appendFileSync(path.join(dir, 'README.md'), '\nSee `scratch-out/notes.md`.\n');
+    const red = run(dir);
+    assert.strictEqual(red.status, 1, 'a citation into a NEW gitignored top-level dir must FAIL');
+    assert.match(red.stdout, /README\.md cites `scratch-out\/notes\.md`, which lives under the gitignored `scratch-out\/`/, red.stdout);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

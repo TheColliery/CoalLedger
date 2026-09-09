@@ -6,6 +6,7 @@
 // (scripts-quality.md: CLI = fail loud).
 
 import fs from 'node:fs';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -14,6 +15,7 @@ import { stripJsonc } from './lib/jsonc.mjs';
 import { DESC_CAP, frontmatterField } from './lib/desc-cap.mjs';
 import { checkPointers } from './lib/pointer-check.mjs';
 import { checkConfigKeys, checkConfigReadPath } from './lib/config-keys.mjs';
+import { projectConfigCandidates, physicalDir } from './lib/config-load.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let fails = 0;
@@ -282,30 +284,103 @@ try {
       const parts = f.split('/');
       for (let i = 1; i < parts.length; i++) trackedDirs.add(parts.slice(0, i).join('/'));
     }
-    const ourRoots = new Set();
-    for (const f of tracked) ourRoots.add(f.split('/')[0]);
-    for (const e of fs.readdirSync(repo, { withFileTypes: true })) {
-      if (e.isDirectory() && !e.name.startsWith('.')) ourRoots.add(e.name);
-    }
-    // ASKED OF GIT, never parsed out of .gitignore — a re-implementation of gitignore
-    // matching would be the second source of truth this gate exists to catch.
+
+    // AGENT-HOME ROOTS (CWK-078) — DERIVED from this room's own cascade candidate
+    // order, never hand-written, so the set cannot rot the day that order changes.
+    // Held out of the ignored-roots question BELOW, before it is asked — same
+    // shape as CoalWash's and CoalHearth's own verify.mjs (read-only references).
     //
-    // ROOM-SPECIFIC FINDING, stated because the ported derivation is NARROWER here than
-    // it looks: this room gitignores CLAUDE.md, MEMORY*.md, AGENTS.md,
-    // COALLEDGER_BLUEPRINT.md (top-level FILES, not dirs) and .claude/ .agents/ (HIDDEN
-    // dirs). The loop below adds only non-hidden top-level DIRECTORIES plus tracked
-    // roots, so ignoredRoots measures EMPTY today — and a citation into .claude/ falls
-    // out of scope silently rather than FAILing, because .claude is not in ourRoots
-    // either. For CoalMine that is correct: .claude/ is an agent home in the USER's tree.
-    // For us it is BOTH — the agent home AND where this room's own gitignored audit
-    // artefacts live. Same path, opposite meaning, and the ported rule cannot tell them
-    // apart from the token alone. Named as an uncovered class, not silently inherited.
+    // THE AXIS CORRECTION: this used to be an empty set derived from "this room
+    // ships no installer" — the WRONG AXIS. Gitignored HERE says nothing about
+    // the USER's tree; an installer WRITES into a user's tree, but this gate is
+    // asking what the tool READS a key FROM in one, which needs no installer at
+    // all. `.claude/` `.agents/` `.gemini/` are gitignored HERE (this room's own
+    // scratch/audit homes) AND are the exact project-config paths README.md's own
+    // Configure section names for the CASCADE (`.claude/coal/coalledger.json`,
+    // config-load.mjs's own AGENT_DIR_ORDER) — one path, two meanings, and the
+    // empty set could not tell them apart. Confirmed live: with agentHomes empty
+    // and the feed widened to all top-level entries (below), README.md:103's
+    // `.claude/coal/coalledger.json` citation FAILs as unreachable — a correct
+    // ship-text sentence convicted by a gate that had never been asked to hold
+    // its own agent homes out.
+    // REALPATH THE COMPARE (CWK-078 findings-back MED-1): `projectConfigCandidates`
+    // resolves its root through `findProjectRoot` -> `physicalDir` -> `fs.realpathSync`
+    // (config-load.mjs's own header: "compares PHYSICAL paths on both sides ... a
+    // lexical compare never matches and the walk escapes"). `repo` above is LEXICAL
+    // (`path.resolve`, never realpathed) — comparing it against a realpathed candidate
+    // via `path.relative` disagrees the moment the repo is REACHED through a symlink or
+    // Windows junction: every candidate then relatives to a `..`-prefixed path, the
+    // `startsWith('..')` filter drops all four, and agentHomes comes back EMPTY --
+    // which is red (a), the gate FAILing nine correct ship-text sentences it exists to
+    // protect. Realpath `repo` here so both sides of the compare are physical, the same
+    // discipline this room's own config-load.mjs header already states for exactly this
+    // shape one file over.
+    const physRepo = physicalDir(repo);
+    const agentHomes = new Set();
+    for (const c of projectConfigCandidates(repo, os.homedir())) {
+      const r = path.relative(physRepo, c).split(path.sep).join('/');
+      if (!r || r.startsWith('..') || path.isAbsolute(r) || !r.includes('/')) continue;
+      const first = r.split('/')[0];
+      // FIFTH FILTER, NAMED (CWK-078 findings-back LOW-2): AGENT_DIR_ORDER entries are
+      // dot-dirs today (.claude/.agents/.gemini), so this additionally drops any FUTURE
+      // non-dot agent-dir name from agentHomes -- safe direction (a false FAIL surfaces
+      // it, never a silent pass), but stated here so it is a DECLARED fifth filter, not
+      // an undocumented one riding along with the four above it.
+      if (first.startsWith('.') && first.length > 1) agentHomes.add(first);
+    }
+
+    // THE FULL TOP-LEVEL ENUMERATION (CWK-078 half 1) — FILES AND HIDDEN DIRS
+    // INCLUDED, filtered only on '.git'. WHAT THIS WIDENING ACTUALLY BUYS,
+    // corrected (CWK-078 findings-back MED-4): the prior shape (tracked roots plus
+    // non-hidden top-level DIRECTORIES) missed this room's gitignored DOT-DIRS
+    // (.claude, .agents, .gemini) — a real citation into one, README.md:103's
+    // `.claude/coal/coalledger.json`, was silently unreachable by the ignoredRoots
+    // question because a dot-dir was never even fed to `git check-ignore`. A bare
+    // gitignored top-level FILE (CLAUDE.md, MEMORY*.md, AGENTS.md,
+    // COALLEDGER_BLUEPRINT.md) was never actually at risk either way, before or
+    // after this widening: `pointerCandidates`' own shape rule drops every token
+    // with no `/` LONG before `ignoredRoots` is ever consulted
+    // (pointer-check.mjs:258 — "a bare filename is the USER's repo's"), so a
+    // citation shaped like a bare file can never reach this branch. The dot-dir
+    // reach is real and load-bearing; the file half was never reachable to begin
+    // with. Read-only reference for the shape: CoalWash/scripts/verify.mjs's own
+    // `topAll`.
+    const topAll = fs.readdirSync(repo, { withFileTypes: true }).map((e) => e.name).filter((n) => n !== '.git');
+    const ourRoots = new Set(topAll);
+    for (const f of tracked) ourRoots.add(f.split('/')[0]);
+
+    // IGNORED ROOTS: asked of git, never parsed out of .gitignore — a
+    // re-implementation of gitignore matching would be the second source of
+    // truth this gate exists to catch. Agent homes are excluded BEFORE the
+    // question, per the axis correction above.
+    //
+    // CLEAN-CLONE CONSEQUENCE (CWK-078 findings-back F1, CORRECTED at MED-2):
+    // ignoredRoots asks git what EXISTS on THIS disk right now, so it reads 0 on a
+    // BARE clean checkout, before any build step runs — that much is structural.
+    // It is NOT structurally 0 "in CI" as a blanket claim, and reading a nonzero
+    // count as "only ever a maintainer's own box" is false: this room's own
+    // `claude-ai-zips.yml` runs `scripts/build-claude-ai-zips.mjs`, which creates
+    // a gitignored top-level `dist-claude-ai/` (`:19`) — a real CI leg, not a
+    // developer machine. Today's CI reading of 0 is ORDERING (the workflow's own
+    // "Verify plugin/ dist is current" step runs BEFORE the ZIP-build step), never
+    // construction — reorder those two steps, or add a second verify call after
+    // the build, and CI reads nonzero too. Worse than the count: `CHANGELOG.md:66`
+    // already cites `` `dist-claude-ai/` `` in backticks, so on a maintainer's own
+    // box who runs the documented ZIP build BEFORE the gate, the count is not the
+    // symptom at all — the gate hard-FAILs on that pre-existing CHANGELOG line
+    // (reproduced live). This unit did not create that red; it is the first
+    // comment to claim the reading is benign, which it is not on every path this
+    // room itself ships. CWK-079 (widening the check to reason about a user's
+    // tree by PATTERN, not by what this disk holds) is still a separate ticket;
+    // fixing `dist-claude-ai/`'s own hold-out is a separate one too, named here
+    // and not attempted in this unit.
     const ignoredRoots = new Set();
-    for (const name of ourRoots) {
-      if (tracked.has(name) || trackedDirs.has(name)) continue;
+    for (const name of topAll) {
+      if (tracked.has(name) || trackedDirs.has(name) || agentHomes.has(name)) continue;
       const ci = spawnSync('git', ['check-ignore', '-q', '--', name], { cwd: repo, encoding: 'utf8' });
       if (!ci.error && ci.status === 0) ignoredRoots.add(name);
     }
+    console.log(`  --   top-level entries fed to git check-ignore: ${topAll.length} (files + hidden included) — ${ignoredRoots.size} gitignored, held out: ${[...agentHomes].sort().join(' ') || '(none)'} — 0 on a bare clean checkout; a build step that creates a gitignored top-level dir (this room's own build-claude-ai-zips.mjs does) changes that, in CI too, not only on a maintainer's box`);
     const walkAny = (dir, re, out = []) => {
       if (!fs.existsSync(dir)) return out;
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -332,16 +407,43 @@ try {
     }
     surfaces.push({ label: 'CHANGELOG.md', text: read(path.join(repo, 'CHANGELOG.md')), historyOnly: true });
 
-    // AGENT INSTALL HOMES — and this room has NO TARGETS map to derive one from, which is
-    // itself the finding rather than a reason to hand-write a list. CoalMine derives its
-    // set from scripts/lib/targets.mjs because it ships an installer that WRITES into a
-    // user's tree; this room ships no installer at all (no scripts/install.mjs — its
-    // cross-agent path is a documented file copy). Its two documented destinations are
-    // ~/.gemini/config/skills/ and ~/.claude/, both HOME-anchored, and both are already
-    // dropped upstream by the module's OUTSIDE shape test. So the correct value here is
-    // the EMPTY SET, derived from the absence of an installer rather than asserted, and
-    // the day this room ships one the set must come from that installer's own map.
-    const agentHomes = new Set();
+    // SURFACE ACCOUNTING (CWK-078) — walked (the surfaces array above) plus
+    // DECLARED-OUT (named classes this gate deliberately never reads) must
+    // reconcile against `git ls-files`'s own tracked count, or a class of file
+    // is silently uncovered on BOTH sides — CoalMine's own find was 28 tracked
+    // files in neither list. Every class below is named with why it is out, not
+    // merely counted; each predicate runs over `tracked` at run time, so the
+    // count can never drift from what the tree actually holds.
+    const declaredOutClasses = [
+      ['plugin/** (generated dist, byte-identical to source per the header above)', (f) => f.startsWith('plugin/')],
+      ['.github/** (CI/workflow YAML, not ship-text)', (f) => f.startsWith('.github/')],
+      ['.githooks/** (git hook scripts, not ship-text)', (f) => f.startsWith('.githooks/')],
+      // LOW-3 (CWK-078 findings-back): plugin.json's own `description` field IS
+      // 1,019 chars of user-facing prose -- "not prose" overclaimed. The true
+      // reason it is out here: verify.mjs's own DESC_CAP check already gates that
+      // field elsewhere in this file (0 pointer candidates in it today, so no live
+      // gap either way), not that the surface is non-prose.
+      ['.claude-plugin/** (JSON manifest -- its own description field is gated separately by this file\'s DESC_CAP check, not by this gate)', (f) => f.startsWith('.claude-plugin/')],
+      ['platform-configs/** (config JSON, not prose)', (f) => f.startsWith('platform-configs/')],
+      ['hooks/hooks.json (JSON manifest, not prose)', (f) => f === 'hooks/hooks.json'],
+      ['scripts/fixtures/*.md (planted-defect test fixtures, not real ship-text)', (f) => f.startsWith('scripts/fixtures/')],
+      ['root non-doc files (LICENSE, NOTICE, lint/git config)', (f) => ['LICENSE', 'NOTICE', '.markdownlint.json', '.gitignore', '.gitattributes'].includes(f)],
+    ];
+    let declaredOutCount = 0;
+    const residueFiles = [];
+    for (const f of tracked) {
+      if (declaredOutClasses.some(([, test]) => test(f))) { declaredOutCount++; continue; }
+      if (!surfaces.some((s) => s.label === f)) residueFiles.push(f);
+    }
+    console.log(`  --   surfaces: ${surfaces.length} walked + ${declaredOutCount} declared-out = ${surfaces.length + declaredOutCount} of ${tracked.size} tracked, residue ${residueFiles.length}${residueFiles.length ? ' (' + residueFiles.join(', ') + ')' : ''}`);
+    // LOW-4 (CWK-078 findings-back): the accounting above DETECTED but did not
+    // ENFORCE -- residueFiles was computed and printed with nothing calling
+    // fail(), so a new tracked file landing in neither `surfaces` nor a declared
+    // class (CoalMine's own motivating find: 28 such files) would print on one
+    // line and still exit 0. Enforce it: a nonzero residue is a gap in this
+    // gate's own coverage bookkeeping, not merely a diagnostic.
+    if (residueFiles.length) fail(`pointer-gate surface accounting: ${residueFiles.length} tracked file(s) covered by neither a walked surface nor a declared-out class — ${residueFiles.join(', ')}`);
+
     const findings = checkPointers({
       surfaces,
       ourRoots,
