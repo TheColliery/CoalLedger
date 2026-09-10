@@ -19,6 +19,17 @@ on:
 permissions:
   contents: read
 
+# cancel-in-progress: TRUE (CWK-058, canon: .github/SKILL-REPO-PATTERN.md) -- NOT the
+# same discriminator as scorecard.yml's FALSE below, though both upload a SARIF. This
+# workflow publishes ONLY to GitHub code scanning, one atomic upload-or-nothing: a
+# killed run simply never uploads, and the PRIOR analysis stands intact, not corrupted.
+# scorecard.yml additionally posts to a third-party API it does not control, where a
+# cancelled publish can be left partially applied -- that is the reason it cancels FALSE
+# while this workflow, uploading the same artifact TYPE, safely cancels TRUE.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: analyze (javascript)

@@ -22,6 +22,15 @@ on:
 permissions:
   contents: read
 
+# cancel-in-progress: FALSE, grouped on the TAG (ref_name, not the branch) since the
+# asset collision is per-Release (CWK-058, canon: .github/SKILL-REPO-PATTERN.md). A run
+# killed mid-upload can leave the Release carrying a partial or missing ZIP with nothing
+# to signal it -- CoalMine's own prior v3.17.1 incident (two overlapping runs racing
+# onto the same tag) is the exhibit this class is named after.
+concurrency:
+  group: claude-ai-zips-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   build-zips:
     runs-on: ubuntu-latest

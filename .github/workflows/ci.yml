@@ -25,6 +25,13 @@ on:
 permissions:
   contents: read
 
+# cancel-in-progress: TRUE (CWK-058, canon: .github/SKILL-REPO-PATTERN.md) -- this
+# workflow only reads, tests and compares; it publishes nothing and touches no external
+# state, so a superseded run has nothing half-done to leave behind.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gate:
     name: gate (${{ matrix.os }} · node ${{ matrix.node }})

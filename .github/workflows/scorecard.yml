@@ -13,6 +13,17 @@ on:
 permissions:
   contents: read
 
+# cancel-in-progress: FALSE (CWK-058, canon: .github/SKILL-REPO-PATTERN.md) -- this
+# DISAGREES with codeql.yml, which cancels, and that is deliberate: both upload a
+# SARIF, so the SARIF is not the discriminator. CodeQL publishes ONLY to GitHub code
+# scanning, where a missed upload leaves the prior analysis standing; this workflow
+# ALSO posts to the OpenSSF API, a third-party endpoint we do not control, where a
+# cancelled publish can be left partially applied. It is also schedule-driven, so
+# overlap is rare and queueing costs nothing.
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   analysis:
     name: Scorecard analysis

@@ -13,6 +13,13 @@ on:
 permissions:
   contents: read
 
+# cancel-in-progress: TRUE (CWK-058, canon: .github/SKILL-REPO-PATTERN.md) -- a lint run
+# reads files and publishes nothing (continue-on-error, report-only), so a superseded
+# run has no partial state to leave behind.
+concurrency:
+  group: markdownlint-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
