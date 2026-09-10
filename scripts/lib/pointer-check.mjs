@@ -404,8 +404,9 @@ export function classifyCheckIgnoreResult(ci) {
 // the SAME mutated file, delete every test whose title matches `applyCheckIgnoreProbe`
 // (both the classifier-only assertions and the loop-generated wiring tests) and run it
 // again. If the mutant returns to green once the coverage is gone, the wiring tests are
-// what close the class on THIS tree, exactly as they closed it on CoalTipple's absence of
-// them proved the opposite. Restore both files from source control before trusting
+// what close the class here -- and CoalTipple's own run is the same fact read from the
+// other side: no equivalent test existed there, so the mutant stayed green with the
+// identical fix already in place. Restore both files from source control before trusting
 // anything else in this session. An adopter that ports this function without an
 // equivalent wiring test should EXPECT CoalTipple's non-reproducing result, not read it
 // as an exception to explain away.
