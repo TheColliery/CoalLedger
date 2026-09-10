@@ -113,6 +113,7 @@ Every tool in the series supports two config levels — a global `~/.claude/.coa
 | `docLeak` | `true` | The #7 doc-leak canary's gate — a private-only project (docs never published) turns it off |
 | `publicMode` | `false` | Treat this project's docs as public-facing (raises leak/grounding stakes in severity context) |
 | `docsDriftNudge` | `true` | The off-switch for the quiet [docs memory-drift reminder](#docs-memory-drift-reminder); set `false` to silence it |
+| `emDash` | `off` | doc-quality's em-dash typography rule: `unspaced` = the house form `word—word`, so a spaced em-dash is the finding · `spaced` = the inverse · `off` (factory default) = the rule does not run at all—a house choice, never forced on your repo |
 | `updateMode` | `ask` | Self-update behavior at session start (`ask` \| `auto` \| `remind` \| `off`) |
 | `updateCheckDays` | `14` | Days between self-update checks/reminders |
 

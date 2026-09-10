@@ -53,25 +53,41 @@ export const DIST_ITEMS = [
 // alternative: it forks the engine the day a standalone consumer appears.
 // md-checks.mjs imports './md-ast.mjs', so both files must land side by side.
 export const SKILL_ENGINE_DIR = path.join('skills', 'doc-structure', 'lib');
-export const GENERATED = new Map(
-  ['md-ast.mjs', 'md-checks.mjs'].map((f) => [
+// CWK-073: doc-quality's `emDash` rule is the SAME shape one skill over --
+// its own self-contained engine copy, generated from the same single
+// source (`scripts/lib/emdash.mjs`), never a second hand-tracked file.
+export const DOC_QUALITY_ENGINE_DIR = path.join('skills', 'doc-quality', 'lib');
+export const GENERATED = new Map([
+  ...['md-ast.mjs', 'md-checks.mjs'].map((f) => [
     path.join(SKILL_ENGINE_DIR, f),
     path.join('scripts', 'lib', f),
   ]),
-);
+  [path.join(DOC_QUALITY_ENGINE_DIR, 'emdash.mjs'), path.join('scripts', 'lib', 'emdash.mjs')],
+]);
 
 const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 
 // board #40 fixback (INSPECT F2): unlike every other file under scripts/lib/,
-// these two exist ONLY for build-time tooling (verify.mjs's own frontmatter
-// gate, build-claude-ai-zips.mjs) -- no hook or skill imports them at
-// runtime, so the wholesale scripts/lib DIST_ITEM copy (see the header
-// comment's own stated reason: "the hooks/conductor and the Stop drift hook
-// import those modules at runtime") was shipping dead bytes into every
-// install. Matched by basename, not full path, since fs.cpSync's filter
-// callback receives absolute paths while checkDist's own filesUnder walk
-// uses repo-relative ones -- a basename check is correct either way.
-const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs']);
+// desc-cap.mjs/claude-ai-trim.mjs/pointer-check.mjs exist ONLY for build-time
+// tooling (verify.mjs's own frontmatter gate, build-claude-ai-zips.mjs) --
+// no hook or skill imports them at runtime, so the wholesale scripts/lib
+// DIST_ITEM copy (see the header comment's own stated reason: "the
+// hooks/conductor and the Stop drift hook import those modules at runtime")
+// was shipping dead bytes into every install. Matched by basename, not full
+// path, since fs.cpSync's filter callback receives absolute paths while
+// checkDist's own filesUnder walk uses repo-relative ones -- a basename
+// check is correct either way.
+//
+// emdash.mjs (CWK-073) joins this set for the IDENTICAL reason -- no hook
+// reads it from the wholesale `scripts/lib` path either -- but it is NOT in
+// the same situation as the other three: doc-quality's SKILL DOES need it,
+// via its own GENERATED self-contained copy (above), the same shape
+// md-ast.mjs/md-checks.mjs already ship for doc-structure. BUILD_ONLY_LIB_NAMES
+// and GENERATED are independent mechanisms -- excluding a file from the
+// wholesale copy says nothing about whether it is ALSO the source of a
+// generated skill-local copy, and emdash.mjs is the first file in this room
+// to be both at once.
+const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs']);
 const isBuildOnlyLib = (p) => BUILD_ONLY_LIB_NAMES.has(path.basename(p));
 const isDistExcluded = (p) => isTest(p) || isBuildOnlyLib(p);
 

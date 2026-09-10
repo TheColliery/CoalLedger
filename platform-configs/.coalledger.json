@@ -53,6 +53,14 @@
   // set false to silence.
   "docsDriftNudge": true,
 
+  // doc-quality's em-dash typography rule (CWK-073). "unspaced" = the house
+  // form word—word, so a SPACED em-dash is the finding; "spaced" = the
+  // inverse; "off" (this factory default) = the rule does not run at all --
+  // a house choice, never forced on another user's repo. The owner sets
+  // this to "unspaced" globally on his own machine; a repo's own project
+  // file never should.
+  "emDash": "off",
+
   // scanEverything (CWK-057, the owner's antivirus-scope law — one flock, one
   // colour with CoalMine's key of the same name, polarity and default). ON for
   // a run, every finding is reported down to severityFloor "low" regardless of

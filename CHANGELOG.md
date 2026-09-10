@@ -2,6 +2,16 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.10.0-beta.1] - 2026-09-10
+
+### Added
+- **doc-quality gains a config-keyed em-dash typography rule (CWK-073), the house convention landing as an ONGOING gate rather than a one-time hand sweep (CWK-062).** New key `emDash: "unspaced" | "spaced" | "off"` (factory `off`—a house choice, never forced on another user's repo): `unspaced` = the house form `word—word`, so a SPACED em-dash is the finding; `spaced` = the inverse; `off` = the rule never runs. Report-only, choice-gated fix menu, mechanical (Quick) layer—no new consent surface.
+- **The engine (`scripts/lib/emdash.mjs`) moved from `scripts/emdash.mjs`, gained a `mode` parameter, and now ships INSIDE the skill** at `skills/doc-quality/lib/` (generated, byte-identical to its one source, the same self-contained-skill shape `doc-structure` already ships for its own AST engine)—the skill now works even when it travels alone. **The polarity needed care, not a straight port:** the CWK-062 instrument's own hardcoded default (flag an UNSPACED em-dash, treat SPACED as correct) is the OPPOSITE of the house's adopted convention—confirmed against CWK-062's own verification method, which greps for the SPACED form and expects zero after its sweep. `scanText`'s default parameter preserves the original direction unmodified (mode `'spaced'`, so all 17 pre-existing selftest cases still pass byte-for-byte); `'unspaced'` is the new, correct polarity doc-quality's Method actually invokes.
+- **Exclusion classes widened past the original two-name `LICENSE`/`NOTICE` set:** a case-insensitive basename glob now also covers `COPYING*` and any `docs/license.md`-class rendering (matched by basename, not a directory-scoped path, so it reaches a vendored legal file regardless of which directory holds it)—narrowed to a `.`-separator only after a false-EXEMPTION was caught in testing (a `-`-separator glob would have silently exempted an ordinary file like `notice-of-changes.md`). A new literal marker, `<!-- third-party-text -->`, excludes a WHOLE document that carries verbatim third-party wording without a legal-shaped filename. **Blockquote-prefixed lines are RULED excluded** (the one mechanically visible quotation marker Markdown has); an inline quotation with no blockquote marker stays a stated, undetectable limit—the caller adjudicates, the instrument does not guess.
+
+### Fixed
+- **`scripts/build-plugin.mjs`'s `BUILD_ONLY_LIB_NAMES` gains `emdash.mjs`**—nothing imports it from the wholesale `scripts/lib` dist copy (no hook needs it), so it is excluded there while remaining the SOURCE for its own generated skill-local copy—the first file in this room to be both at once—test: `scripts/lib/emdash.test.mjs`
+
 ## [0.9.0-beta.1] - 2026-09-03
 
 ### Added
