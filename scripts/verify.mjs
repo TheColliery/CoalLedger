@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CONFIG_SCHEMA, validateConfig } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 import { DESC_CAP, frontmatterField } from './lib/desc-cap.mjs';
-import { checkPointers, pointerCandidates, looksPathShaped } from './lib/pointer-check.mjs';
+import { checkPointers, pointerCandidates, looksPathShaped, DEFAULT_SURFACE_PLAN, collectSurfaces, applyCheckIgnoreProbe } from './lib/pointer-check.mjs';
 import { checkConfigKeys, checkConfigReadPath } from './lib/config-keys.mjs';
 import { projectConfigCandidates, physicalDir } from './lib/config-load.mjs';
 
@@ -353,31 +353,38 @@ try {
     // belong to our own tree at all) and stays disk-derived; only the IGNORE question
     // moved to pattern-based.
 
-    const walkAny = (dir, re, out = []) => {
+    // SURFACE PLAN, DECLARED (CWK-090 fix 3) -- what this block used to hard-code as two
+    // walkAny-and-concatenate loops (skills+commands, scripts+hooks) is now DATA
+    // (`DEFAULT_SURFACE_PLAN`, pointer-check.mjs), driven here with THIS room's own fs
+    // IO. Behaviour is BYTE-IDENTICAL to the loops it replaces: same surfaces, same
+    // order, same labels, same comment-line filter -- proven by a before/after
+    // fingerprint diff at commit time, not merely asserted here (see the commit message
+    // this ships in).
+    const rel = (q) => path.relative(repo, q).split(path.sep).join('/');
+    const read = (q) => { try { return fs.readFileSync(q, 'utf8'); } catch { return null; } };
+    const walkMd = (dir, out = []) => {
       if (!fs.existsSync(dir)) return out;
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const q = path.join(dir, e.name);
-        if (e.isDirectory()) walkAny(q, re, out);
-        else if (re.test(e.name)) out.push(q);
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walkMd(p, out);
+        else if (e.name.endsWith('.md')) out.push(p);
       }
       return out;
     };
-    const relp = (q) => path.relative(repo, q).split(path.sep).join('/');
-    const read = (q) => { try { return fs.readFileSync(q, 'utf8'); } catch { return null; } };
-    const surfaces = [];
-    for (const f of [...walkAny(path.join(repo, 'skills'), /\.md$/), ...walkAny(path.join(repo, 'commands'), /\.md$/)]) {
-      surfaces.push({ label: relp(f), text: read(f) });
-    }
-    for (const d of ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'PRIVACY.md']) {
-      surfaces.push({ label: d, text: read(path.join(repo, d)) });
-    }
-    // COMMENT LINES ONLY: a path inside CODE is exercised by the tests; a path inside a
-    // COMMENT is exercised by nothing at all.
-    for (const f of [...walkAny(path.join(repo, 'scripts'), /\.(mjs|js)$/), ...walkAny(path.join(repo, 'hooks'), /\.(mjs|js)$/)]) {
-      const src = read(f);
-      surfaces.push({ label: relp(f), text: src === null ? null : src.split('\n').filter((l) => /^\s*(\/\/|\*)/.test(l)).join('\n') });
-    }
-    surfaces.push({ label: 'CHANGELOG.md', text: read(path.join(repo, 'CHANGELOG.md')), historyOnly: true });
+    const walkSrc = (dir, keep = (n) => /\.(mjs|js)$/.test(n), out = []) => {
+      if (!fs.existsSync(dir)) return out;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walkSrc(p, keep, out);
+        else if (keep(e.name)) out.push(p);
+      }
+      return out;
+    };
+    const commentLines = (src) => src.split('\n').filter((l) => /^\s*(\/\/|\*)/.test(l)).join('\n');
+    const hashComments = (src) => src.split('\n').filter((l) => /^\s*#/.test(l)).join('\n');
+    const surfaces = collectSurfaces(repo, DEFAULT_SURFACE_PLAN, {
+      join: path.join, walkMd, walkSrc, read, rel, commentLines, hashComments,
+    });
 
     // SURFACE ACCOUNTING (CWK-078) — walked (the surfaces array above) plus
     // DECLARED-OUT (named classes this gate deliberately never reads) must
@@ -437,37 +444,35 @@ try {
     // this narrowing carries; `checkPointers` below judges every token that DOES reach
     // it regardless of shape, so narrowing here only decides which roots ENTER the set).
     //
-    // TRAILING SLASH: every candidate reaching this probe passed `looksPathShaped`, so
-    // its first segment is being treated as a directory — feed `first + '/'`. A
-    // `dir/`-anchored .gitignore pattern does not match the bare name for an ABSENT
-    // path (measured on this tree's own claude.ai staging-dir name: bare, it reads
-    // not-ignored; with the slash, IGNORED — proven again below). THE TRAILING SLASH IS
-    // STRUCTURALLY REQUIRED, not a style choice: this is the exact case CWK-079 exists
-    // to fix (an absent-on-disk directory that IS gitignored), and `git check-ignore`
-    // needs the slash to know an absent candidate is meant as a directory at all.
+    // INJECTION-SITE PROBE (CWK-090 fix 2, ported from CoalFace's finding, main-ruled the
+    // ONE shape, box-independent) — RETIRES the bare `first + '/'` feed this block used
+    // to send. Every candidate reaching this probe passed `looksPathShaped`, so its first
+    // segment is being treated as a directory, and `git check-ignore` cannot infer that
+    // an ABSENT path is meant as a directory without SOME suffix under it — that half of
+    // the old TRAILING SLASH reasoning stays true. What changed is WHICH suffix: a bare
+    // root plus a trailing slash (deliberately not backticked here — this comment is
+    // itself a WALKED surface, and a real slash-terminated example would manufacture a
+    // shape-qualified candidate) is exactly the shape a CRLF-corrupted `.gitignore`
+    // blank line false-matches against (this room's own CWK-079 findings-back exhibit,
+    // below); appending `PROBE_SUFFIX` — a path UNDER the root, not the bare root —
+    // carries the identical "is this a directory" information without ever matching
+    // that corrupted-blank-line shape.
     //
-    // FINDINGS-BACK, self-caught: the trailing slash exposed a REAL bug in this room's
-    // OWN local `.gitignore` CHECKOUT, not in the probe. This box's working-tree
-    // `.gitignore` carried CRLF line endings on a "blank" separator line (line 15) --
-    // `.gitattributes` declares `eol=lf` for this file and the TRACKED BLOB is clean LF
-    // (`git hash-object .gitignore` == `git rev-parse HEAD:.gitignore`, confirmed), so
-    // this was a stale, never-renormalized LOCAL checkout artefact (this room's own
-    // "git add --renormalize is not a cure" lesson, one door over), never a defect that
-    // ships. Reproduced in isolation: a `.gitignore` with a CRLF-corrupted blank line
-    // makes `git check-ignore --stdin` report EVERY fed name as ignored against that
-    // blank line the moment a TRAILING SLASH is appended -- the identical bare name with
-    // no slash correctly reads not-ignored. Dropping the trailing slash would have
-    // "fixed" the symptom by reopening the exact vacuity this ticket exists to close (an
-    // absent gitignored directory no longer matches at all without it) -- confirmed live
-    // BOTH ways on this tree: with the corruption present, the claude.ai staging-dir name
-    // matched correctly only WITH the slash; every foreign name ALSO matched (falsely)
-    // only WITH the slash, off the corrupted blank line. The real fix is the checkout,
-    // not the probe: the stray CR was stripped from the working-tree file (now
-    // byte-identical to `HEAD:.gitignore`, nothing to commit), after which the slash
-    // correctly discriminates in both directions. CoalMine's own `scripts/verify.mjs`
-    // (READ-ONLY reference) feeds the identical `n + '/'` shape and carries the
-    // identical LATENT exposure -- dormant only because ITS `.gitignore` has no such
-    // corrupted line today. Reported upward, not fixed there.
+    // FINDINGS-BACK, self-caught, CWK-079 — THIS ROOM'S OWN EXHIBIT, kept because fix 2
+    // does not erase the history, it retires the workaround: this box's working-tree
+    // `.gitignore` carried CRLF line endings on a "blank" separator line, which made
+    // `git check-ignore --stdin` report EVERY fed name as ignored against that blank
+    // line the moment a trailing slash was appended. That checkout was fixed at the time
+    // (`git hash-object .gitignore` == `git rev-parse HEAD:.gitignore`, still true today,
+    // nothing to commit) and stays fixed — CWK-090 fix 2 does NOT license re-introducing
+    // a CR into this working tree, and does not remove the normalization. What fix 2
+    // adds is the fix CoalMine's own reviewer measured for the CASE that survives even a
+    // clean checkout: a lone-CR blank line that CoalMine independently reproduced still
+    // false-matches an ABSENT, unpatterned root under the bare `root/` feed on THEIR
+    // tree — this room's fix landed first and closed the local corruption; CoalMine's
+    // finding is that the CLASS needed the code-side fix too, not only a clean checkout,
+    // so `.pointer-check-probe` closes it structurally rather than depending on every
+    // future checkout staying clean.
     //
     // BATCHED, one process for every distinct first segment actually cited, not one per
     // topAll entry — replaces the CWK-078 per-name spawn loop with a single
@@ -487,35 +492,27 @@ try {
       toProbe.push(name);
     }
     const ignoredRoots = new Set();
-    if (toProbe.length) {
-      const ci = spawnSync('git', ['check-ignore', '--stdin'],
-        { cwd: repo, encoding: 'utf8', input: toProbe.map((n) => n + '/').join('\n') + '\n' });
-      // CWK-079 findings-back MED-1 (head-ordered, overruling INSPECT's SHIP-with-MED
-      // verdict on this point): exit 0 (some fed roots matched) and exit 1 (none did) are
-      // both real ANSWERS from git -- the OLD guard here only checked `ci.error` and
-      // `ci.stdout`'s type, never `ci.status`, so a THIRD outcome (measured: status 128,
-      // from a malformed or out-of-repo fed line) also passed the guard: `ci.error` is
-      // unset and `ci.stdout` is a string (empty) on that path too, so it silently read as
-      // "0 gitignored" and the WHOLE `toProbe` batch (up to `candidateRoots.size` roots)
-      // vanished from the gate with no signal at all -- the converse of this module's own
-      // "a gate that cannot run must never convict" rule: a gate that cannot run must also
-      // never silently ACQUIT. This is NOT the same case as the `ls-files` SKIP two
-      // branches above: that SKIP exists because git itself can be genuinely ABSENT (this
-      // room's own non-git test fixtures), an environment gap this gate has no capability
-      // to answer -- `ls-files` already proved git IS reachable here, so a `check-ignore`
-      // refusal on THIS probe is git telling us something is wrong with what was fed it,
-      // not an environment this gate cannot see into. FAIL LOUD (scripts-quality.md §1,
-      // this is a CLI verify gate): treat any status other than 0 or 1 as UNKNOWN, and
-      // convict the run rather than let the batch disappear.
-      if (ci.error || (ci.status !== 0 && ci.status !== 1)) {
-        fail(`git check-ignore --stdin did not answer for ${toProbe.length} candidate root(s) (status ${ci.status}${ci.error ? `, ${ci.error.message}` : ''}) -- treating as UNKNOWN, never as "0 gitignored"`);
-      } else {
-        for (const line of ci.stdout.split('\n')) {
-          const t = line.trim();
-          if (t) ignoredRoots.add(t.replace(/\/$/, ''));
-        }
-      }
-    }
+    // PROBE SUFFIX (CWK-090 fix 2): a path UNDER the root, not the bare root — see the
+    // INJECTION-SITE PROBE comment above for why the bare-root feed is retired.
+    const PROBE_SUFFIX = '/.pointer-check-probe';
+    // FAIL-OPEN, CLOSED (CWK-090 fix 1, ported from CoalMine, in substance shipped by us
+    // first at `94e994f` and independently found+fixed the same way at CoalMine, with
+    // CoalTipple carrying the same shape too). WIRING moved into `applyCheckIgnoreProbe`
+    // (pointer-check.mjs, CWK-090's own reason: a unit test now drives this exact branch
+    // with an injected `runCheckIgnore`, not a duplicated copy). Exit 0 and exit 1 both
+    // SUCCEED (1 = "none of the fed paths are ignored", not an error); any OTHER status
+    // (128 included -- a bad pattern, an unreadable `.gitignore`, a broken worktree) or a
+    // genuine spawn error means the run answered NOTHING, and silently continuing with an
+    // empty `ignoredRoots` would print a git-derived count over a run that derived no
+    // facts at all. PROVEN on this tree, red-first: mutating the pre-DI inline guard to
+    // `if (false)` left this room's OWN suite byte-identically green at 266/266 (recorded
+    // before this fix landed) — nothing tied the classification to the gate; the same
+    // mutation applied to the DI'd call below reddens the suite (see the commit this
+    // ships in for the exact assertion and line).
+    applyCheckIgnoreProbe({
+      toProbe, PROBE_SUFFIX, ignoredRoots, fail,
+      runCheckIgnore: (input) => spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input }),
+    });
     // NAMED BOUND -- FOREIGN-NAME COLLISION (CWK-079, ported). `candidateRoots` is fed
     // from every CITED first segment, unlike the disk-derived shape it replaces, which
     // could only ever contain a name that physically existed as a top-level entry in

@@ -5,7 +5,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { checkPointers, pointerCandidates, PENDING_POINTERS } from './pointer-check.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { checkPointers, pointerCandidates, PENDING_POINTERS, classifyCheckIgnoreResult, applyCheckIgnoreProbe } from './pointer-check.mjs';
 
 const NL = String.fromCharCode(10);
 // A resolver standing in for git + the filesystem. Each fixture names its own tree, so no
@@ -322,4 +325,153 @@ test('a BACKSLASH is not a separator this gate reads -- the traversal DOTSEG cou
   // every OS -- and it is reached by a regex over a string, touching no fs and no
   // process.platform. On POSIX that rejection is DEFENSIVE rather than necessary; refusing
   // to encode which one you are on is the point.
+});
+
+// classifyCheckIgnoreResult (CWK-090 fix 1) -- the batched git check-ignore --stdin
+// spawn's classification, ported byte-for-byte from CoalMine's own test file, pulled
+// out pure so it is testable without fighting the OS to force a specific exit code
+// through verify.mjs's own hardcoded args. Every non-synthetic case below feeds the
+// function a `ci` object taken from a REAL check-ignore --stdin child process, not a
+// hand-typed fake -- only the spawn-error case (git missing entirely) has no real
+// subprocess to source from, since a missing git never reaches this call in production
+// (verify.mjs's own ls-files pre-gate already SKIPs before this spawn fires).
+function mkGitRepoForIgnoreProbe() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-ci-classify-'));
+  const g = (args) => spawnSync('git', args, { cwd: tmp, encoding: 'utf8' });
+  g(['init', '-q', '-b', 'main']);
+  g(['config', 'user.email', 'test@test.invalid']);
+  g(['config', 'user.name', 'Test']);
+  g(['config', 'commit.gpgsign', 'false']);
+  fs.writeFileSync(path.join(tmp, 'x.txt'), 'x');
+  fs.writeFileSync(path.join(tmp, '.gitignore'), 'ignored-dir/' + NL);
+  g(['add', '-A']);
+  g(['commit', '-q', '-m', 'baseline']);
+  return tmp;
+}
+
+// THE PRE-FIX LOGIC, matching this room's own shipped shape before CWK-090 (94e994f) --
+// only ci.error gated the "read stdout" branch. Replayed against a REAL non-0/1 result
+// below to show what it actually did on that run: nothing -- any status other than a
+// spawn error fell through and silently produced zero ignored roots.
+function preFixLogic(ci) {
+  const ignored = new Set();
+  if (!ci.error && typeof ci.stdout === 'string') {
+    for (const line of ci.stdout.split('\n')) {
+      const t = line.trim();
+      if (t) ignored.add(t.replace(/\/$/, ''));
+    }
+  }
+  return ignored;
+}
+
+test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit other than 0/1 (an unknown-option 129) is a FAIL, naming the status', () => {
+  const tmp = mkGitRepoForIgnoreProbe();
+  try {
+    const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'],
+      { cwd: tmp, encoding: 'utf8', input: 'ignored-dir/probe\n' });
+    assert.notEqual(ci.status, 0, 'this probe only proves anything if git actually took a non-0/1 exit');
+    assert.notEqual(ci.status, 1, 'this probe only proves anything if git actually took a non-0/1 exit');
+
+    // RED, against the pre-fix logic, replayed on this real failing run: it answers
+    // "nothing is ignored" -- exactly the fail-open bug this fix closes, reproduced with
+    // a genuine git process rather than asserted from a synthetic object.
+    assert.deepEqual([...preFixLogic(ci)], [],
+      'the pre-fix logic (only checking ci.error) silently produces an empty ignoredRoots on a real non-0/1 exit -- this IS the bug');
+
+    // GREEN, against the fix: the same real result is classified as a failure by name.
+    const verdict = classifyCheckIgnoreResult(ci);
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.message, new RegExp('exited ' + ci.status));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('classifyCheckIgnoreResult: a REAL exit 0 (a fed path IS ignored) succeeds, stdout carries the match', () => {
+  const tmp = mkGitRepoForIgnoreProbe();
+  try {
+    const ci = spawnSync('git', ['check-ignore', '--stdin'],
+      { cwd: tmp, encoding: 'utf8', input: 'ignored-dir/probe\n' });
+    assert.equal(ci.status, 0);
+    const verdict = classifyCheckIgnoreResult(ci);
+    assert.equal(verdict.ok, true);
+    assert.match(verdict.stdout, /ignored-dir/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('classifyCheckIgnoreResult: a REAL exit 1 (nothing fed is ignored) succeeds -- 1 is not an error', () => {
+  const tmp = mkGitRepoForIgnoreProbe();
+  try {
+    const ci = spawnSync('git', ['check-ignore', '--stdin'],
+      { cwd: tmp, encoding: 'utf8', input: 'not-ignored-at-all/probe\n' });
+    assert.equal(ci.status, 1);
+    const verdict = classifyCheckIgnoreResult(ci);
+    assert.equal(verdict.ok, true);
+    assert.equal(verdict.stdout.trim(), '');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('classifyCheckIgnoreResult: a genuine spawn error (git missing) is a FAIL naming the error message', () => {
+  const verdict = classifyCheckIgnoreResult({ error: new Error('spawn git ENOENT'), status: null, stdout: null, stderr: null });
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.message, /failed to spawn: spawn git ENOENT/);
+});
+
+// applyCheckIgnoreProbe (CWK-090 fix 1, WIRING half) -- the link between
+// classifyCheckIgnoreResult and the gate's own fail()/ignoredRoots. This is the EXACT
+// code verify.mjs now calls (no duplicate), driven here with an injected
+// runCheckIgnore so the status-128 branch is reachable without a real git process.
+// THIS is the mutation-proof site the order names: mutating the "if (!verdict.ok)"
+// guard in applyCheckIgnoreProbe (pointer-check.mjs) to "if (false)" reddens the first
+// test below (the fail() call stops firing and failed.length reads 0) -- the same
+// mutation that left this room's OWN pre-DI inline guard (shipped 94e994f) byte-
+// identically green at 266/266 when applied at its old call site in verify.mjs
+// (recorded in this unit's commit message: mutated, ran node scripts/test.mjs, watched
+// the suite stay green, reverted).
+test('applyCheckIgnoreProbe: a non-0/1 verdict calls fail() and leaves ignoredRoots empty -- WIRING, not just classification', () => {
+  const failed = [];
+  const fail = (msg) => failed.push(msg);
+  const ignoredRoots = new Set();
+  applyCheckIgnoreProbe({
+    toProbe: ['totally-fake-root'],
+    PROBE_SUFFIX: '/.pointer-check-probe',
+    ignoredRoots,
+    fail,
+    runCheckIgnore: () => ({ status: 128, stderr: 'fatal: bad pattern', stdout: '' }),
+  });
+  assert.equal(failed.length, 1, 'fail() must be called exactly once');
+  assert.match(failed[0], /exited 128/);
+  assert.equal(ignoredRoots.size, 0, 'a run that answered nothing must record zero ignored roots');
+});
+
+test('applyCheckIgnoreProbe: an ok verdict records the recovered root, stripped of its probe suffix', () => {
+  const fail = () => { throw new Error('fail() must not be called on an ok verdict'); };
+  const ignoredRoots = new Set();
+  applyCheckIgnoreProbe({
+    toProbe: ['dist'],
+    PROBE_SUFFIX: '/.pointer-check-probe',
+    ignoredRoots,
+    fail,
+    runCheckIgnore: () => ({ status: 0, stdout: 'dist/.pointer-check-probe\n', stderr: '' }),
+  });
+  assert.deepEqual([...ignoredRoots], ['dist']);
+});
+
+test('applyCheckIgnoreProbe: an empty toProbe list never spawns and never fails', () => {
+  const fail = () => { throw new Error('fail() must not be called'); };
+  const ignoredRoots = new Set();
+  let spawned = false;
+  applyCheckIgnoreProbe({
+    toProbe: [],
+    PROBE_SUFFIX: '/.pointer-check-probe',
+    ignoredRoots,
+    fail,
+    runCheckIgnore: () => { spawned = true; return { status: 0, stdout: '', stderr: '' }; },
+  });
+  assert.equal(spawned, false);
+  assert.equal(ignoredRoots.size, 0);
 });
