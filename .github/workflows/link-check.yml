@@ -1,0 +1,60 @@
+name: link-check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.md'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.md'
+
+permissions:
+  contents: read
+
+# cancel-in-progress: TRUE (CWK-058, canon: .github/SKILL-REPO-PATTERN.md) -- this
+# workflow reads files and publishes nothing, so a superseded run leaves nothing
+# half-done to clean up.
+concurrency:
+  group: link-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      # NOT continue-on-error, unlike markdownlint.yml -- this is a real gate on a tree
+      # that already passes (0 findings, verified before this workflow was written), not
+      # a report-only cleanup pass. A report-only link gate is the cry-wolf shape this
+      # room exists to ban.
+      #
+      # ENGINE: this room's own scripts/lib/md-checks.mjs (CommonMark+GFM AST, internal
+      # relative links + anchors by construction) -- CWK-092 measured this already
+      # satisfies .github/SKILL-REPO-PATTERN.md:91's canon DEFAULT ("a small
+      # scripts/lib/link-check.mjs walking the repo's own .md files"). No new engine.
+      #
+      # SCOPE: every TRACKED root/skill/command .md file, excluding `plugin/**` (the
+      # GENERATED dist copy -- scanning it would double-report every finding the source
+      # copy already caught) and `scripts/fixtures/**` (the engine's OWN test fixtures,
+      # which deliberately carry planted defects the engine's unit tests assert against
+      # -- scanning them here would fail this gate by design, forever).
+      #
+      # WRAPPED, NOT BARE (self-caught, CWK-092): the shipped CLI's own exit code is
+      # ALWAYS 0 on a findings run -- doc-structure's SKILL.md reads its `--json` output
+      # itself and never relies on the process exit, so the engine correctly never
+      # changed that for its other consumer. A bare `node scripts/lib/md-checks.mjs ...`
+      # step here would therefore ALWAYS pass regardless of findings -- a silent no-op
+      # gate that looks strict (no continue-on-error) while being incapable of ever
+      # failing, worse than markdownlint's own honest report-only shape. Proven both
+      # directions before shipping: the wrapped form below exits 1 against the room's
+      # own `scripts/fixtures/defects-structure.md` (13 real findings) and exits 0 on
+      # this tree's actual 14 shipped docs (0 findings).
+      - run: |
+          out=$(node scripts/lib/md-checks.mjs $(git ls-files '*.md' | grep -v '^plugin/' | grep -v '^scripts/fixtures/'))
+          echo "$out"
+          echo "$out" | tail -1 | grep -qE '^0 finding' || { echo "::error::link-check found broken links/anchors/tables -- see findings above"; exit 1; }
