@@ -173,8 +173,12 @@ export function checkDist(distRoot = dist) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.argv.includes('--check')) {
     const f = checkDist();
-    if (f.length) { console.error('plugin/ dist OUT OF SYNC:\n' + f.map((x) => '  ' + x).join('\n') + '\n-> run: node scripts/build-plugin.mjs'); process.exit(1); }
-    console.log('plugin/ dist in sync with source.');
+    if (f.length) {
+      console.error('plugin/ dist OUT OF SYNC:\n' + f.map((x) => '  ' + x).join('\n') + '\n-> run: node scripts/build-plugin.mjs');
+      process.exitCode = 1;
+    } else {
+      console.log('plugin/ dist in sync with source.');
+    }
   } else {
     buildDist();
     console.log('plugin/ dist built (plugin.json + commands + hooks + skills + scripts/lib) from source.');

@@ -30,23 +30,28 @@ const TESTS = [
   'scripts/verify.test.mjs',
 ];
 
+// Top-level `return` is a SyntaxError in a real ESM module (unlike CJS, which
+// wraps a file in a function) -- so each guard below nests the rest of the
+// script in its `else` rather than early-returning. process.exit() would
+// truncate pending stdout writes (node/runtime.md §7, CWK-071); exitCode +
+// natural fall-through preserves the exact same three outcomes.
 const missing = TESTS.filter((t) => !fs.existsSync(path.join(repo, t)));
 if (missing.length) {
   console.error(`test runner: ${missing.length} listed test file(s) MISSING — ${missing.join(', ')}`);
-  process.exit(1);
-}
-
-const onDisk = [];
-for (const dir of ['scripts', 'scripts/lib', 'hooks']) {
-  for (const f of fs.readdirSync(path.join(repo, dir))) {
-    if (f.endsWith('.test.mjs') || f.endsWith('.test.js')) onDisk.push(`${dir}/${f}`);
+  process.exitCode = 1;
+} else {
+  const onDisk = [];
+  for (const dir of ['scripts', 'scripts/lib', 'hooks']) {
+    for (const f of fs.readdirSync(path.join(repo, dir))) {
+      if (f.endsWith('.test.mjs') || f.endsWith('.test.js')) onDisk.push(`${dir}/${f}`);
+    }
+  }
+  const orphans = onDisk.filter((f) => !TESTS.includes(f));
+  if (orphans.length) {
+    console.error(`test runner: ${orphans.length} on-disk test(s) NOT in the suite — ${orphans.join(', ')}. Add to scripts/test.mjs.`);
+    process.exitCode = 1;
+  } else {
+    const r = spawnSync(process.execPath, ['--test', ...TESTS], { cwd: repo, stdio: 'inherit' });
+    process.exitCode = r.status ?? 1;
   }
 }
-const orphans = onDisk.filter((f) => !TESTS.includes(f));
-if (orphans.length) {
-  console.error(`test runner: ${orphans.length} on-disk test(s) NOT in the suite — ${orphans.join(', ')}. Add to scripts/test.mjs.`);
-  process.exit(1);
-}
-
-const r = spawnSync(process.execPath, ['--test', ...TESTS], { cwd: repo, stdio: 'inherit' });
-process.exit(r.status ?? 1);

@@ -127,7 +127,7 @@ function main() {
   const args = process.argv.slice(2);
   if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
     printHelp();
-    process.exit(0);
+    return;
   }
 
   // --global targets the global layer (~/.claude/.coalledger.json); default targets
@@ -203,12 +203,14 @@ function main() {
     if (!spec) {
       console.error(`Error: Unrecognized option '${args[i]}'`);
       printHelp();
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
     const parsed = parseValue(spec, args[++i]);
     if (parsed.error) {
       console.error(`Error: ${parsed.error}`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
     cfg[spec.key] = parsed.value;
   }
@@ -233,7 +235,7 @@ function main() {
     console.log(JSON.stringify(cfg, null, 2));
   } catch (e) {
     console.error(`Error: Failed to write to config file: ${e.message}`);
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 
