@@ -54,7 +54,24 @@ jobs:
       # directions before shipping: the wrapped form below exits 1 against the room's
       # own `scripts/fixtures/defects-structure.md` (13 real findings) and exits 0 on
       # this tree's actual 14 shipped docs (0 findings).
+      #
+      # FAILS OPEN ON AN EMPTY FILE LIST -- fixed (CWK-092 findings-back LOW-1): the CLI
+      # with NO arguments prints `0 finding(s) across 0 file(s)`, which the `^0 finding`
+      # predicate above cannot distinguish from a genuinely clean run -- if the
+      # `git ls-files | grep -v ... | grep -v ...` chain ever yields nothing (a layout
+      # change moves every doc under an excluded prefix, say), this gate would report
+      # GREEN having scanned nothing. Live exposure today is ZERO (14 files, measured),
+      # but the wrapper above exists precisely to stop a silently-inert gate, and this
+      # was the one remaining path to the same outcome -- the CWK-079 class, in the room
+      # that has paid for it twice. Fixed by asserting the file list is non-empty BEFORE
+      # the engine ever runs. Proven both directions: a forced-empty list exits 1 here
+      # (never reaching the engine at all); the real 14-file scope still exits 0.
       - run: |
-          out=$(node scripts/lib/md-checks.mjs $(git ls-files '*.md' | grep -v '^plugin/' | grep -v '^scripts/fixtures/'))
+          files=$(git ls-files '*.md' | grep -v '^plugin/' | grep -v '^scripts/fixtures/')
+          if [ -z "$files" ]; then
+            echo "::error::link-check found NO markdown files to scan -- the scope filter is broken, not the tree"
+            exit 1
+          fi
+          out=$(node scripts/lib/md-checks.mjs $files)
           echo "$out"
           echo "$out" | tail -1 | grep -qE '^0 finding' || { echo "::error::link-check found broken links/anchors/tables -- see findings above"; exit 1; }

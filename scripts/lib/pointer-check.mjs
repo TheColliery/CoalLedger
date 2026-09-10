@@ -384,22 +384,42 @@ export function classifyCheckIgnoreResult(ci) {
 // place a test CAN reach; it does not by itself GUARANTEE one reaches it. CoalTipple ran
 // the identical mutation against the identical fix and it did NOT reproduce there -- no
 // wiring test exercised that branch in that room's tree, so the mutant stayed green.
-// MEASURED HERE, three rows, re-derived rather than carried from CoalMine's own table
-// (a different tree, a different count -- THE SOURCE'S VARIABLES ARE NOT OURS):
-//   baseline (this file unmutated)                                309 / 309 / 0 / 0
-//   mutation `if (!verdict.ok)` -> `if (false)`, whole suite      309 / 308 / 1 / 0
-//   same mutation, the 3 applyCheckIgnoreProbe tests DELETED      306 / 306 / 0 / 0
-// Row 3 is the point: delete the coverage and the mutation goes green again, on THIS
-// tree exactly as it did on CoalTipple's. So the credit for closing the class belongs to
-// the wiring test below, not to the DI shape alone -- an adopter that ports this function
-// without a test exercising its `fail()` branch should EXPECT CoalTipple's result, not
-// treat it as an exception. Moved out of `verify.mjs` into this exported function so a
-// unit test can drive the EXACT code `verify.mjs` runs, with an injected `runCheckIgnore`
-// in place of a real `spawnSync` -- the same DI shape `collectSurfaces(repo, plan, io)`
-// already uses for the surface walk, applied to the sibling spawn site. Ported
-// byte-for-byte from CoalMine's module; no room-specific fact lives in this function.
-// `runCheckIgnore(input)` takes the newline-joined probe input and returns the same
-// `{status, stdout, stderr, error}` shape a real `spawnSync` result carries.
+//
+// NO FIGURES ARE PRINTED HERE (CWK-092 findings-back MED-1 -- corrected, not merely
+// caught): a first attempt shipped a three-row measured table, and by the time INSPECT
+// re-ran it the numbers were already stale -- this file's own test count had grown
+// between the measurement and the commit landing, so both the mutant's failure count and
+// row 3's "N tests deleted" description were already another commit's arithmetic wearing
+// this tree's label. THIS TABLE MEASURES THE SUITE THAT CONTAINS IT -- the identical
+// self-measuring-population shape this room's CWK-078 ruling already named for the
+// funnel intermediates above ("a number that measures a population containing itself
+// cannot be fixed by recounting"), and the cure is the same one CWK-078 adopted: drop
+// the figures, keep the argument and the mechanism, and hand the reader a command
+// instead of a number that will be wrong on its very next edit.
+//
+// RE-DERIVE IT YOURSELF, always -- this is the exact mutation this room ran to produce
+// the finding: inside the exported `applyCheckIgnoreProbe` function below, change ITS
+// CODE LINE `if (!verdict.ok) {` (not this comment's own mention of that guard) to
+// `if (false) {`, run `node scripts/test.mjs`, and read the failure count -- then, on
+// the SAME mutated file, delete every test whose title matches `applyCheckIgnoreProbe`
+// (both the classifier-only assertions and the loop-generated wiring tests) and run it
+// again. If the mutant returns to green once the coverage is gone, the wiring tests are
+// what close the class on THIS tree, exactly as they closed it on CoalTipple's absence of
+// them proved the opposite. Restore both files from source control before trusting
+// anything else in this session. An adopter that ports this function without an
+// equivalent wiring test should EXPECT CoalTipple's non-reproducing result, not read it
+// as an exception to explain away.
+//
+// Moved out of `verify.mjs` into this exported function so a unit test can drive the
+// EXACT code `verify.mjs` runs, with an injected `runCheckIgnore` in place of a real
+// `spawnSync` -- the same DI shape `collectSurfaces(repo, plan, io)` already uses for the
+// surface walk, applied to the sibling spawn site. THE FUNCTION BODY BELOW is ported
+// byte-for-byte from CoalMine's module and carries no room-specific fact -- the coverage
+// argument in the paragraphs ABOVE this one is NOT part of that port: it is this room's
+// own claim about this room's own test suite, stated in prose rather than in numbers for
+// the reason given above. `runCheckIgnore(input)` takes the newline-joined probe input
+// and returns the same `{status, stdout, stderr, error}` shape a real `spawnSync` result
+// carries.
 //
 // PROBE_SUFFIX is exported (CWK-092 flow-back 3) -- it is this module's OWN constant
 // (what the probe appends to a candidate root before feeding `git check-ignore`), not
