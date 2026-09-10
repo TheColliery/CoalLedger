@@ -491,10 +491,13 @@ try {
       if (agentHomes.has(name)) { homesPresent++; continue; }
       toProbe.push(name);
     }
-    const ignoredRoots = new Set();
     // PROBE SUFFIX (CWK-090 fix 2): a path UNDER the root, not the bare root — see the
-    // INJECTION-SITE PROBE comment above for why the bare-root feed is retired.
-    const PROBE_SUFFIX = '/.pointer-check-probe';
+    // INJECTION-SITE PROBE comment above for why the bare-root feed is retired. Since
+    // CWK-092 flow-back 3 this gate no longer declares or imports the literal —
+    // `applyCheckIgnoreProbe`'s own `probeSuffix` parameter DEFAULTS to
+    // pointer-check.mjs's exported `PROBE_SUFFIX`, so this call site cannot hold a copy
+    // that drifts from what it actually probes with.
+    //
     // FAIL-OPEN, CLOSED (CWK-090 fix 1, ported from CoalMine, in substance shipped by us
     // first at `94e994f` and independently found+fixed the same way at CoalMine, with
     // CoalTipple carrying the same shape too). WIRING moved into `applyCheckIgnoreProbe`
@@ -503,14 +506,16 @@ try {
     // SUCCEED (1 = "none of the fed paths are ignored", not an error); any OTHER status
     // (128 included -- a bad pattern, an unreadable `.gitignore`, a broken worktree) or a
     // genuine spawn error means the run answered NOTHING, and silently continuing with an
-    // empty `ignoredRoots` would print a git-derived count over a run that derived no
+    // empty ignored-roots set would print a git-derived count over a run that derived no
     // facts at all. PROVEN on this tree, red-first: mutating the pre-DI inline guard to
     // `if (false)` left this room's OWN suite byte-identically green at 266/266 (recorded
     // before this fix landed) — nothing tied the classification to the gate; the same
     // mutation applied to the DI'd call below reddens the suite (see the commit this
-    // ships in for the exact assertion and line).
-    applyCheckIgnoreProbe({
-      toProbe, PROBE_SUFFIX, ignoredRoots, fail,
+    // ships in for the exact assertion and line). The Set is now RETURNED (CWK-092
+    // flow-back 3) rather than mutated in place -- this call site consumes it, it does
+    // not own it.
+    const ignoredRoots = applyCheckIgnoreProbe({
+      toProbe, fail,
       runCheckIgnore: (input) => spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input }),
     });
     // NAMED BOUND -- FOREIGN-NAME COLLISION (CWK-079, ported). `candidateRoots` is fed

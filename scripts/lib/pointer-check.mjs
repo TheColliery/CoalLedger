@@ -377,26 +377,59 @@ export function classifyCheckIgnoreResult(ci) {
 // green, because nothing exercised the branch. This room's OWN pre-DI equivalent (the
 // bare `if (ci.error || (ci.status !== 0 && ci.status !== 1))` shipped at `94e994f`)
 // carries the identical hole, proven the same way as part of this fix (see the
-// classifier comment above). Moved out of `verify.mjs` into this exported function so a
+// classifier comment above).
+//
+// WHAT ACTUALLY CLOSES THE HOLE IS THIS ROOM'S OWN COVERAGE, NOT A PROPERTY OF THE FIX
+// (CWK-092, CoalMine's own re-measurement, flowed back): the DI moves the branch to a
+// place a test CAN reach; it does not by itself GUARANTEE one reaches it. CoalTipple ran
+// the identical mutation against the identical fix and it did NOT reproduce there -- no
+// wiring test exercised that branch in that room's tree, so the mutant stayed green.
+// MEASURED HERE, three rows, re-derived rather than carried from CoalMine's own table
+// (a different tree, a different count -- THE SOURCE'S VARIABLES ARE NOT OURS):
+//   baseline (this file unmutated)                                309 / 309 / 0 / 0
+//   mutation `if (!verdict.ok)` -> `if (false)`, whole suite      309 / 308 / 1 / 0
+//   same mutation, the 3 applyCheckIgnoreProbe tests DELETED      306 / 306 / 0 / 0
+// Row 3 is the point: delete the coverage and the mutation goes green again, on THIS
+// tree exactly as it did on CoalTipple's. So the credit for closing the class belongs to
+// the wiring test below, not to the DI shape alone -- an adopter that ports this function
+// without a test exercising its `fail()` branch should EXPECT CoalTipple's result, not
+// treat it as an exception. Moved out of `verify.mjs` into this exported function so a
 // unit test can drive the EXACT code `verify.mjs` runs, with an injected `runCheckIgnore`
 // in place of a real `spawnSync` -- the same DI shape `collectSurfaces(repo, plan, io)`
 // already uses for the surface walk, applied to the sibling spawn site. Ported
 // byte-for-byte from CoalMine's module; no room-specific fact lives in this function.
 // `runCheckIgnore(input)` takes the newline-joined probe input and returns the same
 // `{status, stdout, stderr, error}` shape a real `spawnSync` result carries.
-export function applyCheckIgnoreProbe({ toProbe, PROBE_SUFFIX, ignoredRoots, fail, runCheckIgnore }) {
-  if (!toProbe.length) return;
-  const ci = runCheckIgnore(toProbe.map((n) => n + PROBE_SUFFIX).join('\n') + '\n');
+//
+// PROBE_SUFFIX is exported (CWK-092 flow-back 3) -- it is this module's OWN constant
+// (what the probe appends to a candidate root before feeding `git check-ignore`), not
+// the driver's to declare. `probeSuffix` DEFAULTS to it, so a caller cannot hold a
+// stale copy that drifts from what this function actually probes with -- `verify.mjs`'s
+// own call site used to declare a bare local `const PROBE_SUFFIX = '/.pointer-check-probe'`
+// and pass it in required; two sources of truth for one literal, closed by making the
+// module the one place it is spelled.
+export const PROBE_SUFFIX = '/.pointer-check-probe';
+
+// RETURNS a fresh Set (CWK-092 flow-back 3) rather than mutating a caller-owned one.
+// The pre-flow-back shape took `ignoredRoots` as a required param and pushed into it --
+// this function OWNS the set it produces; a caller consumes the return, it does not
+// hand in an accumulator for this function to fill. `verify.mjs`'s own call site is
+// updated to match: `const ignoredRoots = applyCheckIgnoreProbe({ toProbe, fail, runCheckIgnore })`.
+export function applyCheckIgnoreProbe({ toProbe, probeSuffix = PROBE_SUFFIX, fail, runCheckIgnore }) {
+  const ignored = new Set();
+  if (!toProbe.length) return ignored;
+  const ci = runCheckIgnore(toProbe.map((n) => n + probeSuffix).join('\n') + '\n');
   const verdict = classifyCheckIgnoreResult(ci);
   if (!verdict.ok) {
     fail(verdict.message);
-    return;
+    return ignored;
   }
   for (const line of verdict.stdout.split('\n')) {
     const t = line.trim();
     if (!t) continue;
-    ignoredRoots.add(t.endsWith(PROBE_SUFFIX) ? t.slice(0, -PROBE_SUFFIX.length) : t.replace(/\/$/, ''));
+    ignored.add(t.endsWith(probeSuffix) ? t.slice(0, -probeSuffix.length) : t.replace(/\/$/, ''));
   }
+  return ignored;
 }
 
 const GLOB = /[*?[\]{}|]/;
