@@ -104,6 +104,18 @@ const THAI = /[฀-๿]/;
 // unsafe one here (a real document goes unchecked, not merely unflagged),
 // so the glob is narrowed to what an actual legal-text filename looks like
 // in practice: the bare word, or the bare word plus an extension.
+//
+// THE RESIDUE, in the OTHER direction (LOW-1, INSPECT r31, named so the
+// header states both sides of the choice it made): the `.`-only narrowing
+// misses the near-universal dual-licence convention -- `LICENSE-MIT`,
+// `LICENSE-APACHE`, `licenses/THIRD-PARTY.md` all read `checked`, not
+// exempt, and a room adopting `unspaced` on such a repo would get findings
+// on verbatim upstream licence text nobody here authored. Measured ZERO
+// live exposure across all seven Coal* rooms (every one carries bare
+// `LICENSE` + `NOTICE`) -- a portability residue, not a live defect. A
+// room that hits it names the file with `THIRD_PARTY_MARKER` instead;
+// widening the glob itself is declined, per the false-EXEMPTION reasoning
+// above.
 const LEGAL_BASENAME_RE = /^(LICENSE|NOTICE|COPYING)(\..+)?$/i;
 export function isLegalPath(file) {
   return LEGAL_BASENAME_RE.test(path.basename(file));
@@ -111,11 +123,29 @@ export function isLegalPath(file) {
 
 // A "third-party text" marker (CWK-073), for verbatim third-party wording
 // that does NOT live in a LICENSE/NOTICE/COPYING-named file (an embedded
-// upstream quote, a vendored snippet inside an otherwise-ordinary doc). A
-// literal occurrence of this line ANYWHERE in the text excludes the WHOLE
-// document -- see the header's own note on why this is file-level, not
-// region-level.
+// upstream quote, a vendored snippet inside an otherwise-ordinary doc). The
+// marker excludes the WHOLE document -- see the header's own note on why
+// this is file-level, not region-level.
+//
+// STANDALONE LINE ONLY (fixback, INSPECT r31 MED-1): the check is a
+// line-anchored regex, never a raw `String.includes` over the whole text.
+// A `.includes` scan matches the marker EVERYWHERE, including inside a
+// code span and inside ordinary prose that merely NAMES it -- and prose
+// naming it is exactly what a CHANGELOG entry describing this feature
+// does. CoalLedger's own `CHANGELOG.md` proved the hole the day this
+// shipped: its `### Added` bullet writes the marker literally to describe
+// it, which switched the em-dash rule off for the entire 61 KB file (157
+// findings under `mode=unspaced` at the ref before this fix, 0 after --
+// both silently, with no signal). A standalone-line requirement is how
+// such a marker is conventionally placed anyway (the top of a vendored
+// file), it needs no new mechanism (the file already line-scans), and it
+// is mechanically decidable -- a doc that names the marker in running
+// prose or inside a code span is unaffected and stays fully scanned.
 export const THIRD_PARTY_MARKER = '<!-- third-party-text -->';
+const THIRD_PARTY_MARKER_RE = new RegExp(
+  '^[ \\t]*' + THIRD_PARTY_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[ \\t]*$',
+  'm'
+);
 
 // Mask a run to same-length 'x' so adjacency is preserved and no hit is
 // manufactured by fusing the neighbours of a deleted span.
@@ -159,7 +189,7 @@ function fenceInfo(line) {
  */
 export function scanText(text, mode = 'spaced') {
   if (mode === 'off') return [];
-  if (String(text).includes(THIRD_PARTY_MARKER)) return [];
+  if (THIRD_PARTY_MARKER_RE.test(String(text))) return [];
   const hits = [];
   let fence = null;
   const lines = text.split(/\r?\n/);

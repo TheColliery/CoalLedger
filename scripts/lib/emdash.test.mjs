@@ -69,6 +69,31 @@ test('THIRD_PARTY_MARKER: absent, the identical hit fires -- proves the marker i
   assert.equal(scanText(text, 'spaced').length, 1);
 });
 
+test('THIRD_PARTY_MARKER: must be its OWN line -- fixback, INSPECT r31 MED-1', () => {
+  const EM = String.fromCharCode(0x2014);
+  // A doc that merely NAMES the marker in running prose is NOT excluded --
+  // this is the exact shape CoalLedger's own CHANGELOG entry hit, which a
+  // raw String.includes silently exempted (157 findings -> 0, both
+  // polarities, no signal). A real spaced hit in the same text must fire.
+  const proseNaming = 'The marker looks like this: ' + THIRD_PARTY_MARKER + '. Prose has a spaced hit alpha ' + EM + ' beta.';
+  assert.equal(scanText(proseNaming, 'unspaced').length, 1, 'naming the marker in prose must not disable the file');
+
+  // Naming it inside a code span is the same failure one mask-order over --
+  // maskInline runs on the per-line pass, AFTER the whole-text marker
+  // check, so a masked code span never protects the marker check itself.
+  const codeSpanNaming = 'See `' + THIRD_PARTY_MARKER + '` for the marker. Prose has a spaced hit alpha ' + EM + ' beta.';
+  assert.equal(scanText(codeSpanNaming, 'unspaced').length, 1, 'naming the marker inside a code span must not disable the file either');
+
+  // The marker on its OWN line (with or without surrounding whitespace)
+  // still excludes the whole document -- the fix narrows the TRIGGER, it
+  // does not remove the FEATURE.
+  const ownLine = THIRD_PARTY_MARKER + '\nalpha ' + EM + ' beta (would otherwise fire)';
+  assert.deepEqual(scanText(ownLine, 'unspaced'), [], 'a standalone marker line must still exclude the whole document');
+
+  const ownLineWithWhitespace = '   ' + THIRD_PARTY_MARKER + '   \nalpha ' + EM + ' beta';
+  assert.deepEqual(scanText(ownLineWithWhitespace, 'unspaced'), [], 'surrounding whitespace on the marker\'s own line is still a standalone line');
+});
+
 // mode='off' -- both entry points, both never fire regardless of content.
 test("mode 'off': scanText never fires, whatever the text", () => {
   assert.deepEqual(scanText('alpha' + String.fromCharCode(0x2014) + 'beta', 'off'), []);
