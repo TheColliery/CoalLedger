@@ -11,7 +11,7 @@
 // §1) — local libs are dynamic, inside main().
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(scriptDir, '..');
@@ -82,7 +82,14 @@ async function main() {
   console.log(`Done: ${skills.length - failed}/${skills.length} skill(s) staged into ${outDir}, ${failed} failed`);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exitCode = 1;
-});
+// LOW-3 (r33 INSPECT): a bare `main().catch(...)` here means IMPORTING this
+// module (rather than spawning it) runs the build against whatever cwd/argv
+// the importer happens to carry, silently setting the IMPORTER's own
+// process.exitCode. Guard shape copied from build-plugin.mjs / md-checks.mjs
+// / emdash.mjs -- same mechanism, not a second one.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  });
+}

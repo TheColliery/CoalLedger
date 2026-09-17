@@ -39,6 +39,7 @@
 //     migrating retired keys this room never had.
 import fs from 'fs';
 import path from 'path';
+import { pathToFileURL } from 'url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { parseJsonc } from './lib/jsonc.mjs';
 import { findProjectRoot, projectConfigPath, ownDirDefault, globalConfigPath } from './lib/config-load.mjs';
@@ -239,4 +240,11 @@ function main() {
   }
 }
 
-main();
+// LOW-3 (r33 INSPECT): a bare `main();` here means IMPORTING this module
+// (rather than spawning it) runs the CLI against whatever process.argv the
+// importer happens to carry, silently setting the IMPORTER's own
+// process.exitCode. Guard shape copied from build-plugin.mjs / md-checks.mjs
+// / emdash.mjs -- same mechanism, not a second one.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

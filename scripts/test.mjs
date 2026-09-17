@@ -28,6 +28,7 @@ const TESTS = [
   'scripts/configure.test.mjs',
   'scripts/build-plugin.test.mjs',
   'scripts/verify.test.mjs',
+  'scripts/cli-guard.test.mjs',
 ];
 
 // Top-level `return` is a SyntaxError in a real ESM module (unlike CJS, which
