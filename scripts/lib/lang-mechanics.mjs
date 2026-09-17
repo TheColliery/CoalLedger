@@ -129,17 +129,35 @@ const CHECKS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Markdown awareness -- fenced blocks skipped, inline code + URLs masked
-// same-length (adjacency preserved, no hit manufactured by fusing
-// neighbours), blockquotes skipped whole. Same three exclusions emdash.mjs
-// and check-thai.mjs both ship; not re-derived, mirrored.
+// Markdown awareness -- STATE THE EXCLUSION, never "exactly like" another
+// file (MED-1, r34 INSPECT: that phrasing shipped false -- the first cut
+// dropped the indented-code exclusion and left the HTML/front-matter gaps
+// below). What this engine excludes, exhaustively:
+//   - a fenced code block (``` or ~~~), skipped whole
+//   - inline code (`...`) and a link destination (](...)), masked same-
+//     length so adjacency is preserved and no hit is manufactured
+//   - a bare http(s):// URL, masked the same way
+//   - an HTML comment or tag (<...>), masked up to its first `>` -- covers
+//     an attribute or a comment body containing a space
+//   - a blockquote line (`>`-prefixed), skipped whole
+//   - a 4-space-indented code block, skipped whole (parity with
+//     emdash.mjs:207-214's own rule and its stated trade: an indented
+//     list-continuation line is over-excluded too, a miss never a hit)
+//   - a YAML front matter block, ONLY when it opens the document
 // ---------------------------------------------------------------------------
 const mask = (s) => 'x'.repeat(s.length);
 
 function maskInline(line) {
   let out = line.replace(/(`+)[\s\S]*?\1/g, mask);
   out = out.replace(/\]\([^)]*\)/g, mask);
-  out = out.replace(/<[^ >]*>/g, mask);
+  // MED-1 (r34 INSPECT): the prior `<[^ >]*>` stopped at the FIRST space, so
+  // any HTML comment or tag carrying a space or an attribute (`<!-- 注释, -->`,
+  // `<span title="中,文">`) left its content unmasked. `<[^>]*>` masks up to
+  // the first `>` instead -- correct for an ordinary single-line tag or
+  // comment; a `>` inside a quoted attribute value would end the mask early,
+  // an accepted, unlikely edge (emdash.mjs's own tag mask carries the same
+  // shape).
+  out = out.replace(/<[^>]*>/g, mask);
   out = out.replace(/https?:\/\/\S+/g, mask);
   return out;
 }
@@ -177,10 +195,20 @@ export function checkText(text, opts = {}) {
   const checks = opts.script ? CHECKS.filter(([id]) => RULES[id].script === opts.script) : CHECKS;
   const findings = [];
   let fence = null;
+  // MED-1 (r34 INSPECT): a YAML front matter block, ONLY when it opens the
+  // document (line 0), tracked the same way as a fence -- everything
+  // between the two `---` delimiters (or a closing `...`) is metadata,
+  // never prose.
+  let inFrontMatter = false;
   const lines = String(text).split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     if (!opts.plain) {
+      if (i === 0 && raw.trim() === '---') { inFrontMatter = true; continue; }
+      if (inFrontMatter) {
+        if (raw.trim() === '---' || raw.trim() === '...') inFrontMatter = false;
+        continue;
+      }
       const f = fenceInfo(raw);
       if (fence) {
         if (f && f.ch === fence.ch && f.len >= fence.len) fence = null;
@@ -188,6 +216,12 @@ export function checkText(text, opts = {}) {
       }
       if (f) { fence = f; continue; }
       if (/^\s{0,3}>/.test(raw)) continue; // blockquote: quoted matter
+      // INDENTED CODE BLOCK (MED-1, r34 INSPECT): 4+ leading spaces is
+      // Markdown's other code form -- parity with emdash.mjs's own
+      // identical rule and its stated trade: indented CONTINUATION text
+      // inside a list item is skipped too, so this OVER-excludes; a miss is
+      // the safe direction, never a manufactured hit.
+      if (/^ {4,}\S/.test(raw)) continue;
     }
     const line = opts.plain ? raw : maskInline(raw);
     const script = classifyLine(line);

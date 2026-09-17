@@ -100,6 +100,24 @@ test('markdown exclusions: an inline code span is masked (no Han survives the ma
   assert.equal(checkText('`你好,再见`').length, 0);
 });
 
+// MED-1 (r34 INSPECT): "markdown-aware exactly like emdash.mjs" was false --
+// these four exclusions were measured missing, each red-first before fixing.
+test('markdown exclusions: a 4-space-indented code block is skipped whole (parity with emdash.mjs)', () => {
+  assert.equal(checkText('段落。\n\n    变量,函数').length, 0);
+});
+
+test('markdown exclusions: an HTML comment containing a space is masked', () => {
+  assert.equal(checkText('<!-- 注释,注释 -->').length, 0);
+});
+
+test('markdown exclusions: an HTML tag with a spaced attribute is masked', () => {
+  assert.equal(checkText('<span title="中,文">').length, 0);
+});
+
+test('markdown exclusions: a YAML front matter block is skipped whole', () => {
+  assert.equal(checkText('---\ntitle: 标题,副标题\n---\n').length, 0);
+});
+
 test('markdown exclusions: a link destination is masked (Han-comma-Han hidden inside a URL)', () => {
   assert.equal(checkText('[链接](http://x你,好y)').length, 0);
 });
