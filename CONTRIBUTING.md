@@ -27,7 +27,8 @@ node scripts/test.mjs           # zero-dependency test suite (node --test, expli
 - **Rebuild the dist after a source change:** edit `hooks/`, `skills/`, `commands/`, `scripts/lib/`, or the manifest, then `node scripts/build-plugin.mjs` to re-sync `plugin/` (verify fails on a stale dist).
 - **`scripts/lib/config-schema.mjs` is the single source of truth** for every `.coalledger.json` key — `verify.mjs` validates the factory template against it; the README key table mirrors it.
 - **Detection goes through the AST, never regex over raw markdown:** `md-ast.mjs` (CommonMark+GFM) is the only way a structure check reads a doc — the anti-cry-wolf property. Honest ceiling stays "CommonMark+GFM fidelity", never a GitHub-pixel claim.
-- **Keep the hook Phoenix-pure:** zero dependencies, fail-silent (try/catch, exit 0, never `process.exit()`), no network, no child processes, silent except the sanctioned channel.
+- **Keep the hook Phoenix-pure:** zero dependencies, fail-silent (try/catch, exit 0, never `process.exit()`), no network, no child processes, silent except the sanctioned channel. **The opposite discipline binds `scripts/` and `.githooks/`:** those fail LOUD (`hooks-safety.md` §1.0's host table) — a CLI or a repo gate exits non-zero and blocks, on purpose.
+- **Enable the repo gate once per clone:** `git config core.hooksPath .githooks` — git deliberately never wires this for you, so `.githooks/pre-commit` and `.githooks/pre-push` (identical, running `verify.mjs` then `test.mjs`) sit inert until you run it, and skipping it means you meet the gate for the first time as a red CI check instead of a blocked local commit.
 - **Add tests:** every lib change gets a unit test; every hook-behavior change gets a **hermetic spawn test** (spawn the real hook, sandbox TEMP + HOME). Register a new test *file* in `scripts/test.mjs` (the runner fails on an unlisted orphan).
 - **Language & tone:** shipped source and docs stay in English; the canaries themselves REPORT in the user's language.
 
@@ -54,6 +55,7 @@ Cross-agent by design — the canaries are plain SKILL.md contracts and the engi
 | `scripts/` | Tool scripts: `build-plugin.mjs`, `verify.mjs`, `test.mjs`, the unit/hermetic tests, and `fixtures/` (planted defects + clean decoys). |
 | `plugin/` | Generated Claude Code plugin distribution — never hand-edit. |
 | `platform-configs/.coalledger.json` | Commented factory default configuration. |
+| `.githooks/pre-commit`, `.githooks/pre-push` | The fail-loud repo gate (`verify.mjs` then `test.mjs`), identical bytes on both hooks — enable once per clone with `git config core.hooksPath .githooks` (see Developing & Testing above). |
 
 ---
 
