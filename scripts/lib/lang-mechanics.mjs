@@ -234,29 +234,40 @@ export function checkText(text, opts = {}) {
   const findings = [];
   let fence = null;
   const lines = String(text).split(/\r?\n/);
-  // MED-A (r34 RE-INSPECT): a `---` on line 0 is front matter ONLY if a
-  // closing `---`/`...` line exists LATER in the text -- decided by a
+  // MED-A (r34 RE-INSPECT) + FIXBACK 3 (r34): a `---` on line 0 is front
+  // matter ONLY if line 1 is NON-BLANK and a closing `---`/`...` line is
+  // found BEFORE any blank line and BEFORE any fence opener -- decided by a
   // LOOK-AHEAD, once, BEFORE the per-line loop, never discovered mid-scan.
-  // Without this, an UNTERMINATED leading `---` (or a doc that simply opens
-  // with a thematic break, which is what a lone `---` means in CommonMark)
-  // set inFrontMatter TRUE and NEVER cleared it, silently skipping the
-  // WHOLE REST OF THE DOCUMENT -- a false clean bill, the exact
-  // anti-cry-wolf inversion this suite exists to prevent. frontMatterEnd is
-  // the index of the FIRST later closing line found, so an extra `---`
-  // thematic break further down in the body (after real front matter has
-  // already closed) is correctly left as ordinary prose, never re-opens
-  // skipping.
-  // KNOWN, ACCEPTED TRADE (stated, not hidden): this look-ahead tests only
-  // for EXISTENCE of a later closing line, not that the lines between look
-  // like YAML -- two thematic breaks bracketing an ordinary paragraph
-  // (`---\n\ntext\n\n---\n`) reads identically to real front matter and
-  // that paragraph is skipped. A miss (treating real prose as metadata) is
-  // the safe direction here, the same trade the indented-code exclusion
-  // above already accepts.
+  // Without SOME look-ahead, an UNTERMINATED leading `---` (or a doc that
+  // simply opens with a thematic break, which is what a lone `---` means in
+  // CommonMark) sets inFrontMatter TRUE and never clears it, silently
+  // skipping the WHOLE REST OF THE DOCUMENT -- a false clean bill, the
+  // exact anti-cry-wolf inversion this suite exists to prevent.
+  //
+  // The FIRST look-ahead (MED-A) tested only for EXISTENCE of a later `---`
+  // or `...`, with no requirement on what sits between -- so a thematic
+  // break PAIR bracketing an ordinary paragraph, a FAR thematic break, or a
+  // `---` sitting INSIDE A FENCE all read as a valid closer and swallowed a
+  // real defect (r34 FIXBACK 3, closed by this commit -- see this file's own
+  // test suite for the reproducing cases). Real
+  // Jekyll/Hugo front matter is a CONTIGUOUS `key: value` block; a thematic
+  // break is conventionally followed by a blank line. So the look-ahead now
+  // STOPS -- treats line 0 as NOT front matter, no closer accepted -- the
+  // moment it meets a blank line or a fence opener before finding a closer.
+  //
+  // NAMED, ACCEPTED TRADE (stated, not hidden): front matter that itself
+  // contains a blank line before its own closer is scanned as PROSE, never
+  // silently skipped -- a Han-comma-Han sitting in such metadata could fire
+  // a finding. Rare, visible, and never a silent false clean -- the same
+  // direction the indented-code exclusion above already trades in.
   let frontMatterEnd = -1;
-  if (!opts.plain && lines[0] !== undefined && lines[0].trim() === '---') {
+  if (!opts.plain && lines[0] !== undefined && lines[0].trim() === '---' &&
+      lines[1] !== undefined && lines[1].trim() !== '') {
     for (let j = 1; j < lines.length; j++) {
-      if (lines[j].trim() === '---' || lines[j].trim() === '...') { frontMatterEnd = j; break; }
+      const lj = lines[j];
+      if (lj.trim() === '') break; // a blank line before any closer -- not contiguous front matter
+      if (fenceInfo(lj)) break; // a fence opener before any closer -- not contiguous front matter
+      if (lj.trim() === '---' || lj.trim() === '...') { frontMatterEnd = j; break; }
     }
   }
   for (let i = 0; i < lines.length; i++) {

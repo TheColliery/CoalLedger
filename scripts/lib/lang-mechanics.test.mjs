@@ -286,6 +286,45 @@ test('MED-A (regression guard): real front matter is still skipped whole, and it
   assert.equal(hits.length, 1);
 });
 
+// ---------------------------------------------------------------------------
+// FIXBACK 3 (r34): the look-ahead above still accepted ANY later `---`/`...`
+// line as the closer -- a thematic break, or a line inside a fenced code
+// block, both re-open the whole-document false-clean class through a
+// different path. HEAD's precise rule: line 0 opens front matter ONLY IF
+// line 1 is non-blank AND a closer is found BEFORE any blank line and
+// BEFORE any fence opener. Named trade (in the header too): front matter
+// containing a blank line, or interrupted by a fence, before its own
+// closer is scanned as PROSE -- a Han-comma-Han inside it is found, never
+// silently skipped.
+// ---------------------------------------------------------------------------
+test('FIXBACK 3: a thematic-break PAIR with prose between (no real YAML) is scanned as prose on both sides, never swallowed as front matter', () => {
+  assert.equal(checkText('---\n\n中文,测试\n\n---\n\n正文,内容\n').length, 2);
+});
+
+test('FIXBACK 3: a FAR thematic break does not retroactively make everything before it front matter', () => {
+  assert.equal(checkText('---\n\n中文,测试\n\n' + 'x\n'.repeat(50) + '---\n\n正文,内容\n').length, 2);
+});
+
+test('FIXBACK 3: the only later --- sits INSIDE A FENCE -- a fence closer must never count as the front-matter closer', () => {
+  assert.equal(checkText('---\n\n中文,测试\n\n```\n---\n```\n\n正文,内容\n').length, 2);
+});
+
+test('FIXBACK 3 (regression guard): real front matter whose YAML value itself contains 中文,测试 stays skipped whole, while a body defect is still found', () => {
+  assert.equal(checkText('---\ntitle: 中文,测试\n---\n\n中文,测试\n').length, 1);
+});
+
+test('FIXBACK 3 (regression guard): a `...` closer is honored exactly like `---`', () => {
+  assert.equal(checkText('---\ntitle: x\n...\n\n中文,测试\n').length, 1);
+});
+
+test('FIXBACK 3 (named trade, mutation target A -- the BLANK-LINE stop): front matter containing a blank line before its own closer is scanned as prose, not silently skipped', () => {
+  assert.equal(checkText('---\ntitle: x\n\n中文,测试\n---\n\n正文,内容\n').length, 2);
+});
+
+test('FIXBACK 3 (named trade, mutation target B -- the FENCE stop): front matter interrupted by a fence before its own closer is scanned as prose, not silently skipped', () => {
+  assert.equal(checkText('---\ntitle: x\n```\n---\n```\n\n中文,测试\n').length, 1);
+});
+
 // r34 RE-INSPECT INFO (ruled by the coder, not a finding): the widened HTML
 // mask `<[^>]*>` (MED-1's own fix) also masked ordinary prose bracketed by a
 // bare `<`...`>` with no real tag/comment shape -- a MISS, one defect
