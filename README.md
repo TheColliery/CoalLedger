@@ -21,7 +21,7 @@
 
 [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalLedger/releases)
 
-**Part of [TheColliery](https://github.com/TheColliery)**—siblings: **[CoalMine](https://github.com/HetCreep/CoalMine)** (quality canaries) · **[CoalTipple](https://github.com/TheColliery/CoalTipple)** (model/effort routing) · **[CoalBoard](https://github.com/TheColliery/CoalBoard)** (consensus board) · **[CoalHearth](https://github.com/TheColliery/CoalHearth)** (warm-resume) · **[CoalFace](https://github.com/TheColliery/CoalFace)** (fan-out discipline) · **[CoalWash](https://github.com/TheColliery/CoalWash)** (memory defrag).
+**Part of [TheColliery](https://github.com/TheColliery)**—siblings: **[CoalMine](https://github.com/TheColliery/CoalMine)** (quality canaries) · **[CoalTipple](https://github.com/TheColliery/CoalTipple)** (model/effort routing) · **[CoalBoard](https://github.com/TheColliery/CoalBoard)** (consensus board) · **[CoalHearth](https://github.com/TheColliery/CoalHearth)** (warm-resume) · **[CoalFace](https://github.com/TheColliery/CoalFace)** (fan-out discipline) · **[CoalWash](https://github.com/TheColliery/CoalWash)** (memory defrag).
 
 </div>
 
@@ -29,7 +29,7 @@
 
 ## 📒 What it is
 
-Code has linters, tests, and CI; docs mostly have hope. A README that drifted from the code, a translated doc that stopped matching its counterpart, a dead install link, a stale version badge—each is silent breakage a reader trusts. CoalLedger is the docs-side mirror of [CoalMine](https://github.com/HetCreep/CoalMine)'s code canaries: a cheap, always-available health scan for ANY document—a README, a spec, a report, a translation—not just developer docs. The source of truth a doc is checked against is whatever it renders: the code, the data, an original text, or reality.
+Code has linters, tests, and CI; docs mostly have hope. A README that drifted from the code, a translated doc that stopped matching its counterpart, a dead install link, a stale version badge—each is silent breakage a reader trusts. CoalLedger is the docs-side mirror of [CoalMine](https://github.com/TheColliery/CoalMine)'s code canaries: a cheap, always-available health scan for ANY document—a README, a spec, a report, a translation—not just developer docs. The source of truth a doc is checked against is whatever it renders: the code, the data, an original text, or reality.
 
 ## ⚙️ How it works
 
@@ -61,7 +61,7 @@ Multilingual by construction: the mechanical layers are language-agnostic—neve
 
 Separate from the canaries—it scans nothing and reports nothing. If documentation files (`.md` `.mdx` `.markdown` `.rst` `.txt` `.adoc` `.asciidoc` `.org`) were edited but `MEMORY.md` has not been updated this session, CoalLedger emits **one quiet reminder** (`systemMessage`—reaches the session transcript and an interactive user) when the agent finishes responding: no findings, no fix menu, and it never blocks. Update `MEMORY.md` once and it stays quiet for the rest of the session. It fires only where the project uses the `MEMORY.md` convention (a `MEMORY.md` at the project root), and `docsDriftNudge: false` silences it. Capability-keyed like everything else here—it needs a Stop hook with a surfaced-message output, which today means Claude Code (Antigravity's engine documents no such channel).
 
-This is the DOCS half of a pair: [CoalMine](https://github.com/HetCreep/CoalMine)'s `memoryDriftNudge` covers CODE edits, CoalLedger's covers DOC edits. The two watch disjoint file extensions, and a single `MEMORY.md` update satisfies both.
+This is the DOCS half of a pair: [CoalMine](https://github.com/TheColliery/CoalMine)'s `memoryDriftNudge` covers CODE edits, CoalLedger's covers DOC edits. The two watch disjoint file extensions, and a single `MEMORY.md` update satisfies both.
 
 ## 🧭 Compatibility
 
@@ -137,7 +137,7 @@ Not yet measured—CoalLedger launches unbenchmarked rather than with an invente
 
 CoalLedger is the **docs-health** member of the mining series:
 
-- [CoalMine](https://github.com/HetCreep/CoalMine)—quality canaries
+- [CoalMine](https://github.com/TheColliery/CoalMine)—quality canaries
 - [CoalTipple](https://github.com/TheColliery/CoalTipple)—model/effort routing
 - [CoalBoard](https://github.com/TheColliery/CoalBoard)—consensus & debate
 - [CoalHearth](https://github.com/TheColliery/CoalHearth)—session warm-resume
