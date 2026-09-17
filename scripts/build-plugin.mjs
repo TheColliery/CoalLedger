@@ -63,6 +63,10 @@ export const GENERATED = new Map([
     path.join('scripts', 'lib', f),
   ]),
   [path.join(DOC_QUALITY_ENGINE_DIR, 'emdash.mjs'), path.join('scripts', 'lib', 'emdash.mjs')],
+  // CWK-101: lang-mechanics.mjs is doc-quality's SECOND self-contained
+  // engine, generated the identical way, into the SAME skill dir, alongside
+  // (not importing) emdash.mjs -- each engine stands alone.
+  [path.join(DOC_QUALITY_ENGINE_DIR, 'lang-mechanics.mjs'), path.join('scripts', 'lib', 'lang-mechanics.mjs')],
 ]);
 
 const isTest = (p) => /\.test\.[cm]?js$/.test(p);
@@ -87,7 +91,7 @@ const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 // wholesale copy says nothing about whether it is ALSO the source of a
 // generated skill-local copy, and emdash.mjs is the first file in this room
 // to be both at once.
-const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs']);
+const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs']);
 const isBuildOnlyLib = (p) => BUILD_ONLY_LIB_NAMES.has(path.basename(p));
 const isDistExcluded = (p) => isTest(p) || isBuildOnlyLib(p);
 

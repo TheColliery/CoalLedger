@@ -25,6 +25,7 @@ const TESTS = [
   'scripts/lib/config-keys.test.mjs',
   'scripts/lib/pointer-check.test.mjs',
   'scripts/lib/emdash.test.mjs',
+  'scripts/lib/lang-mechanics.test.mjs',
   'scripts/configure.test.mjs',
   'scripts/build-plugin.test.mjs',
   'scripts/verify.test.mjs',
