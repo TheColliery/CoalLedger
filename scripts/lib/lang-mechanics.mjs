@@ -183,7 +183,8 @@ const THIRD_PARTY_MARKER_RE = new RegExp(
 
 /**
  * Scan one document's text for language-mechanics findings. Returns
- * [{ rule, script, severity, line, col, length, snippet }] -- 1-based line.
+ * [{ rule, script, severity, authority, line, col, length, snippet }] --
+ * 1-based line.
  * Pure: takes text, never touches the filesystem, so a test can drive it.
  *
  * opts.plain disables all markdown awareness (fence/inline-code/URL/
@@ -235,6 +236,11 @@ export function checkText(text, opts = {}) {
           rule: id,
           script,
           severity: RULES[id].severity,
+          // MED-2 (r34 INSPECT): SKILL.md step 2c promises a finding traces
+          // to its cited standard via `authority` -- carried through here so
+          // every consumer (the CLI's --json shape included) gets it, never
+          // just the RULES table a caller has to cross-reference by hand.
+          authority: RULES[id].authority,
           line: i + 1,
           col: m.index + 1,
           length: m[1] ? m[1].length : m[0].length,

@@ -190,3 +190,11 @@ test('every shipped rule names a non-empty authority', () => {
   const missing = Object.values(RULES).filter((r) => !r.authority || !r.authority.trim());
   assert.equal(missing.length, 0);
 });
+
+// MED-2 (r34 INSPECT): SKILL.md step 2c promises `authority` in each
+// finding, so a finding traces to its cited standard -- the engine never
+// emitted it.
+test('a finding carries the SAME authority string as its RULES entry', () => {
+  const hits = checkText('你好,再见');
+  assert.equal(hits[0].authority, RULES['zh-halfwidth-punct'].authority);
+});
