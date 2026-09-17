@@ -2,6 +2,16 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.11.0-beta.1] - 2026-09-17
+
+### Added
+- **doc-quality gains a second mechanical engine, `lang-mechanics.mjs`—script-mechanics rules keyed on Unicode script range, never on a doc's declared language (CWK-101).** This unit ships the design plus one language end-to-end: ZH, two rules (`zh-halfwidth-punct`, `zh-space-before-punct`; authority GB/T 15834-2011《标点符号用法》—every rule names its standard, or it does not ship). JA/KO/CLDR/TH/EN are the design's own plan for later units, not shipped here. Markdown-aware exactly like `emdash.mjs` (fenced/inline code, URLs, blockquotes, LICENSE-class files, the third-party marker), same `BUILD_ONLY` + skill-local generated-copy shape, same exit contract (exit 0 on findings, exit 1 only on an unreadable file). Wired into `skills/doc-quality/SKILL.md` as Method step 2c, alongside the existing em-dash step 2b—test: `scripts/lib/lang-mechanics.test.mjs`.
+
+### Changed
+- **The house's own docs converted to `emDash: unspaced`, the owner's decided convention (AH-1, 2026-09-03; sweep UMB-042).** 444 spaced em-dashes across the 14 shipped root/skill/command docs converted to unspaced, prose only—fenced/inline code, URLs, blockquotes, Thai lines, and the third-party marker excluded exactly as `emdash.mjs` excludes them at scan time. The factory default stays `off` in both `config-schema.mjs` and `platform-configs/.coalledger.json`—this is a house choice recorded on this room's own docs, never forced on another repo. `--mode=unspaced` now reads `TOTAL: 0` across all 14 files.
+
+Two riders landed in this unit's own commit sequence, correctly outside this entry: **LOW-3** (a CLI import-guard fix, `scripts/configure.mjs` and `scripts/build-claude-ai-zips.mjs`) and **LOW-4** (naming `.githooks/` in `CONTRIBUTING.md`, r33's own finding)—both touch files with no `DIST_ITEM` path, so neither moves the shipped dist and neither owes a CHANGELOG entry of its own, per this room's own no-dist-no-version rule. They are recorded in their own commit messages and the room's `MEMORY.md`.
+
 ## [0.10.0-beta.1] - 2026-09-10
 
 ### Added
