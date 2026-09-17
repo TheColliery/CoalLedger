@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkText, RULES } from './lang-mechanics.mjs';
+import { checkText, RULES, THIRD_PARTY_MARKER } from './lang-mechanics.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(here, 'lang-mechanics.mjs');
@@ -219,4 +219,49 @@ test('zh-halfwidth-punct cites BOTH placement clauses (§5.1.1 for , ; : and §5
 
 test('zh-space-before-punct cites §5.1.2 for ？！, not only §5.1.1', () => {
   assert.ok(RULES['zh-space-before-punct'].authority.includes('§5.1.2'));
+});
+
+// ---------------------------------------------------------------------------
+// LOW-4 (r34 INSPECT) -- five mutants survived: the punctuation class had
+// only `,` tested (`; : ? !` never behaviour-tested, so a class narrowed to
+// `[,]` survived); the target set had only `，` tested (a class losing
+// `？！` survived); the link-destination mask and the bare-URL mask shared
+// one test that neither discriminated alone; the third-party-text marker
+// was untested end to end. Each test below is built to discriminate its
+// OWN mechanism -- re-run as a mutant proof in the return, not asserted.
+// ---------------------------------------------------------------------------
+test('zh-halfwidth-punct: a semicolon between Han characters fires', () => {
+  assert.equal(checkText('你好;再见').length, 1);
+});
+
+test('zh-halfwidth-punct: a colon between Han characters fires', () => {
+  assert.equal(checkText('你好:再见').length, 1);
+});
+
+test('zh-halfwidth-punct: a question mark between Han characters fires', () => {
+  assert.equal(checkText('你好?再见').length, 1);
+});
+
+test('zh-halfwidth-punct: an exclamation mark between Han characters fires', () => {
+  assert.equal(checkText('你好!再见').length, 1);
+});
+
+test('zh-space-before-punct: a space before a full-width question mark fires', () => {
+  assert.equal(checkText('你好 ？再见').length, 1);
+});
+
+test('zh-space-before-punct: a space before a full-width exclamation mark fires', () => {
+  assert.equal(checkText('你好 ！再见').length, 1);
+});
+
+test('markdown exclusions: a NON-URL link destination is masked (discriminates the link-dest mask alone -- no bare-URL pattern present)', () => {
+  assert.equal(checkText('[链接](x你,好y)').length, 0);
+});
+
+test('markdown exclusions: a BARE URL outside any [](...) is masked (discriminates the URL mask alone -- no link-destination syntax present)', () => {
+  assert.equal(checkText('见 http://x你,好y 见').length, 0);
+});
+
+test('the third-party-text marker exempts the whole document, end to end', () => {
+  assert.equal(checkText(THIRD_PARTY_MARKER + '\n你好,再见').length, 0);
 });
