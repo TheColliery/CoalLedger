@@ -76,6 +76,20 @@ test('ZH/JA split: the SAME Han-comma-Han pattern with NO Kana on the line DOES 
 });
 
 // ---------------------------------------------------------------------------
+// 4b. ZH/KO split (HIGH-1, r34 INSPECT) -- any Hangul on the line VETOES 'zh',
+// the same as any Kana. A Korean sentence writing a place name in Hanja
+// (Han characters) is outside GB/T 15834-2011's own §1 scope (汉语的书面语),
+// so firing the ZH rule on it is a false positive, not a bounded misread.
+// ---------------------------------------------------------------------------
+test('ZH/KO split: a Hangul-bearing line with Hanja and an ASCII comma does NOT fire the ZH rule', () => {
+  assert.equal(checkText('大韓民國,日本은 이웃 나라다.').length, 0);
+});
+
+test('ZH/KO split: the pure-ZH control (no Hangul) still fires', () => {
+  assert.equal(checkText('中文,测试').length, 1);
+});
+
+// ---------------------------------------------------------------------------
 // 5. Markdown exclusions.
 // ---------------------------------------------------------------------------
 test('markdown exclusions: a fenced code block is skipped whole', () => {

@@ -32,6 +32,18 @@
 // authority. A Kana-bearing line is JA-classified and NEVER fires a
 // zh-* rule (the JA ruleset that would cover it does not exist yet).
 //
+// A SECOND AMBIGUITY, CLOSED not bounded (HIGH-1, r34 INSPECT): Hangul
+// (Korean) can carry Hanja (Han characters) alongside native Hangul on the
+// same line, and 한글 맞춤법's own punctuation uses ASCII `,` correctly --
+// GB/T 15834-2011 §1 scopes itself to 汉语的书面语 (Chinese written
+// language), so a Korean line is OUTSIDE the standard entirely, not merely
+// a different dialect of it. RULED: any Hangul on the line VETOES 'zh', the
+// identical mechanism as the Kana veto above, checked in classifyLine()
+// BEFORE the Han test -- never a majority-script count (this is a
+// CONFIRMED-severity rule in an anti-cry-wolf suite; precision over recall,
+// YAGNI on the heuristic). THE PRICE: a ZH line carrying one Hangul name
+// now misses (see the recall-gaps list below).
+//
 // CLI EXIT CONTRACT, load-bearing (r32 paid for this once already):
 // exit 0 on a findings run -- exactly md-checks.mjs's shape, so a skill
 // reads the summary/--json, never the exit code. exit 1 ONLY on an
@@ -59,12 +71,23 @@ const THAI_RE = /[฀-๿]/;
 
 // Resolve ONE line's script, post-masking (a code span's own script must
 // never influence the surrounding prose's classification): any Kana => 'ja'
-// (Han-shared ambiguity resolved toward JA); Han with no Kana => 'zh';
-// else Hangul => 'ko', Thai => 'th', else null (Latin/no script of interest).
+// (Han-shared ambiguity resolved toward JA); any Hangul => 'ko' (HIGH-1,
+// r34 INSPECT -- the identical veto, checked BEFORE Han: a Korean sentence
+// writing a place name in Hanja is outside GB/T 15834-2011's own §1 scope,
+// 汉语的书面语, so letting Han win there is a false positive, not a bounded
+// misread); Han with neither Kana nor Hangul => 'zh'; else Thai => 'th',
+// else null (Latin/no script of interest).
+//
+// RULED (design question the reviewer raised): VETO, never a majority-
+// script count. This is a CONFIRMED-severity rule in a suite whose thesis
+// is anti-cry-wolf -- precision beats recall, and "majority script" is a
+// heuristic with its own edge cases (YAGNI). THE PRICE, named rather than
+// hidden: a ZH line carrying one Katakana loanword or one Hangul name now
+// MISSES -- see LOW-3 in the header below.
 function classifyLine(line) {
   if (KANA_RE.test(line)) return 'ja';
-  if (HAN_RE.test(line)) return 'zh';
   if (HANGUL_RE.test(line)) return 'ko';
+  if (HAN_RE.test(line)) return 'zh';
   if (THAI_RE.test(line)) return 'th';
   return null;
 }
