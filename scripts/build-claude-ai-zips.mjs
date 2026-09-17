@@ -11,7 +11,7 @@
 // §1) — local libs are dynamic, inside main().
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(scriptDir, '..');
@@ -85,9 +85,32 @@ async function main() {
 // LOW-3 (r33 INSPECT): a bare `main().catch(...)` here means IMPORTING this
 // module (rather than spawning it) runs the build against whatever cwd/argv
 // the importer happens to carry, silently setting the IMPORTER's own
-// process.exitCode. Guard shape copied from build-plugin.mjs / md-checks.mjs
-// / emdash.mjs -- same mechanism, not a second one.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// process.exitCode.
+//
+// MED-3 (r34 INSPECT): the original guard here compared import.meta.url
+// against pathToFileURL(process.argv[1]) -- a LEXICAL compare, since
+// import.meta.url is the loader's REALPATH of the entry while argv[1] is
+// only path.resolve'd. Through a junction or a symlinked ~/.claude the two
+// never matched and the guard FAILED OPEN. This room paid for the identical
+// lexical-vs-realpath defect at CWK-078.
+// fs.realpathSync.native on BOTH sides (.native, never plain -- plain does
+// not expand a Windows 8.3 short name, AGENTS.md Hard-won lessons); an
+// unresolvable path fails CLOSED (treated as NOT the entry) inside a
+// try/catch that never throws past it -- an importer must still see its own
+// exit code untouched (LOW-3). Duplicated per file, not shared: three of
+// this room's six guarded scripts ship standalone into a copied skill
+// folder with no scripts/lib sibling, so a shared helper would break the
+// self-contained-engine property -- kept identical across all six rather
+// than splitting the idiom three-and-three.
+function isMainModule(url) {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync.native(fileURLToPath(url)) === fs.realpathSync.native(process.argv[1]);
+  } catch {
+    return false;
+  }
+}
+if (isMainModule(import.meta.url)) {
   main().catch((e) => {
     console.error(e);
     process.exitCode = 1;

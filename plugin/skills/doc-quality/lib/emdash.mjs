@@ -78,6 +78,7 @@
 //     is the instrument's single largest remaining reach limit.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const EMDASH = String.fromCharCode(0x2014);
 const THAI = /[฀-๿]/;
@@ -308,8 +309,36 @@ export function selfTest() {
   return fails;
 }
 
+// MED-3 (r34 INSPECT): this guard was the ROOM'S OLDER VARIANT of the same
+// idiom -- a manual URL-to-path conversion plus path.resolve, still a
+// LEXICAL compare. import.meta.url is the loader's REALPATH of the entry;
+// argv[1] is only path.resolve'd. Through a junction or a symlinked
+// ~/.claude the two never matched and this shipped engine printed nothing
+// and exited 0, reading as a clean bill. This room paid for the identical
+// lexical-vs-realpath defect at CWK-078.
+// fs.realpathSync.native on BOTH sides (.native, never plain -- plain does
+// not expand a Windows 8.3 short name, AGENTS.md Hard-won lessons); an
+// unresolvable path fails CLOSED (treated as NOT the entry) inside a
+// try/catch that never throws past it -- an importer must still see its own
+// exit code untouched (LOW-3 class). Duplicated per file, not shared: this
+// file ships standalone into a copied skill folder with no scripts/lib
+// sibling, so a shared helper would break the self-contained-engine
+// property -- kept identical across all six of this room's guarded scripts
+// instead. This is also the point where the room converges on ONE guard
+// shape: the old URL-pathname form retired, replaced with the same idiom
+// build-plugin.mjs/md-checks.mjs/lang-mechanics.mjs/configure.mjs/
+// build-claude-ai-zips.mjs all now carry.
+function isMainModule(url) {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync.native(fileURLToPath(url)) === fs.realpathSync.native(process.argv[1]);
+  } catch {
+    return false;
+  }
+}
+
 // CLI: node emdash.mjs [--selftest] [--mode=unspaced|spaced] <file...>
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.includes('--selftest')) {
     const fails = selfTest();

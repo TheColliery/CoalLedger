@@ -93,7 +93,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { parseMarkdown, walk, textContent, makeSlugger, githubSlug } from './md-ast.mjs';
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
@@ -453,7 +453,31 @@ export function checkDocument(src, opts = {}) {
 // findings themselves are data, not failure)
 // ---------------------------------------------------------------------------
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// MED-3 (r34 INSPECT): the original guard here compared import.meta.url
+// against pathToFileURL(process.argv[1]) -- a LEXICAL compare, since
+// import.meta.url is the loader's REALPATH of the entry while argv[1] is
+// only path.resolve'd. Through a junction or a symlinked ~/.claude the two
+// never matched and this shipped engine printed nothing and exited 0,
+// reading as a clean bill. This room paid for the identical
+// lexical-vs-realpath defect at CWK-078.
+// fs.realpathSync.native on BOTH sides (.native, never plain -- plain does
+// not expand a Windows 8.3 short name, AGENTS.md Hard-won lessons); an
+// unresolvable path fails CLOSED (treated as NOT the entry) inside a
+// try/catch that never throws past it -- an importer must still see its own
+// exit code untouched (LOW-3). Duplicated per file, not shared: this file
+// ships standalone into a copied skill folder with no scripts/lib sibling,
+// so a shared helper would break the self-contained-engine property --
+// kept identical across all six of this room's guarded scripts instead.
+function isMainModule(url) {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync.native(fileURLToPath(url)) === fs.realpathSync.native(process.argv[1]);
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const json = args.includes('--json');
   const files = args.filter((a) => a !== '--json');
