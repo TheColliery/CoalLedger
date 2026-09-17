@@ -265,3 +265,33 @@ test('markdown exclusions: a BARE URL outside any [](...) is masked (discriminat
 test('the third-party-text marker exempts the whole document, end to end', () => {
   assert.equal(checkText(THIRD_PARTY_MARKER + '\n你好,再见').length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// MED-A (r34 RE-INSPECT): an UNTERMINATED leading `---` (or one bracketed by
+// a second `---` with no real YAML in between) used to set inFrontMatter
+// TRUE and never clear it -- a silent false CLEAN for the whole rest of the
+// document. Cure: look-ahead for a closing `---`/`...` BEFORE entering
+// front-matter mode at all.
+// ---------------------------------------------------------------------------
+test('MED-A: an UNTERMINATED leading --- (no closing delimiter anywhere) finds BOTH defects, not a silent clean bill', () => {
+  assert.equal(checkText('---\n\n中文,测试\n\n正文,内容\n').length, 2);
+});
+
+test('MED-A (break-pair): real front matter closes at its OWN first delimiter, so a SECOND unrelated --- further down does not re-trigger skipping -- both body defects on either side of it are found', () => {
+  assert.equal(checkText('---\ntitle: x\n---\n\n中文,测试\n\n---\n\n正文,内容\n').length, 2);
+});
+
+test('MED-A (regression guard): real front matter is still skipped whole, and its body is still scanned normally', () => {
+  const hits = checkText('---\ntitle: 标题\n---\n\n正文,内容\n');
+  assert.equal(hits.length, 1);
+});
+
+// r34 RE-INSPECT INFO (ruled by the coder, not a finding): the widened HTML
+// mask `<[^>]*>` (MED-1's own fix) also masked ordinary prose bracketed by a
+// bare `<`...`>` with no real tag/comment shape -- a MISS, one defect
+// swallowed. Tightened to require a real tag/comment/closing-tag opener
+// right after `<` (a letter, `/`, `!`, or `?`), which a Han character never
+// is, so real HTML stays masked and bare-bracket prose does not.
+test('the HTML mask requires a real tag/comment opener -- bare angle-bracket prose is NOT swallowed', () => {
+  assert.equal(checkText('如果甲<乙,那么丙>丁,否则戊').length, 2);
+});

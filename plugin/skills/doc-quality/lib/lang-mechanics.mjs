@@ -184,12 +184,17 @@ function maskInline(line) {
   out = out.replace(/\]\([^)]*\)/g, mask);
   // MED-1 (r34 INSPECT): the prior `<[^ >]*>` stopped at the FIRST space, so
   // any HTML comment or tag carrying a space or an attribute (`<!-- 注释, -->`,
-  // `<span title="中,文">`) left its content unmasked. `<[^>]*>` masks up to
-  // the first `>` instead -- correct for an ordinary single-line tag or
-  // comment; a `>` inside a quoted attribute value would end the mask early,
-  // an accepted, unlikely edge (emdash.mjs's own tag mask carries the same
-  // shape).
-  out = out.replace(/<[^>]*>/g, mask);
+  // `<span title="中,文">`) left its content unmasked. Masking up to the
+  // first `>` instead fixed that -- but r34 RE-INSPECT (INFO, ruled by the
+  // coder) found the widened form also swallowed ORDINARY PROSE bracketed
+  // by a bare `<`...`>` with no tag shape at all (`如果甲<乙,那么丙>丁`), a
+  // MISS. Requiring a real tag/comment/closing-tag opener right after `<`
+  // (a letter, `/`, `!`, or `?` -- what every real HTML construct starts
+  // with, and a Han/CJK character never is) closes that miss without
+  // reopening MED-1: a `>` inside a quoted attribute value would still end
+  // the mask early, an accepted, unlikely edge (emdash.mjs's own tag mask
+  // carries the same shape).
+  out = out.replace(/<[a-zA-Z!/?][^>]*>/g, mask);
   out = out.replace(/https?:\/\/\S+/g, mask);
   return out;
 }
@@ -228,20 +233,36 @@ export function checkText(text, opts = {}) {
   const checks = opts.script ? CHECKS.filter(([id]) => RULES[id].script === opts.script) : CHECKS;
   const findings = [];
   let fence = null;
-  // MED-1 (r34 INSPECT): a YAML front matter block, ONLY when it opens the
-  // document (line 0), tracked the same way as a fence -- everything
-  // between the two `---` delimiters (or a closing `...`) is metadata,
-  // never prose.
-  let inFrontMatter = false;
   const lines = String(text).split(/\r?\n/);
+  // MED-A (r34 RE-INSPECT): a `---` on line 0 is front matter ONLY if a
+  // closing `---`/`...` line exists LATER in the text -- decided by a
+  // LOOK-AHEAD, once, BEFORE the per-line loop, never discovered mid-scan.
+  // Without this, an UNTERMINATED leading `---` (or a doc that simply opens
+  // with a thematic break, which is what a lone `---` means in CommonMark)
+  // set inFrontMatter TRUE and NEVER cleared it, silently skipping the
+  // WHOLE REST OF THE DOCUMENT -- a false clean bill, the exact
+  // anti-cry-wolf inversion this suite exists to prevent. frontMatterEnd is
+  // the index of the FIRST later closing line found, so an extra `---`
+  // thematic break further down in the body (after real front matter has
+  // already closed) is correctly left as ordinary prose, never re-opens
+  // skipping.
+  // KNOWN, ACCEPTED TRADE (stated, not hidden): this look-ahead tests only
+  // for EXISTENCE of a later closing line, not that the lines between look
+  // like YAML -- two thematic breaks bracketing an ordinary paragraph
+  // (`---\n\ntext\n\n---\n`) reads identically to real front matter and
+  // that paragraph is skipped. A miss (treating real prose as metadata) is
+  // the safe direction here, the same trade the indented-code exclusion
+  // above already accepts.
+  let frontMatterEnd = -1;
+  if (!opts.plain && lines[0] !== undefined && lines[0].trim() === '---') {
+    for (let j = 1; j < lines.length; j++) {
+      if (lines[j].trim() === '---' || lines[j].trim() === '...') { frontMatterEnd = j; break; }
+    }
+  }
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     if (!opts.plain) {
-      if (i === 0 && raw.trim() === '---') { inFrontMatter = true; continue; }
-      if (inFrontMatter) {
-        if (raw.trim() === '---' || raw.trim() === '...') inFrontMatter = false;
-        continue;
-      }
+      if (frontMatterEnd !== -1 && i <= frontMatterEnd) continue; // whole front-matter block: metadata, never prose
       const f = fenceInfo(raw);
       if (fence) {
         if (f && f.ch === fence.ch && f.len >= fence.len) fence = null;
