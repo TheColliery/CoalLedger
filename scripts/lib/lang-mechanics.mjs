@@ -44,6 +44,27 @@
 // YAGNI on the heuristic). THE PRICE: a ZH line carrying one Hangul name
 // now misses (see the recall-gaps list below).
 //
+// A THIRD, NAMED BOUNDED MISREAD (LOW-2, r34 INSPECT): Traditional Chinese
+// text (Taiwan/HK) resolves 'zh' and is reported under GB/T 15834-2011 --
+// the PRC national standard. The finding is TRUE in substance (Taiwan's own
+// 重訂標點符號手冊 also uses full-width point marks placed the same way),
+// but the authority label is the wrong standard, the same shape as the
+// all-Kanji JA misread above. Not fixed this round: a Traditional-vs-
+// Simplified Han split (and a second authority table for it) is a future
+// unit's work, not this exemplar's.
+//
+// RECALL GAPS -- named, not hidden (LOW-3, r34 INSPECT). None of these is a
+// false claim; each reads 0 and is DELIBERATELY not covered by this round's
+// two rules:
+//   - an ASCII comma immediately followed by a SPACE (`你好, 再见`) -- the
+//     lookahead requires a Han character immediately after the punct
+//   - a ZH line carrying one Katakana loanword, or U+30FB `・` (JLReq's own
+//     interpunct) -- the whole line resolves 'ja' per the veto above,
+//     suppressing every zh-* finding on it
+//   - a ZH line carrying one Hangul word/name -- the same veto, KO side
+//   - U+3000 (ideographic space) or a tab before a full-width point mark --
+//     ZH_SPACE_BEFORE_PUNCT_RE matches only the ASCII space run
+//
 // CLI EXIT CONTRACT, load-bearing (r32 paid for this once already):
 // exit 0 on a findings run -- exactly md-checks.mjs's shape, so a skill
 // reads the summary/--json, never the exit code. exit 1 ONLY on an
@@ -102,14 +123,25 @@ export const RULES = {
     script: 'zh',
     severity: 'error',
     description: 'an ASCII , ; : ? ! with a Han character on both sides (no Kana on the line) -- Chinese uses the full-width point mark',
-    authority: 'GB/T 15834-2011《标点符号用法》§4.4.2 (逗号的形式是"，"), §5.1.1 (点号均置于相应文字之后，占一个字位置)',
+    // LOW-1 (r34 INSPECT), completed against the primary text directly
+    // (people.ubuntu.com mirror of GB/T 15834-2011, re-fetched and quoted
+    // raw, never copied from a paraphrase): the FORM clause differs per
+    // character -- §4.4.2 (逗号的形式是"，"), §4.6.2 (分号的形式是"；"),
+    // §4.7.2 (冒号的形式是"："), §4.2.2 (问号的形式是"？"), §4.3.2
+    // (叹号的形式是"！") -- and PLACEMENT is TWO separate clauses, not one:
+    // §5.1.1 covers only 句号、逗号、顿号、分号、冒号 (period/comma/dun-mark/
+    // semicolon/colon); §5.1.2 covers 问号、叹号 (question/exclamation mark)
+    // on its own, the same rule restated for a different character set.
+    authority: 'GB/T 15834-2011《标点符号用法》-- forms: §4.4.2 (，), §4.6.2 (；), §4.7.2 (：), §4.2.2 (？), §4.3.2 (！); placement: §5.1.1 (，；： -- 置于相应文字之后，占一个字位置) and §5.1.2 (？！ -- the identical rule, a separate clause)',
   },
   'zh-space-before-punct': {
     id: 'zh-space-before-punct',
     script: 'zh',
     severity: 'error',
     description: 'one or more spaces between a Han character and a following full-width point mark ，。、；：？！',
-    authority: 'GB/T 15834-2011《标点符号用法》§5.1.1 ("置于相应文字之后" -- placed directly after the preceding character, no gap)',
+    // LOW-1: the same two-clause split as above -- ，。、；： under §5.1.1,
+    // ？！ under §5.1.2, never folded into one citation.
+    authority: 'GB/T 15834-2011《标点符号用法》§5.1.1 (句号、逗号、顿号、分号、冒号均置于相应文字之后，占一个字位置 -- covers 。，、；：) and §5.1.2 (问号、叹号均置于相应文字之后，占一个字位置 -- covers ？！, a separate clause)',
   },
 };
 

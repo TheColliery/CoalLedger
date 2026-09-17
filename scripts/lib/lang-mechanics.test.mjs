@@ -198,3 +198,25 @@ test('a finding carries the SAME authority string as its RULES entry', () => {
   const hits = checkText('你好,再见');
   assert.equal(hits[0].authority, RULES['zh-halfwidth-punct'].authority);
 });
+
+// LOW-1 (r34 INSPECT): both authority strings under-cited the standard --
+// only the comma's form clause (§4.4.2) was named; the forms of `; : ? !`
+// (§4.6.2/§4.7.2/§4.2.2/§4.3.2) and the placement clause for `? !` (§5.1.2,
+// distinct from §5.1.1's comma/semicolon/colon placement) were missing.
+// Verified against the primary text directly (people.ubuntu.com mirror of
+// GB/T 15834-2011), never copied from the finding.
+test('zh-halfwidth-punct cites every FORM clause for , ; : ? !, not only the comma', () => {
+  const a = RULES['zh-halfwidth-punct'].authority;
+  for (const clause of ['§4.4.2', '§4.6.2', '§4.7.2', '§4.2.2', '§4.3.2']) {
+    assert.ok(a.includes(clause), `missing ${clause}`);
+  }
+});
+
+test('zh-halfwidth-punct cites BOTH placement clauses (§5.1.1 for , ; : and §5.1.2 for ? !)', () => {
+  const a = RULES['zh-halfwidth-punct'].authority;
+  assert.ok(a.includes('§5.1.1') && a.includes('§5.1.2'));
+});
+
+test('zh-space-before-punct cites §5.1.2 for ？！, not only §5.1.1', () => {
+  assert.ok(RULES['zh-space-before-punct'].authority.includes('§5.1.2'));
+});
