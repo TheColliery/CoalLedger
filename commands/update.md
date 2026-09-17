@@ -1,9 +1,9 @@
 ---
-description: CoalLedger self-update — check for a newer version and offer to apply it, or set how updates are handled.
+description: CoalLedger self-update—check for a newer version and offer to apply it, or set how updates are handled.
 ---
 
-Kind-1 self-update — the **agent** verifies (online), the **hook** only schedules (it never networks). If git/network is unavailable, say so and suggest updating manually later (never assume either exists).
+Kind-1 self-update—the **agent** verifies (online), the **hook** only schedules (it never networks). If git/network is unavailable, say so and suggest updating manually later (never assume either exists).
 
-1. **Check.** Web-check the latest published CoalLedger tag (any means available — the GitHub releases/tags page or API) vs the installed `version` in `.claude-plugin/plugin.json`.
-2. **Offer (consent-gated — the only token spend).** Newer available → OFFER `claude plugin update coalledger@coalledger` (then restart); on a file-copy install, offer to re-copy the updated files instead. Already current → say so in one line.
-3. **Cadence.** Save the pick (no forced check — the chosen mode drives future sessions): `node scripts/configure.mjs --updateMode <ask|auto|remind|off>` (run from the CoalLedger repo, or wherever `.coalledger.json` lives) — or hand-edit `updateMode` and `updateCheckDays` in `.coalledger.json` directly if you have no repo checkout. `auto` lets this check run when due without re-asking; `off` silences it entirely.
+1. **Check.** Web-check the latest published CoalLedger tag (any means available—the GitHub releases/tags page or API) vs the installed `version` in `.claude-plugin/plugin.json`.
+2. **Offer (consent-gated—the only token spend).** Newer available → OFFER `claude plugin update coalledger@coalledger` (then restart); on a file-copy install, offer to re-copy the updated files instead. Already current → say so in one line.
+3. **Cadence.** Save the pick (no forced check—the chosen mode drives future sessions): `node scripts/configure.mjs --updateMode <ask|auto|remind|off>` (run from the CoalLedger repo, or wherever `.coalledger.json` lives)—or hand-edit `updateMode` and `updateCheckDays` in `.coalledger.json` directly if you have no repo checkout. `auto` lets this check run when due without re-asking; `off` silences it entirely.
