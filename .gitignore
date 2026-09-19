@@ -21,3 +21,4 @@ dist-claude-ai/
 # CoalLedger/scratchpad/ as the return path) — machine-local, never shipped.
 # Flock-canonical: CoalMine's own .gitignore carries the identical `scratchpad/` line.
 scratchpad/
+coverage/
