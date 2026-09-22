@@ -55,7 +55,12 @@ function printHelp() {
     const flags = [`--${spec.key}`, ...(spec.flags || [])].join(', ');
     lines.push(`  ${flags.padEnd(48)} ${spec.help}`);
   }
-  lines.push(`  ${'--global'.padEnd(48)} Write ~/.claude/.coalledger.json (the global layer) instead of the project config`);
+  // CWK-120 row 8: this line printed a FIXED `~/.claude/.coalledger.json` while
+  // the writer resolves the path through `globalConfigPath()`, which honours
+  // CLAUDE_CONFIG_DIR — so a user who sets that variable was told the wrong
+  // destination BY THE TOOL THAT WRITES IT. Derived from the same function the
+  // write uses, so the help can never drift from the behaviour again.
+  lines.push(`  ${'--global'.padEnd(48)} Write ${globalConfigPath()} (the global layer) instead of the project config`);
   lines.push(`  ${'--help, -h'.padEnd(48)} Show this help message`);
   lines.push('');
   lines.push('Examples:');
@@ -184,7 +189,22 @@ function main() {
   if (rawConfig !== null) {
     try {
       hadComments = rawConfig.includes('//');
-      cfg = parseJsonc(rawConfig) || {}; // proto-pollution-guarded parse (jsonc.mjs)
+      const parsed = parseJsonc(rawConfig); // proto-pollution-guarded parse (jsonc.mjs)
+      // CWK-120 row 4 / the flock class (main's `.github` adjudication #14): the
+      // old `|| {}` only caught a FALSY parse, so a VALID JSON body that is not a
+      // plain object — `[]`, `"str"`, `42` — was carried forward AS the config:
+      // the key assignment below then landed on an array or was dropped onto a
+      // primitive, and the write-back shipped a config no reader can use. The
+      // READ side already refuses exactly this (`config-load.mjs` readJsonc:
+      // `parsed && typeof parsed === 'object' && !Array.isArray(parsed)`), so the
+      // predicate is mirrored rather than invented. Routed into the EXISTING
+      // malformed path (backup + warn + non-zero exit) by throwing here: "not an
+      // object" is malformed for this consumer, and a second handler would be a
+      // second place to keep in step.
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('top-level config value is not a JSON object');
+      }
+      cfg = parsed;
     } catch (e) {
       // Fail loud (scripts-quality §1): a malformed config we silently overwrite is a
       // partial failure the user must notice — flag the non-zero exit even though the

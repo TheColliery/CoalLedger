@@ -155,3 +155,68 @@ test('configure: an .agents-only project (no .claude/ dir anywhere) does NOT get
     assert.strictEqual(fs.existsSync(path.join(proj, '.claude')), false, 'no foreign .claude/ may be planted into an .agents-only project');
   } finally { clean(home, proj); }
 });
+
+// ---------------------------------------------------------------------------
+// CWK-120 rows 4 + 8 (CodeRabbit claims, verified at source before adopting).
+// ONE ASSERTION PER BEHAVIOUR (this room has paid five times for a
+// multi-assertion sabotage test that could not discriminate).
+//
+// Row 4 / ride-along (a), the flock class from main's `.github` adjudication
+// #14: `parseJsonc(raw) || {}` accepts a parsed body that is NOT a plain
+// object -- `[]`, `"str"`, `42` -- as the config. The read side already
+// refuses it (`config-load.mjs` readJsonc: `parsed && typeof parsed ===
+// 'object' && !Array.isArray(parsed) ? parsed : {}`); this CLI did not.
+// ---------------------------------------------------------------------------
+test('configure: an ARRAY top-level config is refused, and the file written back is a plain object', () => {
+  const { home, proj } = sandbox();
+  try {
+    const target = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, '[]\n', 'utf8'); // valid JSON, not a plain object
+    run(['--language', 'th'], { home, proj });
+    const written = JSON.parse(fs.readFileSync(target, 'utf8'));
+    assert.strictEqual(Array.isArray(written) || written === null || typeof written !== 'object', false,
+      'a non-object config must never be carried forward as the config -- the write-back must be a plain object');
+  } finally { clean(home, proj); }
+});
+
+test('configure: an ARRAY top-level config takes the MALFORMED path -- exit 1 (scripts-quality §1, fail loud)', () => {
+  const { home, proj } = sandbox();
+  try {
+    const target = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, '[]\n', 'utf8');
+    const r = run(['--language', 'th'], { home, proj });
+    assert.strictEqual(r.status, 1, `a malformed (non-object) config must exit non-zero, got ${r.status}: ${r.stdout}${r.stderr}`);
+  } finally { clean(home, proj); }
+});
+
+test('configure: a STRING top-level config is refused the same way (the class is not array-only)', () => {
+  const { home, proj } = sandbox();
+  try {
+    const target = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, '"just a string"\n', 'utf8');
+    run(['--language', 'th'], { home, proj });
+    const written = JSON.parse(fs.readFileSync(target, 'utf8'));
+    assert.strictEqual(written.language, 'th',
+      'the rebuilt config must be a plain object carrying the requested key');
+  } finally { clean(home, proj); }
+});
+
+// Row 8: the --global help line printed a FIXED `~/.claude/.coalledger.json`
+// while `globalConfigPath()` honours CLAUDE_CONFIG_DIR -- so a user with that
+// variable set was told the wrong destination by the tool that writes it.
+test('configure --help: the --global line names the path this run would ACTUALLY write (CLAUDE_CONFIG_DIR honoured)', () => {
+  const { home, proj } = sandbox();
+  const cfgDir = path.join(home, 'custom-agent-dir');
+  try {
+    fs.mkdirSync(cfgDir, { recursive: true });
+    const r = spawnSync(process.execPath, [CLI, '--help'], {
+      cwd: proj, encoding: 'utf8', timeout: 20000,
+      env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: cfgDir },
+    });
+    assert.ok(r.stdout.includes(path.join(cfgDir, '.coalledger.json')),
+      `the --global help line must name the resolved global path; got:\n${r.stdout}`);
+  } finally { clean(home, proj); }
+});

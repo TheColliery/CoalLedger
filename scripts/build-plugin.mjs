@@ -139,8 +139,22 @@ export function buildDist(distRoot = dist) {
 // byte-for-byte, distRoot must hold nothing under those items without a source
 // (orphan), and no top-level entry may exist that no DIST_ITEM accounts for.
 // Returns [] when in sync.
-export function checkDist(distRoot = dist) {
+// CWK-120 row 3 (CodeRabbit, `filesUnder`'s `existsSync` bail below): a DIST_ITEM
+// whose SOURCE is absent contributes NOTHING in either direction — `filesUnder`
+// returns [] for a missing path, so the forward walk finds no files to compare and
+// the orphan walk finds no dist copy either. Delete `hooks/` from both trees and
+// the gate reports IN SYNC: its own contract ("every source file under DIST_ITEMS
+// must exist in distRoot") is silently vacuous for a whole missing item, and the
+// plugin ships without a capability with a green gate behind it.
+// Exported (and root-parameterised) because that is the testable seam: an absent
+// source cannot be simulated against the real repo without mutating the tree.
+export function missingDistSources(srcRoot = repo) {
+  return DIST_ITEMS.filter((rel) => !fs.existsSync(path.join(srcRoot, rel)));
+}
+
+export function checkDist(distRoot = dist, srcRoot = repo) {
   const out = [];
+  for (const rel of missingDistSources(srcRoot)) out.push(`missing source DIST_ITEM: ${rel} (nothing to ship, and nothing compared)`);
   const filesUnder = (root, rel) => {
     if (isDistExcluded(rel)) return []; // excluded from the dist -> excluded here too, both directions
     const abs = path.join(root, rel);
@@ -149,21 +163,26 @@ export function checkDist(distRoot = dist) {
     return [rel];
   };
   for (const item of DIST_ITEMS) {
-    for (const rel of filesUnder(repo, item)) {
+    for (const rel of filesUnder(srcRoot, item)) {
       const d = path.join(distRoot, rel);
       if (!fs.existsSync(d)) out.push(`missing in plugin/: ${rel}`);
-      else if (!filesMatch(path.join(repo, rel), d)) out.push(`stale in plugin/: ${rel}`);
+      else if (!filesMatch(path.join(srcRoot, rel), d)) out.push(`stale in plugin/: ${rel}`);
     }
     for (const rel of filesUnder(distRoot, item)) {
       if (GENERATED.has(rel)) continue; // build output, byte-checked against its own source below
-      if (!fs.existsSync(path.join(repo, rel))) out.push(`orphan in plugin/ (no source): ${rel}`);
+      if (!fs.existsSync(path.join(srcRoot, rel))) out.push(`orphan in plugin/ (no source): ${rel}`);
     }
   }
   // The generated engine copy: present + byte-identical to the ONE source.
   for (const [distRel, srcRel] of GENERATED) {
     const d = path.join(distRoot, distRel);
-    if (!fs.existsSync(d)) out.push(`missing in plugin/ (generated from ${srcRel}): ${distRel}`);
-    else if (!filesMatch(path.join(repo, srcRel), d)) out.push(`stale in plugin/ (generated from ${srcRel}): ${distRel}`);
+    const s = path.join(srcRoot, srcRel);
+    // The source side is asserted too (CWK-120 row 3's own class one layer down):
+    // without it `filesMatch` would THROW ENOENT on an absent generator source —
+    // a gate crash instead of an enumerated FAIL line (scripts-quality §1).
+    if (!fs.existsSync(s)) out.push(`missing source for generated copy: ${srcRel} (would generate ${distRel})`);
+    else if (!fs.existsSync(d)) out.push(`missing in plugin/ (generated from ${srcRel}): ${distRel}`);
+    else if (!filesMatch(s, d)) out.push(`stale in plugin/ (generated from ${srcRel}): ${distRel}`);
   }
   const allowedTops = new Set(DIST_ITEMS.map((rel) => rel.split(path.sep)[0]));
   if (fs.existsSync(distRoot)) {

@@ -334,3 +334,19 @@ test('FIXBACK 3 (named trade, mutation target B -- the FENCE stop): front matter
 test('the HTML mask requires a real tag/comment opener -- bare angle-bracket prose is NOT swallowed', () => {
   assert.equal(checkText('如果甲<乙,那么丙>丁,否则戊').length, 2);
 });
+
+// ---------------------------------------------------------------------------
+// CWK-120 row 10 (CodeRabbit, `lang-mechanics.mjs:311`): `snippet` was sliced
+// out of the MASKED line, so a finding whose 12-char context window reaches an
+// inline code span / link / tag / URL reported `xxxxxx` instead of the author's
+// own text -- a finding a human cannot act on without opening the file. The
+// mask is length-preserving (`'x'.repeat(s.length)`), so the SAME indices are
+// valid in the raw line: only the snippet's SOURCE was wrong, never its offsets.
+// ---------------------------------------------------------------------------
+test('snippet comes from the RAW line, never the masked one (a masked span inside the context window)', () => {
+  const raw = '你好,再见 `inline code` 尾';
+  const hits = checkText(raw);
+  assert.equal(hits.length, 1);
+  assert.ok(raw.includes(hits[0].snippet),
+    `the snippet must be a substring of the raw line; got ${JSON.stringify(hits[0].snippet)}`);
+});

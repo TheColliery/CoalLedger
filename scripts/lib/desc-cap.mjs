@@ -25,8 +25,21 @@ export function frontmatterField(text, key) {
   if (i === -1) return null;
   let v = lines[i].slice(key.length + 1).trim();
   if (/^[>|][-+]?$/.test(v)) {
+    // CWK-120 row 3 of the CodeRabbit set (`desc-cap.mjs:29`): the loop used to
+    // stop at the FIRST line that was not indented-and-non-empty, so a BLANK
+    // line INSIDE the block scalar — legal YAML, and a paragraph break in a `>-`
+    // value — truncated the parse. The consequence is not cosmetic: the cap
+    // check then measured only the head of the description and an OVER-CAP value
+    // passed the gate, which is the one thing this file exists to prevent.
+    // A blank line is now carried THROUGH; the scan still ends at the next
+    // top-level field (a non-indented, non-empty line — the YAML rule), so it
+    // cannot over-reach past the scalar. Trailing blanks contribute nothing.
     const parts = [];
-    for (let j = i + 1; j < lines.length && /^\s+\S/.test(lines[j]); j++) parts.push(lines[j].trim());
+    for (let j = i + 1; j < lines.length; j++) {
+      if (/^\s*$/.test(lines[j])) continue; // blank: inside the scalar, not its end
+      if (!/^\s/.test(lines[j])) break; // the next top-level field ends the scalar
+      parts.push(lines[j].trim());
+    }
     return parts.join(' ');
   }
   if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);

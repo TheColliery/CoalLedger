@@ -156,48 +156,71 @@ test('CWK-079 non-locality: a shape-rejected citation planted ALONE under a giti
 // that unit fixed the LOCAL CHECKOUT; this fixture reproduces the CLASS on a fresh,
 // synthetic tree so the code-side fix (the injection-site probe) is proven independent
 // of any one checkout staying clean.
-test('verify.mjs 2.12 pointers: CWK-090 fix 2 -- a lone-CR .gitignore line false-matches an absent root under the bare feed; the injection-site probe and the real gate are immune', () => {
+//
+// CWK-120 row 11 (CodeRabbit, `verify.test.mjs:194`) -- SPLIT INTO TWO TESTS, which is
+// more than the claim asked for and is this room's own rule rather than the bot's.
+// The claim: a host git version may not carry the lone-CR quirk, and `assert.fail` then
+// reports a REPOSITORY FAILURE for an environment difference nobody can fix -- under the
+// red-run law every red is a next-turn obligation, so a characterization that did not
+// reproduce would manufacture exactly the cry-wolf the canary suite exists to prevent.
+// The bot proposed `t.skip` + return and NOTED that the later assertions would then stop
+// running. Those later assertions are the ones that matter (they prove the GATE is
+// immune, independent of whether the quirk reproduces at all), and AGENTS.md's hard-won
+// rule is ONE SKIPPABLE LEG PER TEST -- a test holding one skippable leg plus real
+// assertions reports `pass 0, skipped 1` while those assertions silently did not run.
+// So: the quirk characterization gets its own capability-gated test that skips VISIBLY,
+// and the control + end-to-end proofs get their own UNCONDITIONAL test.
+function loneCrFixture() {
   const dir = pointerScratchRepo();
+  // A real pattern (dist-claude-ai/, this room's own live gitignored ZIP-staging dir)
+  // so a genuine ignore still exists to control against, PLUS a lone-CR blank line --
+  // the shape that actually false-matches. Written as raw bytes (Buffer, not a JS
+  // template string) so the CR survives untouched through core.autocrlf's smudge
+  // filter, matching the real corruption this room measured on its own working tree.
+  fs.writeFileSync(path.join(dir, '.gitignore'), Buffer.from('dist-claude-ai/\r\n\r\n', 'binary'));
+  // A citation to a root that is ABSENT from disk and named by no pattern -- the shape
+  // that reproduces. Under the bug this token would be swallowed into a false
+  // "gitignored" FAIL instead of the silent out-of-scope skip it correctly gets
+  // (neither an ourRoot nor resolvable beside its citer).
+  fs.appendFileSync(path.join(dir, 'README.md'), '\nSee `totally-fake-root/notes.md` for details.\n');
+  spawnSync('git', ['config', 'core.autocrlf', 'true'], { cwd: dir, encoding: 'utf8' });
+  spawnSync('git', ['add', '-A'], { cwd: dir, encoding: 'utf8' });
+  assert.ok(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8').includes('\r\n\r\n'),
+    'the working-tree .gitignore must actually carry the lone-CR blank line -- the shape this fixture exists to test');
+  assert.equal(fs.existsSync(path.join(dir, 'totally-fake-root')), false,
+    'the probed root must be genuinely absent -- that absence is what the false match depends on');
+  return dir;
+}
+
+// CHARACTERIZATION, capability-gated: it asserts what the HOST GIT does, so a host that
+// does not carry the quirk is SKIPPED (visibly, naming the git version), never failed.
+// This is the file's ONE skippable leg.
+test('verify.mjs 2.12 pointers: CWK-090 fix 2 -- CHARACTERIZATION: a lone-CR .gitignore line false-matches an absent root under the bare feed (skipped where the host git does not reproduce it)', (t) => {
+  const dir = loneCrFixture();
   try {
-    // A real pattern (dist-claude-ai/, this room's own live gitignored ZIP-staging dir)
-    // so a genuine ignore still exists to control against, PLUS a lone-CR blank line --
-    // the shape that actually false-matches. Written as raw bytes (Buffer, not a JS
-    // template string) so the CR survives untouched through core.autocrlf's smudge
-    // filter, matching the real corruption this room measured on its own working tree.
-    fs.writeFileSync(path.join(dir, '.gitignore'), Buffer.from('dist-claude-ai/\r\n\r\n', 'binary'));
-    // A citation to a root that is ABSENT from disk and named by no pattern -- the shape
-    // that reproduces. Under the bug this token would be swallowed into a false
-    // "gitignored" FAIL instead of the silent out-of-scope skip it correctly gets
-    // (neither an ourRoot nor resolvable beside its citer).
-    fs.appendFileSync(path.join(dir, 'README.md'), '\nSee `totally-fake-root/notes.md` for details.\n');
-
-    const git = (args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
-    git(['config', 'core.autocrlf', 'true']);
-    git(['add', '-A']);
-    assert.ok(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8').includes('\r\n\r\n'),
-      'the working-tree .gitignore must actually carry the lone-CR blank line -- the shape this fixture exists to test');
-    assert.equal(fs.existsSync(path.join(dir, 'totally-fake-root')), false,
-      'the probed root must be genuinely absent -- that absence is what the false match depends on');
-
     // THE DISCRIMINATING PAIR, at the git level, on the SAME real fixture -- no source
     // substitution needed, since the bare feed and the probe feed are both real,
     // independent git invocations.
     const bare = spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'totally-fake-root/\n' });
     if (bare.status !== 0) {
-      // SAY SO, per the order: do not ship a green test as a proof of a class that did
-      // not reproduce on this box/git version. Recorded rather than asserted false.
-      assert.fail('FIX 2 RED CASE DID NOT REPRODUCE on this box (git ' +
+      t.skip('the lone-CR .gitignore line did not false-match an absent root under the bare feed on this box (git ' +
         spawnSync('git', ['--version'], { encoding: 'utf8' }).stdout.trim() +
-        ') -- the lone-CR .gitignore line did not false-match an absent root under the bare feed; bare.status=' + bare.status);
+        ', bare.status=' + bare.status + ') -- the characterization is NOT EXERCISED here, and the gate-side proof lives in its own test below');
+      return;
     }
-    assert.equal(bare.status, 0,
-      'RED: the bare feed must reproduce the false match on THIS fixture -- an absent, un-patterned root reported ignored');
     const probed = spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'totally-fake-root/.pointer-check-probe\n' });
     assert.equal(probed.status, 1, 'the injection-site feed correctly reports the SAME root as NOT ignored');
     const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'totally-fake-root/\n' });
     assert.match(verbose.stdout, /\.gitignore:2:/,
       'the matching pattern must be the lone-CR line (line 2), naming the source unambiguously');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
 
+// THE PROOFS THAT MUST RUN EVERYWHERE -- they assert OUR gate's behaviour, not the host
+// git's quirk, so they are unconditional on every box and every git version.
+test('verify.mjs 2.12 pointers: CWK-090 fix 2 -- the injection-site probe loses no true positive and the real gate is immune to the lone-CR fixture', () => {
+  const dir = loneCrFixture();
+  try {
     // CONTROL: a genuinely-ignored root still matches under BOTH feeds -- the probe loses
     // no true positive.
     assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'dist-claude-ai/\n' }).status, 0);

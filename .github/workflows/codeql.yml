@@ -35,6 +35,21 @@ jobs:
     name: analyze (javascript)
     runs-on: ubuntu-latest
     permissions:
+      # CWK-120 row 5 (CodeRabbit). A job-level `permissions:` block REPLACES the
+      # workflow-level one -- it does not merge (this room measured that exact fact
+      # in its own board #117 work on claude-ai-zips.yml) -- so the top-level
+      # `contents: read` above does NOT reach this job, and every scope this block
+      # omits is `none`. `actions/checkout` below therefore ran with no contents
+      # read granted. It resolves TODAY because the repo is PUBLIC (measured, not
+      # reasoned: this workflow's runs on main are green, CWK-112's widening
+      # included); the grant is added so the job does not silently break the day
+      # the repo, the token defaults, or the checkout action change.
+      # The bot's claim said "both job-level permission blocks" and this file has
+      # exactly ONE job (`analyze`) with exactly ONE such block -- counted, not
+      # assumed. `actions: read` is NOT added: codeql-action recommends it for
+      # PRIVATE repos only, and minimum-power (Q#4) says an unneeded scope stays
+      # ungranted.
+      contents: read
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

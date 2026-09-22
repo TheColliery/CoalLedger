@@ -1,6 +1,6 @@
 # CoalLedger Privacy Policy
 
-**CoalLedger collects nothing and phones nowhere by default—the one online step is yours to consent to.**
+**CoalLedger collects nothing and phones nowhere by default—every online step is yours to consent to.**
 
 - **No telemetry.** No usage data, analytics, or identifiers are collected, stored, or transmitted—by the hooks, the engine scripts, or the skills.
 - **No network calls from the shipped code.** The hooks and every engine script are offline by design (Phoenix #7): local filesystem only, no sockets, no requests. (The self-update *check* is the agent's `/coalledger:update` procedure, run only with your consent—never a hook.)

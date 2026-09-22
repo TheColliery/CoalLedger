@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildDist, checkDist, DIST_ITEMS } from './build-plugin.mjs';
+import { buildDist, checkDist, DIST_ITEMS, missingDistSources } from './build-plugin.mjs';
 
 function scratchDist() {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-dist-')));
@@ -95,4 +95,42 @@ test('checkDist negative control: a REAL content edit under CRLF still fails lou
     const drift = checkDist(dist);
     assert.ok(drift.some((d) => d.includes('stale in plugin/') && (d.includes('commands/stats.md') || d.includes('commands\\stats.md'))), drift.join('; '));
   } finally { fs.rmSync(dist, { recursive: true, force: true }); }
+});
+
+
+// ---------------------------------------------------------------------------
+// CWK-120 row 3 (CodeRabbit, `build-plugin.mjs:147`): `filesUnder` returns `[]`
+// for a path that does not exist, so a DIST_ITEM whose SOURCE is absent
+// contributes NOTHING in either direction -- delete `hooks/` from the source
+// tree and from `plugin/`, and `checkDist` still reports IN SYNC. The gate's own
+// contract ("every source file under DIST_ITEMS must exist in distRoot") is
+// silently vacuous for a whole missing item. `missingDistSources` is the
+// testable seam: it takes a root, so an absent source can be simulated without
+// touching the real tree.
+// ---------------------------------------------------------------------------
+test('missingDistSources: names every DIST_ITEM whose SOURCE is absent (an empty tree reports all of them)', () => {
+  const empty = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-nosrc-')));
+  try {
+    assert.deepStrictEqual(missingDistSources(empty).sort(), [...DIST_ITEMS].sort());
+  } finally { fs.rmSync(empty, { recursive: true, force: true }); }
+});
+
+test('missingDistSources: the real repo has every DIST_ITEM source present (the liveness control)', () => {
+  assert.deepStrictEqual(missingDistSources(), []);
+});
+
+test('checkDist REPORTS a missing source DIST_ITEM instead of passing it silently', () => {
+  const dist = scratchDist();
+  const partial = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-partial-')));
+  try {
+    buildDist(dist);
+    // A source root holding only SOME of the DIST_ITEMS: the gate must name the rest.
+    fs.mkdirSync(path.join(partial, 'hooks'), { recursive: true });
+    const out = checkDist(dist, partial);
+    assert.ok(out.some((l) => /missing source DIST_ITEM/.test(l)),
+      `checkDist must report the absent source items; got: ${JSON.stringify(out)}`);
+  } finally {
+    fs.rmSync(dist, { recursive: true, force: true });
+    fs.rmSync(partial, { recursive: true, force: true });
+  }
 });

@@ -407,6 +407,26 @@ try {
       ['hooks/hooks.json (JSON manifest, not prose)', (f) => f === 'hooks/hooks.json'],
       ['scripts/fixtures/*.md (planted-defect test fixtures, not real ship-text)', (f) => f.startsWith('scripts/fixtures/')],
       ['root non-doc files (LICENSE, NOTICE, lint/git config)', (f) => ['LICENSE', 'NOTICE', '.markdownlint.json', '.gitignore', '.gitattributes'].includes(f)],
+      // CWK-120 BOUNCE 1 (F1+F2) — three root files entered the TRACKED set in this
+      // unit and this accounting block is the one declared-out row that is a ROSTER
+      // rather than a predicate, so it takes the edit. The sibling shipped the same
+      // three rows under this very ticket (CoalMine/scripts/verify.mjs, its
+      // `.coderabbit.yaml` row cites `CWK-120 (c)`) — ONE FLOCK ONE COLOR: we had
+      // adopted the FILES and not the gate row beside them. Every reason below is
+      // RE-MEASURED HERE, never inherited: `pointerCandidates()` over each file
+      // returns 0 at this tree (0 / 0 / 0, run against the live bytes), so a
+      // DEFAULT_SURFACE_PLAN row would be vacuous — a declared-out row is the honest
+      // shape, not a shortcut around walking them.
+      ['.coderabbit.yaml (third-party review-bot config, byte-identical to the org canon template; fixed schema, and pointerCandidates() over it returns 0 at this tree — a plan row would be vacuous)', (f) => f === '.coderabbit.yaml'],
+      ['.gitbook.yaml (GitBook build config — one `root:` key plus a `structure:` map of `readme:`/`summary:`, no comments, pointerCandidates() = 0 here)', (f) => f === '.gitbook.yaml'],
+      // SUMMARY.md is the one of the three that carries real links, so its reason is
+      // the one that must name a LIVE gate rather than an absence: measured here, its
+      // 9 entries are read by `md-checks.mjs` (0 findings on the real tree; a broken
+      // entry produces a `file-missing` finding, proven on a scratch copy), and
+      // link-check.yml's own filter (`git ls-files '*.md'` minus plugin/ and
+      // scripts/fixtures/) now lists SUMMARY.md — so a dead nav entry reddens that
+      // workflow on every push. Coverage lives in that gate, not in a human promise.
+      ['SUMMARY.md (GitBook nav list, not ship-text prose; pointerCandidates() = 0 here, and its relative links are gated on every push by link-check.yml running md-checks.mjs over it)', (f) => f === 'SUMMARY.md'],
     ];
     let declaredOutCount = 0;
     const residueFiles = [];

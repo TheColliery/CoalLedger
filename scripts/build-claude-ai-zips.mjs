@@ -41,7 +41,18 @@ function replaceDescriptionField(text, newValue) {
   let end = i + 1;
   const v = lines[i].slice('description:'.length).trim();
   if (/^[>|][-+]?$/.test(v)) {
-    while (end < lines.length && /^\s+\S/.test(lines[end])) end++;
+    // CWK-120 row 9's class, SECOND site (the claim named `desc-cap.mjs:29`;
+    // this scan is the same shape and its miss is worse): an internal BLANK line
+    // used to end the block scalar, so a rewrite would have replaced only the
+    // HEAD of the description and left the orphaned tail lines standing in the
+    // frontmatter of a SHIPPED SKILL.md. Carry blank lines through, end at the
+    // last real continuation line (so trailing blanks are preserved, not eaten),
+    // and stop at the next top-level field.
+    let j = i + 1;
+    while (j < lines.length && (/^\s*$/.test(lines[j]) || /^\s/.test(lines[j]))) {
+      if (/\S/.test(lines[j])) end = j + 1;
+      j++;
+    }
   }
   const escaped = newValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const newLines = [...lines.slice(0, i), `description: "${escaped}"`, ...lines.slice(end)];
@@ -60,6 +71,17 @@ async function main() {
 
   fs.rmSync(outDir, { recursive: true, force: true });
   const skills = fs.readdirSync(pluginSkills, { withFileTypes: true }).filter((e) => e.isDirectory());
+  // CWK-120 row 2 (CodeRabbit, this line): the guard above covers plugin/skills
+  // ABSENT; an EMPTY plugin/skills fell straight through — the loop never ran,
+  // `failed` stayed 0, and the script exited 0 printing `Done: 0/0 skill(s)
+  // staged`. The claude-ai-zips workflow would then attach ZERO assets to a
+  // Release and report success: a failure reported as a clean bill, which is the
+  // class this room has already paid for in its own link-check gate (CWK-092).
+  if (skills.length === 0) {
+    console.error(`FAIL: ${pluginSkills} holds no skill directories — nothing to stage; run node scripts/build-plugin.mjs first.`);
+    process.exitCode = 1;
+    return;
+  }
   let failed = 0;
   for (const skill of skills) {
     try {

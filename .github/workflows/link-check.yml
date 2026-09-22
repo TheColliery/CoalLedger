@@ -66,12 +66,27 @@ jobs:
       # that has paid for it twice. Fixed by asserting the file list is non-empty BEFORE
       # the engine ever runs. Proven both directions: a forced-empty list exits 1 here
       # (never reaching the engine at all); the real 14-file scope still exits 0.
+      #
+      # CWK-120 row 6 (CodeRabbit): the list was built as one newline-joined STRING
+      # and expanded UNQUOTED, so bash word-split it on IFS and then glob-expanded
+      # the pieces. A tracked doc named `Install Guide.md` became two arguments and
+      # the engine was handed two paths that do not exist -- the gate RED on a valid
+      # tree; a `*` or `[` in a filename would expand against the working directory.
+      # Live exposure today is ZERO (measured: `git ls-files '*.md' | grep -E '[ *?[]'`
+      # matches nothing across the 14 in-scope docs), so this is latent, and the
+      # NUL-delimited array is the only form that cannot rot into it. `-z` on both
+      # greps keeps the filter NUL-delimited end to end; `mapfile -d ''` needs
+      # bash >= 4.4 (the ubuntu-latest runner ships 5.x).
+      # The CWK-092 non-empty guard is PRESERVED and is now strictly stronger: a
+      # filter that yields nothing is caught by the explicit count test rather than
+      # by the pipeline's own exit status (a zero-match `grep` exits 1 -- this room
+      # has published that instrument failure against itself twice).
       - run: |
-          files=$(git ls-files '*.md' | grep -v '^plugin/' | grep -v '^scripts/fixtures/')
-          if [ -z "$files" ]; then
+          mapfile -d '' -t files < <(git ls-files -z '*.md' | grep -zv '^plugin/' | grep -zv '^scripts/fixtures/')
+          if [ ${#files[@]} -eq 0 ]; then
             echo "::error::link-check found NO markdown files to scan -- the scope filter is broken, not the tree"
             exit 1
           fi
-          out=$(node scripts/lib/md-checks.mjs $files)
+          out=$(node scripts/lib/md-checks.mjs "${files[@]}")
           echo "$out"
           echo "$out" | tail -1 | grep -qE '^0 finding' || { echo "::error::link-check found broken links/anchors/tables -- see findings above"; exit 1; }

@@ -308,7 +308,16 @@ export function checkText(text, opts = {}) {
           line: i + 1,
           col: m.index + 1,
           length: m[1] ? m[1].length : m[0].length,
-          snippet: line.slice(Math.max(0, m.index - 12), m.index + (m[1] ? m[1].length : m[0].length) + 12),
+          // CWK-120 (CodeRabbit, this line): the snippet was sliced out of the
+          // MASKED line, so a finding whose 12-char context window reached an
+          // inline code span / link / tag / URL reported `xxxxxx` instead of the
+          // author's own text — a finding a human cannot act on without opening
+          // the file. The OFFSETS were never wrong: `mask` is length-preserving
+          // (`'x'.repeat(s.length)`), so the same indices address the same
+          // characters in `raw`. Only the snippet's SOURCE changes here; `col`
+          // and `length` above still come from the match on the masked line,
+          // which is what makes them correct.
+          snippet: raw.slice(Math.max(0, m.index - 12), m.index + (m[1] ? m[1].length : m[0].length) + 12),
         });
       }
     }
