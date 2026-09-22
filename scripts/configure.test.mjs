@@ -17,9 +17,17 @@ const CLI = path.join(REPO, 'scripts', 'configure.mjs');
 
 // home = a throwaway ~ (no global .coalledger.json -> global write lands clean)
 // proj = the project dir the CLI runs from (cwd)
+// UMB-133: `proj` lives INSIDE the sandbox `home`, never beside it. This CLI
+// WRITES, and its root walk stops only AT `home`: a sibling `proj` climbed on
+// out of the sandbox, through %TEMP%, to the developer's REAL home, where their
+// real `~/.claude/.coalledger.json` — spelled exactly like the nested legacy,
+// and not the sandbox home's global, so not excluded — became the walk's root
+// marker and the WRITE TARGET. `--language th` landed in the real global config.
+// Nesting proj under the sandbox home makes the walk terminate there.
 function sandbox() {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-cfg-home-')));
-  const proj = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-cfg-proj-')));
+  const proj = path.join(home, 'proj');
+  fs.mkdirSync(proj);
   return { home, proj };
 }
 function clean(...dirs) { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); }
@@ -92,6 +100,32 @@ test('configure: a LEGACY-root config migrates on write, and the old file is rem
     assert.strictEqual(fs.existsSync(path.join(proj, '.coalledger.json')), false, 'the legacy root file must be removed after a successful migration');
     assert.ok(r.stdout.includes('Migrated the project config'), 'the migration must be announced, not silent');
   } finally { clean(home, proj); }
+});
+
+// UMB-133 addendum (2): the NESTED legacy `.claude/.coalledger.json` migrates on
+// write exactly as the root legacy does — one deprecation, one migration path.
+// One assertion per test, on purpose.
+function nestedLegacySandbox(t) {
+  const { home, proj } = sandbox();
+  t.after(() => clean(home, proj));
+  const nested = path.join(proj, '.claude', '.coalledger.json');
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.writeFileSync(nested, JSON.stringify({ updateCheckDays: 30 }));
+  return { home, proj, nested, r: run(['--language', 'en'], { home, proj }) };
+}
+test('configure: a NESTED-legacy config migrates on write — its values land at the canonical path', (t) => {
+  const { proj, r } = nestedLegacySandbox(t);
+  assert.strictEqual(r.status, 0, `expected exit 0, stderr: ${r.stderr}`);
+  const migrated = path.join(proj, '.claude', 'coal', 'coalledger.json');
+  assert.strictEqual(JSON.parse(fs.readFileSync(migrated, 'utf8')).updateCheckDays, 30);
+});
+test('configure: a NESTED-legacy config migrates on write — the old file is removed', (t) => {
+  const { nested } = nestedLegacySandbox(t);
+  assert.strictEqual(fs.existsSync(nested), false);
+});
+test('configure: a NESTED-legacy migration is announced, not silent', (t) => {
+  const { r } = nestedLegacySandbox(t);
+  assert.ok(r.stdout.includes('Migrated the project config'), r.stdout);
 });
 
 // --------------------------------------------------------------------------

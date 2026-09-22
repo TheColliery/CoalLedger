@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -319,7 +320,13 @@ test('AG: coalledgerMode off at the payload cwd -> no emit (marker still latches
 test('AG: manual mode -> silent (offers gated; the self-update nudge is deliberately not ported)', () => {
   const { home, proj, tmp } = agSandbox();
   try {
-    writeProjCfg(proj, { coalledgerMode: 'manual' });
+    // UMB-133: configured at the CANONICAL path. This test used a ROOT-legacy
+    // config, which now (correctly) emits the one-line migration notice even in
+    // manual mode — covered by its own test below. The legacy anchor sandbox()
+    // drops in stays, shadowed by the canonical file (canonical wins, no notice).
+    const canon = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.mkdirSync(path.dirname(canon), { recursive: true });
+    fs.writeFileSync(canon, JSON.stringify({ coalledgerMode: 'manual' }), 'utf8');
     const r = agRun(proj, home, tmp, payload('s-manual', proj));
     assertGraceful(r);
     assert.strictEqual(r.stdout, '');
@@ -389,4 +396,179 @@ test('AG: language lock rides the emit', () => {
     assertGraceful(r);
     assert.ok(agInject(r.stdout).includes('(language=th'), r.stdout);
   } finally { clean(home, proj, tmp); }
+});
+
+// ---------------------------------------------------------------------------
+// UMB-133 — the config-path notices, through BOTH conductors. buildOffers takes
+// them as a third parameter (default []), each caller computes them from its
+// own cwd, so the one shared assembly serves CC and AG by construction.
+// One discriminating assertion per test.
+// ---------------------------------------------------------------------------
+const CANON_REL = '.claude/coal/coalledger.json';
+const ignoredLine = (p) => `[CoalLedger] IGNORED: ${p} is not a config path; canonical = ${CANON_REL}`;
+const legacyLine = (p) => `[CoalLedger] LEGACY: ${p} is a deprecated config path (still read); move it to ${CANON_REL}`;
+function writeCanonCfg(proj, cfg) {
+  const f = path.join(proj, '.claude', 'coal', 'coalledger.json');
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, JSON.stringify(cfg), 'utf8');
+}
+
+test('UMB-133 CC: a LEGACY-anchored project (auto mode) gets the ONE migration line', () => {
+  const { home, proj } = sandbox(); // sandbox() anchors the project with the ROOT legacy .coalledger.json
+  try {
+    const r = run(proj, home);
+    assertGraceful(r);
+    assert.ok(r.stdout.split('\n').includes(legacyLine(path.join(proj, '.coalledger.json'))), r.stdout);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 CC: a config at a path nothing reads is NAMED with the exact IGNORED line', () => {
+  const { home, proj } = sandbox();
+  try {
+    const stray = path.join(proj, 'coalledger.json'); // the dropped-dot typo
+    fs.writeFileSync(stray, '{ "coalledgerMode": "off" }');
+    const r = run(proj, home);
+    assertGraceful(r);
+    assert.ok(r.stdout.split('\n').includes(ignoredLine(stray)), r.stdout);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 CC: silence — a canonical config and no stray file -> NO notice line', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.rmSync(path.join(proj, '.coalledger.json')); // drop the legacy anchor
+    writeCanonCfg(proj, {});
+    const r = run(proj, home);
+    assertGraceful(r);
+    assert.strictEqual(/^\[CoalLedger\] (LEGACY|IGNORED): /m.test(r.stdout), false, r.stdout);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 CC: MANUAL mode still says so — the notice is the only config line, offers stay silent', () => {
+  const { home, proj } = sandbox();
+  try {
+    writeProjCfg(proj, { coalledgerMode: 'manual' }); // a ROOT legacy config
+    const r = run(proj, home);
+    assertGraceful(r);
+    assert.ok(r.stdout.split('\n').includes(legacyLine(path.join(proj, '.coalledger.json'))), r.stdout);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 CC: the Phoenix #13 CEILING — mode off stays fully silent even with a stray file present', () => {
+  const { home, proj } = sandbox();
+  try {
+    writeProjCfg(proj, { coalledgerMode: 'off' });
+    fs.writeFileSync(path.join(proj, 'coalledger.json'), '{}');
+    const r = run(proj, home);
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '');
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 CC: a config at the NESTED legacy is honoured — its VALUES reach the conductor (mode off there -> silent)', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.rmSync(path.join(proj, '.coalledger.json'));
+    const nested = path.join(proj, '.claude', '.coalledger.json');
+    fs.mkdirSync(path.dirname(nested), { recursive: true });
+    fs.writeFileSync(nested, JSON.stringify({ coalledgerMode: 'off' }));
+    const r = run(proj, home);
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '', 'before UMB-133 this file was silently dead and the conductor ran in auto mode');
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 AG: MANUAL mode with a LEGACY config emits the migration line inside the one-line injectSteps JSON', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    writeProjCfg(proj, { coalledgerMode: 'manual' }); // a ROOT legacy config
+    const r = agRun(proj, home, tmp, payload('s-legacy', proj));
+    assertGraceful(r);
+    assert.ok(agInject(r.stdout.split('\n').filter(Boolean)[0]).split('\n').includes(legacyLine(path.join(proj, '.coalledger.json'))), r.stdout);
+  } finally { clean(home, proj, tmp); }
+});
+
+test('UMB-133 AG: a stray file is NAMED, computed from the PAYLOAD workspace — spawn cwd elsewhere', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    const stray = path.join(proj, '.claude', 'coalledger.json'); // missing coal/
+    fs.mkdirSync(path.dirname(stray), { recursive: true });
+    fs.writeFileSync(stray, '{}');
+    const r = agRun(home, home, tmp, payload('s-stray', proj)); // spawn cwd = home, NOT the project
+    assertGraceful(r);
+    assert.ok(agInject(r.stdout.split('\n').filter(Boolean)[0]).split('\n').includes(ignoredLine(stray)), r.stdout);
+  } finally { clean(home, proj, tmp); }
+});
+
+test('UMB-133 AG: the Phoenix #13 CEILING — mode off stays fully silent even with a stray file present', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    writeProjCfg(proj, { coalledgerMode: 'off' });
+    fs.writeFileSync(path.join(proj, 'coalledger.json'), '{}');
+    const r = agRun(proj, home, tmp, payload('s-off-stray', proj));
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '');
+  } finally { clean(home, proj, tmp); }
+});
+
+// buildOffers' third parameter, directly (the shared assembly both platforms call).
+const require_ = createRequire(import.meta.url);
+const { buildOffers: buildOffersDirect } = require_(path.join(REPO, 'hooks', 'coalledger-conductor.js'));
+const passthroughRead = (cfg, k) => cfg[k];
+// The third parameter is a THUNK since bounce-1 F4 (an array is no longer
+// accepted — see buildOffers' own comment for why the union was refused).
+test('UMB-133 buildOffers: the notices are appended AFTER the offer block', () => {
+  const out = buildOffersDirect({ coalledgerMode: 'auto', disabledCanaries: [], docLeak: true }, passthroughRead, () => ['N1', 'N2']);
+  assert.deepStrictEqual(out.slice(-2), ['N1', 'N2']);
+});
+
+test('UMB-133 buildOffers: a caller passing NO third argument is unchanged (no thunk = no notices, every existing caller stays valid)', () => {
+  const cfg = { coalledgerMode: 'manual', disabledCanaries: [], docLeak: true };
+  assert.deepStrictEqual(buildOffersDirect(cfg, passthroughRead), []);
+});
+
+test('UMB-133 buildOffers: gated fully off returns null WITHOUT surfacing notices (the consent gate stays)', () => {
+  assert.strictEqual(buildOffersDirect({ coalledgerMode: 'off', disabledCanaries: [] }, passthroughRead, () => ['N1']), null);
+});
+
+// ---------------------------------------------------------------------------
+// UMB-133 bounce-1 F4: the notices are LAZY. Building them costs a root walk
+// plus up to ten stats, and a conductor gated fully off returns null before it
+// ever uses them — so an off-mode user was paying for output nobody sees
+// ("silent ✓, free ✗"). The thunk is resolved INSIDE the one shared gate, past
+// both null-returns; the mode/disabled check is NOT duplicated in the two
+// callers, which is the whole reason buildOffers is shared. Phoenix #4's
+// fail-silent wrap moves with the call.
+// One discriminating assertion per test.
+// ---------------------------------------------------------------------------
+test('UMB-133 F4: the notices THUNK is resolved past the gates and appended after the offer block', () => {
+  let calls = 0;
+  const out = buildOffersDirect({ coalledgerMode: 'auto', disabledCanaries: [], docLeak: true }, passthroughRead, () => { calls++; return ['N1']; });
+  assert.deepStrictEqual([calls, out.slice(-1)], [1, ['N1']]);
+});
+
+test('UMB-133 F4: a THROWING notices thunk never reaches the caller (Phoenix #4 travels with the call)', () => {
+  const cfg = { coalledgerMode: 'manual', disabledCanaries: [], docLeak: true };
+  assert.deepStrictEqual(buildOffersDirect(cfg, passthroughRead, () => { throw new Error('boom'); }), []);
+});
+
+test('UMB-133 F4: mode off never RESOLVES the thunk — the probe is not PAID, not merely not printed (REGRESSION GUARD: not discriminating on its own, it passed before the fix too)', () => {
+  let calls = 0;
+  buildOffersDirect({ coalledgerMode: 'off', disabledCanaries: [] }, passthroughRead, () => { calls++; return ['N1']; });
+  assert.strictEqual(calls, 0);
+});
+
+test('UMB-133 F4: a conductor silenced through disabledCanaries never resolves the thunk either (the second gate)', () => {
+  let calls = 0;
+  buildOffersDirect({ coalledgerMode: 'auto', disabledCanaries: ['conductor'] }, passthroughRead, () => { calls++; return ['N1']; });
+  assert.strictEqual(calls, 0);
+});
+
+test('UMB-133 F4: BOTH conductor callers pass a THUNK, never a precomputed array (the defect lived in the CALLERS, not the assembly)', () => {
+  const eager = [];
+  for (const rel of [path.join('hooks', 'coalledger-conductor.js'), path.join('hooks', 'ag-conductor.js')]) {
+    const src = fs.readFileSync(path.join(REPO, rel), 'utf8');
+    if (!/buildOffers\(cfg, clampedRead, \(\) => configNotices\(/.test(src)) eager.push(rel);
+  }
+  assert.deepStrictEqual(eager, []);
 });

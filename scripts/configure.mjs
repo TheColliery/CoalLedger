@@ -152,13 +152,20 @@ function main() {
   const isGlobal = globalIdx !== -1;
   if (isGlobal) args.splice(globalIdx, 1);
   const projectRoot = findProjectRoot(process.cwd());
-  const legacyPath = path.join(projectRoot, '.coalledger.json');
+  // UMB-133: BOTH legacy shapes migrate on write — the nested
+  // `.claude/.coalledger.json` as well as the root `.coalledger.json`. A
+  // deprecation whose migration fires for one legacy shape and not the other
+  // would be two rules wearing one name (and the README would have to describe
+  // the asymmetry to be true). `readPath` is whichever candidate the read walk
+  // returned, so at most one of these can match it.
+  const legacyPaths = [path.join(projectRoot, '.claude', '.coalledger.json'), path.join(projectRoot, '.coalledger.json')];
   const readPath = isGlobal
     ? globalConfigPath()
     : projectConfigPath(process.cwd());
+  const migrating = !isGlobal && legacyPaths.includes(readPath);
   const writePath = isGlobal
     ? readPath
-    : (readPath === legacyPath ? ownDirDefault(projectRoot) : readPath);
+    : (migrating ? ownDirDefault(projectRoot) : readPath);
 
   let cfg = {};
   let hadComments = false;
@@ -225,9 +232,9 @@ function main() {
     // writePath moved away from it). Best-effort — a failed delete here still
     // leaves a correctly-written new config; the stray legacy file is simply
     // not cleaned up this run.
-    if (readPath === legacyPath && writePath !== legacyPath) {
-      try { fs.rmSync(legacyPath, { force: true }); } catch {}
-      console.log(`Migrated the project config from ${legacyPath} to ${writePath}.`);
+    if (migrating && writePath !== readPath) {
+      try { fs.rmSync(readPath, { force: true }); } catch {}
+      console.log(`Migrated the project config from ${readPath} to ${writePath}.`);
     }
     if (hadComments) {
       console.warn('Note: inline comments were stripped (this tool writes plain JSON). Every key stays documented in platform-configs/.coalledger.json.');

@@ -4,14 +4,30 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as configLoad from './config-load.mjs';
 import { globalConfigPath, findProjectRoot, projectConfigCandidates, projectConfigPath, loadMergedConfig } from './config-load.mjs';
+// UMB-133: imported as a namespace member so the notices tests below go RED
+// (a missing export reads `configNotices is not a function`) before the
+// function exists, rather than failing the whole file at link time and taking
+// every pre-existing test with it.
+const configNotices = (...a) => configLoad.configNotices(...a);
 import { clampedRead } from './config-schema.mjs'; // CWK-057: the clamp and the schema validator compose; one test asserts the composed result
 
 // realpath'd sandboxes: on macOS os.tmpdir() is a symlink (/var -> /private/var);
 // resolving here keeps assertions in the same physical form the walk sees.
+// UMB-133: `proj` now lives INSIDE the sandbox `home` (it was a sibling under
+// os.tmpdir()). The walk stops AT home, so a project inside the sandbox home can
+// never climb past it. A sibling proj climbed on up through the REAL machine —
+// %TEMP% is under the developer's real home on Windows — and once the NESTED
+// legacy became a root marker, a real `~/.claude/.coalledger.json` (the
+// developer's own GLOBAL config, which is not the sandbox home's global)
+// anchored the walk on the real home and failed three unrelated tests. Every
+// test here passes this `home` to the walk, so this makes them hermetic instead
+// of dependent on what happens to sit above the temp dir.
 function sandbox() {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-home-')));
-  const proj = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-proj-')));
+  const proj = path.join(home, 'proj');
+  fs.mkdirSync(proj);
   return { home, proj };
 }
 function clean(...dirs) {
@@ -70,13 +86,14 @@ test('a .git marker also roots the project', () => {
 // wins; absent everywhere -> own-dir is both the read and write target.
 // --------------------------------------------------------------------------
 
-test('projectConfigCandidates: ordered list, agent dirs first (fixed order), legacy last', () => {
+test('projectConfigCandidates: ordered list, agent dirs first (fixed order), then the NESTED legacy, then the root legacy last (UMB-133)', () => {
   const { home, proj } = sandbox();
   try {
     assert.deepStrictEqual(projectConfigCandidates(proj, home), [
       path.join(proj, '.claude', 'coal', 'coalledger.json'),
       path.join(proj, '.agents', 'coal', 'coalledger.json'),
       path.join(proj, '.gemini', 'coal', 'coalledger.json'),
+      path.join(proj, '.claude', '.coalledger.json'),
       path.join(proj, '.coalledger.json'),
     ]);
   } finally { clean(home, proj); }
@@ -469,4 +486,294 @@ test('clamp: safer-value-wins is candidate-path-independent — a MISSING global
       );
     } finally { clean(home, proj); }
   }
+});
+
+// --------------------------------------------------------------------------
+// UMB-133 — the config-path unification. A `.coalledger.json` at a path the
+// walk never reads used to be SILENTLY DEAD (the incident class: a consent
+// written where a user reasonably expects it, walked past, silence read as
+// "honoured"). Now: BOTH legacy shapes are honoured (nested before root,
+// canonical before both), a legacy hit says so once, and a config at a path
+// that is NOT read is NAMED. One discriminating assertion per test, on
+// purpose: a throw on the first of two sequential assertions masks the second
+// (this room paid for that shape four times — see MEMORY.md).
+// --------------------------------------------------------------------------
+
+const CANON = '.claude/coal/coalledger.json';
+const ignoredLine = (p) => `[CoalLedger] IGNORED: ${p} is not a config path; canonical = ${CANON}`;
+const legacyLine = (p) => `[CoalLedger] LEGACY: ${p} is a deprecated config path (still read); move it to ${CANON}`;
+function put(file, text = '{}') {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, text);
+}
+
+test('UMB-133 (1) a config at the NESTED legacy <root>/.claude/.coalledger.json is FOUND', () => {
+  const { home, proj } = sandbox();
+  try {
+    const nested = path.join(proj, '.claude', '.coalledger.json');
+    put(nested);
+    assert.strictEqual(projectConfigPath(proj, home), nested);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (1) ...and its VALUES are honoured — the silent-dead-config incident, end to end', () => {
+  const { home, proj } = sandbox();
+  try {
+    put(path.join(proj, '.claude', '.coalledger.json'), '{ "updateCheckDays": 3 }');
+    assert.strictEqual(loadMergedConfig({ cwd: proj, home }).updateCheckDays, 3);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (3) order: the CANONICAL path wins over BOTH legacies', () => {
+  const { home, proj } = sandbox();
+  try {
+    const canon = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    put(canon);
+    put(path.join(proj, '.claude', '.coalledger.json'));
+    put(path.join(proj, '.coalledger.json'));
+    assert.strictEqual(projectConfigPath(proj, home), canon);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (3) order: the NESTED legacy wins over the ROOT legacy', () => {
+  const { home, proj } = sandbox();
+  try {
+    const nested = path.join(proj, '.claude', '.coalledger.json');
+    put(nested);
+    put(path.join(proj, '.coalledger.json'));
+    assert.strictEqual(projectConfigPath(proj, home), nested);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (2, guard) the ROOT legacy <root>/.coalledger.json is still FOUND when the nested one is absent', () => {
+  const { home, proj } = sandbox();
+  try {
+    const rootLegacy = path.join(proj, '.coalledger.json');
+    put(rootLegacy);
+    assert.strictEqual(projectConfigPath(proj, home), rootLegacy);
+  } finally { clean(home, proj); }
+});
+
+// The near-MISS list: shapes a user plausibly writes by hand that are NOT
+// candidates. Listed here as literals, independently of the source, so the
+// shipped list cannot quietly shrink. One test per shape.
+const NEAR_MISSES = [
+  'coalledger.json', // dropped the leading dot
+  '.claude/coalledger.json', // dropped coal/ ...
+  '.agents/coalledger.json', // ... at each agent dir
+  '.gemini/coalledger.json',
+  '.agents/.coalledger.json', // the nested legacy at the OTHER agent dirs (.claude's is a candidate now)
+  '.gemini/.coalledger.json',
+  '.claude/coal/.coalledger.json', // dotted inside coal/ ...
+  '.agents/coal/.coalledger.json', // ... at each agent dir
+  '.gemini/coal/.coalledger.json',
+];
+for (const rel of NEAR_MISSES) {
+  test(`UMB-133 (4) a config at the non-candidate <root>/${rel} is REPORTED with the exact IGNORED line`, () => {
+    const { home, proj } = sandbox();
+    try {
+      const p = path.join(proj, ...rel.split('/'));
+      put(p);
+      assert.deepStrictEqual(configNotices(proj, home), [ignoredLine(p)]);
+    } finally { clean(home, proj); }
+  });
+}
+
+test('UMB-133 (4) several near-misses are each named, once, in the fixed list order', () => {
+  const { home, proj } = sandbox();
+  try {
+    const a = path.join(proj, 'coalledger.json');
+    const b = path.join(proj, '.claude', 'coal', '.coalledger.json');
+    put(b); put(a); // created out of order on purpose
+    assert.deepStrictEqual(configNotices(proj, home), [ignoredLine(a), ignoredLine(b)]);
+  } finally { clean(home, proj); }
+});
+
+test("UMB-133 (4) a SIBLING room's config is NOT this room's to report on", () => {
+  const { home, proj } = sandbox();
+  try {
+    for (const sib of ['.coalmine.json', '.coaltipple.json', '.coalboard.json', '.coalwash.json']) put(path.join(proj, sib));
+    assert.deepStrictEqual(configNotices(proj, home), []);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (5) a hit on the NESTED legacy emits exactly ONE migration line', () => {
+  const { home, proj } = sandbox();
+  try {
+    const nested = path.join(proj, '.claude', '.coalledger.json');
+    put(nested);
+    assert.deepStrictEqual(configNotices(proj, home), [legacyLine(nested)]);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (5) a hit on the ROOT legacy emits exactly ONE migration line', () => {
+  const { home, proj } = sandbox();
+  try {
+    const rootLegacy = path.join(proj, '.coalledger.json');
+    put(rootLegacy);
+    assert.deepStrictEqual(configNotices(proj, home), [legacyLine(rootLegacy)]);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (5) only the legacy that WON is named — a shadowed root legacy is not double-reported', () => {
+  const { home, proj } = sandbox();
+  try {
+    const nested = path.join(proj, '.claude', '.coalledger.json');
+    put(nested);
+    put(path.join(proj, '.coalledger.json'));
+    assert.deepStrictEqual(configNotices(proj, home), [legacyLine(nested)]);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (6) silence: a canonical config and nothing else -> the notices array is EMPTY', () => {
+  const { home, proj } = sandbox();
+  try {
+    put(path.join(proj, '.claude', 'coal', 'coalledger.json'));
+    assert.deepStrictEqual(configNotices(proj, home), []);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (6) silence: no config anywhere -> the notices array is EMPTY', () => {
+  const { home, proj } = sandbox();
+  try {
+    assert.deepStrictEqual(configNotices(proj, home), []);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (7) a project anchored ONLY by the nested legacy resolves its own root (no .git, no other config)', () => {
+  const { home, proj } = sandbox();
+  try {
+    put(path.join(proj, '.claude', '.coalledger.json'));
+    const deep = path.join(proj, 'src', 'deep');
+    fs.mkdirSync(deep, { recursive: true });
+    assert.strictEqual(findProjectRoot(deep, home), proj);
+  } finally { clean(home, proj); }
+});
+
+// The trap the order did not state: `<home>/.claude/.coalledger.json` IS the
+// GLOBAL config, and it is now spelled exactly like the nested legacy. Without
+// a guard, every user with a global config would (a) have any cwd under home
+// resolve its "project root" to HOME, (b) read their own global file back as a
+// project layer, and (c) be told to migrate a config that is not a project
+// config at all.
+test('UMB-133 (8) the GLOBAL config is not a project-root marker: a bare dir under home falls back to startDir, never to home', () => {
+  const { home, proj } = sandbox();
+  try {
+    put(globalConfigPath(home));
+    const bare = path.join(home, 'work', 'deep');
+    fs.mkdirSync(bare, { recursive: true });
+    assert.strictEqual(findProjectRoot(bare, home), bare);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (8) the GLOBAL config raises no migration notice from a bare dir under home', () => {
+  const { home, proj } = sandbox();
+  try {
+    put(globalConfigPath(home));
+    const bare = path.join(home, 'work', 'deep');
+    fs.mkdirSync(bare, { recursive: true });
+    assert.deepStrictEqual(configNotices(bare, home), []);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (8) when root === home (a .git at home) the GLOBAL config is not offered as a project candidate', () => {
+  const { home, proj } = sandbox();
+  try {
+    put(globalConfigPath(home));
+    fs.mkdirSync(path.join(home, '.git'));
+    assert.strictEqual(projectConfigCandidates(home, home).includes(globalConfigPath(home)), false);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 (8) a CLAUDE_CONFIG_DIR pointed at another agent dir: the GLOBAL config is not reported as an IGNORED project file', () => {
+  const { home, proj } = sandbox();
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  try {
+    process.env.CLAUDE_CONFIG_DIR = path.join(home, '.gemini'); // global = <home>/.gemini/.coalledger.json = a near-miss shape at root===home
+    put(globalConfigPath(home));
+    fs.mkdirSync(path.join(home, '.git'));
+    assert.deepStrictEqual(configNotices(home, home), []);
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
+    clean(home, proj);
+  }
+});
+
+test('UMB-133 (8) when root === home the GLOBAL config raises no migration notice', () => {
+  const { home, proj } = sandbox();
+  try {
+    put(globalConfigPath(home));
+    fs.mkdirSync(path.join(home, '.git'));
+    assert.deepStrictEqual(configNotices(home, home), []);
+  } finally { clean(home, proj); }
+});
+
+// --------------------------------------------------------------------------
+// UMB-133 bounce-1 F3: a DIRECTORY at a candidate path is not a config file.
+// `existsSync` is TRUE for a directory, so a stray `mkdir` (or a botched sync)
+// at a candidate path used to win the walk, become a root marker, and earn a
+// "move it to …" instruction — while a real config one candidate lower was
+// shadowed and silently unread (`readJsonc` catches the EISDIR and returns
+// `{}`). That is the silent-dead-config shape this unit exists to close, one
+// layer over. Cure: `isFile` (the mirror of `ownDirDefault`'s own `isDir`).
+// One discriminating assertion per test.
+// --------------------------------------------------------------------------
+function putDir(p) { fs.mkdirSync(p, { recursive: true }); }
+
+test('UMB-133 F3: a DIRECTORY at the nested-legacy candidate does not win the walk — a real config one candidate lower does', () => {
+  const { home, proj } = sandbox();
+  try {
+    putDir(path.join(proj, '.claude', '.coalledger.json'));
+    const rootLegacy = path.join(proj, '.coalledger.json');
+    put(rootLegacy);
+    assert.strictEqual(projectConfigPath(proj, home), rootLegacy);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 F3: a DIRECTORY at the nested-legacy candidate earns NO "move it" LEGACY line', () => {
+  const { home, proj } = sandbox();
+  try {
+    putDir(path.join(proj, '.claude', '.coalledger.json'));
+    put(path.join(proj, '.coalledger.json')); // the real config, one candidate lower
+    assert.deepStrictEqual(configNotices(proj, home), [legacyLine(path.join(proj, '.coalledger.json'))]);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 F3: a DIRECTORY at a canonical candidate does not win the walk either (the pre-existing half of the class)', () => {
+  const { home, proj } = sandbox();
+  try {
+    putDir(path.join(proj, '.claude', 'coal', 'coalledger.json'));
+    const agents = path.join(proj, '.agents', 'coal', 'coalledger.json');
+    put(agents);
+    assert.strictEqual(projectConfigPath(proj, home), agents);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 F3: a DIRECTORY at a NEAR-MISS path is not reported as an IGNORED config', () => {
+  const { home, proj } = sandbox();
+  try {
+    putDir(path.join(proj, 'coalledger.json'));
+    put(path.join(proj, '.claude', 'coal', 'coalledger.json')); // canonical, so no LEGACY line either
+    assert.deepStrictEqual(configNotices(proj, home), []);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 F3: a DIRECTORY at a config marker does not ROOT the project (both root-finders agree a directory is not a config)', () => {
+  const { home, proj } = sandbox();
+  try {
+    putDir(path.join(proj, '.claude', '.coalledger.json'));
+    const deep = path.join(proj, 'src', 'deep');
+    fs.mkdirSync(deep, { recursive: true });
+    assert.strictEqual(findProjectRoot(deep, home), deep, 'no real config anywhere -> falls back to startDir');
+  } finally { clean(home, proj); }
+});
+
+test('UMB-133 F3: `.git` stays an existence check — it IS a directory and must still root the project', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.git'));
+    const deep = path.join(proj, 'src', 'deep');
+    fs.mkdirSync(deep, { recursive: true });
+    assert.strictEqual(findProjectRoot(deep, home), proj);
+  } finally { clean(home, proj); }
 });
