@@ -856,6 +856,10 @@ function parseInlines(raw, definitions, pt) {
       else hi = mid - 1;
     }
     const seg = segs[lo];
+    // an end exactly where a contiguous seg starts (a table cell's dropped
+    // backslash, see makeRow) belongs to the previous seg, not past the gap
+    const prev = segs[lo - 1];
+    if (end && prev && v === seg.v && prev.v + prev.len === v) return prev.src + prev.len;
     const within = Math.min(Math.max(v - seg.v, 0), seg.len);
     if (end && v - seg.v > seg.len) return seg.src + seg.len; // in the virtual '\n' gap
     return seg.src + within;

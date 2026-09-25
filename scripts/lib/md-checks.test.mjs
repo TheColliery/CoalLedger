@@ -371,3 +371,11 @@ test('table cells: an escaped pipe loses its backslash, in and out of a code spa
   assert.strictEqual(tables[0].children[1].children[1].children[0].type, 'inlineCode');
   assert.deepStrictEqual(checkDocument(src, { filePath: path.join(FIX, 'table-escaped-pipe.md') }), []);
 });
+
+test('table cells: a node ending right before a dropped backslash keeps its own source end (CWK-153)', () => {
+  const src = '| h |\n| - |\n| [x](url)\\|tail |\n';
+  const links = [];
+  walk(parseMarkdown(src), (n) => { if (n.type === 'link') links.push(n); });
+  assert.strictEqual(links.length, 1);
+  assert.strictEqual(src.slice(links[0].position.start.offset, links[0].position.end.offset), '[x](url)');
+});
