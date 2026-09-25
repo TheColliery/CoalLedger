@@ -233,33 +233,41 @@ function matchListItem(text, p, col) {
 }
 
 // Split a GFM table row into cells honoring backslash escapes.
-// Returns [{ text, offset }] — offset = char index of the cell's first
+// Returns [{ text, offset, gaps }] — offset = char index of the cell's first
 // (untrimmed) char within `text`; `hadPipe` = an unescaped | was seen.
+// An escaped pipe `\|` is cell CONTENT and loses its backslash here, before
+// inline parsing, so it is unescaped inside a code span too (GFM Tables
+// extension, cmark-gfm unescape_pipes). `gaps` = indices in the cell's text
+// where one source char (that backslash) was dropped, so makeRow can keep
+// source positions honest.
 function splitRow(text) {
   const cells = [];
   let cur = '';
+  let gaps = [];
   let cellStart = 0;
   let sawPipe = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
+    if (c === '\\' && text[i + 1] === '|') { gaps.push(cur.length); cur += '|'; i++; continue; }
     if (c === '\\' && i + 1 < text.length) { cur += c + text[i + 1]; i++; continue; }
     if (c === '|') {
       sawPipe = true;
-      cells.push({ text: cur, offset: cellStart });
+      cells.push({ text: cur, offset: cellStart, gaps });
       cur = '';
+      gaps = [];
       cellStart = i + 1;
       continue;
     }
     cur += c;
   }
-  cells.push({ text: cur, offset: cellStart });
+  cells.push({ text: cur, offset: cellStart, gaps });
   // Boundary pipes: a leading | and a trailing | delimit, they don't add cells.
   if (cells.length && cells[0].text.trim() === '' && text.trimStart().startsWith('|')) cells.shift();
   if (cells.length && cells[cells.length - 1].text.trim() === '' && text.trimEnd().endsWith('|') && !text.trimEnd().endsWith('\\|')) cells.pop();
   // Trim each cell, keeping source offsets honest.
   const out = cells.map((c) => {
     const lead = c.text.length - c.text.trimStart().length;
-    return { text: c.text.trim(), offset: c.offset + lead };
+    return { text: c.text.trim(), offset: c.offset + lead, gaps: c.gaps.map((g) => g - lead) };
   });
   return { cells: out, hadPipe: sawPipe };
 }
@@ -724,16 +732,31 @@ export function parseMarkdown(src) {
 
   function makeRow(cells, rowSrcBase) {
     // rowSrcBase = source offset of the row text's char 0 (cells carry offsets
-    // relative to the SPLIT string, which started at the row's first char)
+    // relative to the SPLIT string, which started at the row's first char).
+    // Each unescaped pipe (c.gaps) starts a new seg one source char further on.
+    const srcLen = (c) => c.text.length + c.gaps.length;
+    const cellSegs = (c) => {
+      const segs = [];
+      let v = 0;
+      let src = rowSrcBase + c.offset;
+      for (const g of c.gaps) {
+        segs.push({ v, src, len: g - v });
+        src += g - v + 1;
+        v = g;
+      }
+      segs.push({ v, src, len: c.text.length - v });
+      return segs;
+    };
+    const last = cells[cells.length - 1];
     return {
       type: 'tableRow',
       children: cells.map((c) => ({
         type: 'tableCell',
         children: [],
-        _raw: { text: c.text, segs: [{ v: 0, src: rowSrcBase + c.offset, len: c.text.length }] },
-        position: { start: pt(rowSrcBase + c.offset), end: pt(rowSrcBase + c.offset + c.text.length) },
+        _raw: { text: c.text, segs: cellSegs(c) },
+        position: { start: pt(rowSrcBase + c.offset), end: pt(rowSrcBase + c.offset + srcLen(c)) },
       })),
-      position: { start: pt(rowSrcBase), end: pt(rowSrcBase + (cells.length ? cells[cells.length - 1].offset + cells[cells.length - 1].text.length : 0)) },
+      position: { start: pt(rowSrcBase), end: pt(rowSrcBase + (cells.length ? last.offset + srcLen(last) : 0)) },
     };
   }
 

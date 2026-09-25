@@ -350,3 +350,24 @@ test('doc-unreadable: a NUL byte flags binary/corrupted input instead of a false
   const ok = checkDocument('# Title\n\nnormal content\n');
   assert.ok(!ok.some((x) => x.check === 'doc-unreadable'));
 });
+
+// CWK-153: GFM's Tables extension removes the backslash of an escaped pipe in
+// a cell BEFORE inline parsing, so it is gone even inside a code span. Both
+// body rows must read `a|b` and still have exactly three cells (the escaped
+// pipe is content, never a delimiter).
+import { walk, textContent } from './md-ast.mjs';
+
+test('table cells: an escaped pipe loses its backslash, in and out of a code span (CWK-153)', () => {
+  const src = fs.readFileSync(path.join(FIX, 'table-escaped-pipe.md'), 'utf8');
+  const tables = [];
+  walk(parseMarkdown(src), (n) => { if (n.type === 'table') tables.push(n); });
+  assert.strictEqual(tables.length, 1);
+  const rows = tables[0].children.map((r) => r.children.map(textContent));
+  assert.deepStrictEqual(rows, [
+    ['Form', 'Cell', 'Note'],
+    ['code span', 'a|b', 'escaped pipe inside a code span'],
+    ['plain', 'a|b', 'escaped pipe outside a code span'],
+  ]);
+  assert.strictEqual(tables[0].children[1].children[1].children[0].type, 'inlineCode');
+  assert.deepStrictEqual(checkDocument(src, { filePath: path.join(FIX, 'table-escaped-pipe.md') }), []);
+});
