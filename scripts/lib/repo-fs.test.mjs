@@ -401,7 +401,19 @@ test('writeRepoFile EPERM fallback: a link planted BEFORE the fallback opens (in
   }
 });
 
-test('writeRepoFile EPERM fallback: a FIFO planted before the fallback opens fails fast, never hangs (capability-gated: O_NONBLOCK + mkfifo, run in a child with a timeout)', (t) => {
+// R12 bounce 3 (CI, ubuntu + macos): this test's own expectation was wrong, not the code.
+// It was ported from CoalMine's exemplar, which rethrows the ORIGINAL caught error `e`
+// verbatim when the EPERM fallback's own open ALSO fails ("catch { throw e; }") -- but
+// OUR port (bounce 1, F1) deliberately wraps THAT branch in this module's own
+// RepoWriteRefused, for consistency with every OTHER refusal branch in writeRepoFile
+// (the upfront symlink/other checks, the stale-temp EEXIST) -- all of which already throw
+// RepoWriteRefused, never a raw node error. The FUNCTIONAL property under test (O_NONBLOCK
+// makes the FIFO open fail fast -- ENXIO -- so the fallback refuses instead of hanging or
+// writing) still holds; only the error SHAPE differs, and ours is the more actionable one
+// (security.md's problem-report MUST) -- configure.mjs already branches on
+// `instanceof RepoWriteRefused` for exactly this reason. Fixed in its own named step
+// (testing.md's own rule): the test now checks for OUR module's actual contract.
+test('writeRepoFile EPERM fallback: a FIFO planted before the fallback opens fails fast via RepoWriteRefused, never hangs, never writes (capability-gated: O_NONBLOCK + mkfifo, run in a child with a timeout)', (t) => {
   if (!fs.constants.O_NONBLOCK) { t.skip('no O_NONBLOCK on this platform'); return; }
   const root = scratch('cl-wfifo-');
   try {
@@ -411,7 +423,7 @@ test('writeRepoFile EPERM fallback: a FIFO planted before the fallback opens fai
     const child = [
       "import fs from 'node:fs';",
       "import { spawnSync } from 'node:child_process';",
-      "const { writeRepoFile } = await import(process.env.CL_REPOFS_URL);",
+      "const { writeRepoFile, RepoWriteRefused } = await import(process.env.CL_REPOFS_URL);",
       "const target = process.env.CL_TARGET;",
       "fs.renameSync = () => {",
       "  fs.unlinkSync(target);",
@@ -419,7 +431,7 @@ test('writeRepoFile EPERM fallback: a FIFO planted before the fallback opens fai
       "  throw Object.assign(new Error('EPERM: simulated'), { code: 'EPERM' });",
       "};",
       "try { writeRepoFile(target, 'NEW', process.env.CL_ROOT); console.log('wrote'); }",
-      "catch (e) { console.log('threw ' + e.code); }",
+      "catch (e) { console.log('threw ' + (e instanceof RepoWriteRefused ? 'RepoWriteRefused' : (e && e.code))); }",
     ].join('\n');
     const r = spawnSync(process.execPath, ['--input-type=module', '-e', child], {
       encoding: 'utf8',
@@ -427,7 +439,7 @@ test('writeRepoFile EPERM fallback: a FIFO planted before the fallback opens fai
       env: { ...process.env, CL_REPOFS_URL: REPOFS_URL, CL_TARGET: target, CL_ROOT: root },
     });
     assert.equal(r.status, 0, `the child must exit cleanly, not time out -- a hang here IS the regression this test exists to catch (stderr: ${r.stderr})`);
-    assert.match(r.stdout, /threw EPERM/, 'O_NONBLOCK must make the FIFO open fail ENXIO at once, so the original EPERM is rethrown -- never a hang, never a write');
+    assert.match(r.stdout, /threw RepoWriteRefused/, 'O_NONBLOCK must make the FIFO open fail fast (ENXIO), so writeRepoFile refuses via its own RepoWriteRefused channel -- never a hang, never a write, never a raw node error');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 

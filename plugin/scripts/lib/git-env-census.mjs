@@ -118,8 +118,12 @@ export const GIT_ENV_EXEMPTIONS = [
   {
     rel: 'scripts/lib/git-env.test.mjs',
     expr: 'poisoned',
-    count: 1,
-    reason: 'the hazard proof deliberately feeds a poisoned, unguarded GIT_DIR to reproduce the real incident',
+    // R12 bounce 3: the ORIGINAL single HAZARD test (1 poisoned spawn) was split into
+    // two tests plus a probe function that all deliberately reproduce the same
+    // unguarded-GIT_DIR shape (the fixture-half test, the bare-flip-capability probe,
+    // and the victim-half test) -- 3 sites now, counted exactly, not widened silently.
+    count: 3,
+    reason: 'the hazard proof (and the probe that decides whether this host can reproduce its bare-flip half) deliberately feeds a poisoned, unguarded GIT_DIR to reproduce the real incident',
   },
 ];
 
