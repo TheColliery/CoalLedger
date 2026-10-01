@@ -838,6 +838,85 @@ test('CWK-137: a project config that is a symlink ESCAPING the project root is r
   } finally { clean(home, proj); fs.rmSync(outside, { recursive: true, force: true }); }
 });
 
+// UMB-174 (b) + CWK-135 (a) — the UNREADABLE line. The winning candidate is reported
+// with the room's own canonical, the global config with its OWN path (CWK-135 a); a
+// directory candidate still never WINS (UMB-133 F3's own, unchanged selection).
+test('UMB-174 (b): a MALFORMED-JSON winner is reported UNREADABLE, canonical = the room\'s own path', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.writeFileSync(cfgPath, 'not valid json {{{');
+    const notices = configNotices(proj, home);
+    assert.deepStrictEqual(notices, [`[CoalLedger] UNREADABLE: ${cfgPath} exists but is not a readable config (malformed JSON); it was skipped — canonical = .claude/coal/coalledger.json`]);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-174 (b): a VALID-JSON-but-NOT-AN-OBJECT winner (an array) is reported "not a JSON object" (C-5)', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.writeFileSync(cfgPath, '[1,2,3]');
+    const notices = configNotices(proj, home);
+    assert.deepStrictEqual(notices, [`[CoalLedger] UNREADABLE: ${cfgPath} exists but is not a readable config (not a JSON object); it was skipped — canonical = .claude/coal/coalledger.json`]);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-174 (b): a BOM-prefixed VALID object does NOT get reported -- the BOM is stripped before the parse, same as readJsonc', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.writeFileSync(cfgPath, '﻿{"updateCheckDays":9}');
+    assert.deepStrictEqual(configNotices(proj, home), []);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-174 (b): a config at EXACTLY MAX_CONFIG_BYTES is NOT reported; one byte OVER is reported "unreadable" (CWK-137\'s own bound, named here too)', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.writeFileSync(cfgPath, '/*' + 'x'.repeat(1024 * 1024) + '*/'); // over the bound
+    const notices = configNotices(proj, home);
+    assert.deepStrictEqual(notices, [`[CoalLedger] UNREADABLE: ${cfgPath} exists but is not a readable config (unreadable); it was skipped — canonical = .claude/coal/coalledger.json`]);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-174 (b) + CWK-135 (a): a GLOBAL config that is malformed is reported with ITS OWN path as canonical, never a project path', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.dirname(globalConfigPath(home)), { recursive: true });
+    fs.writeFileSync(globalConfigPath(home), 'nope, not json');
+    const notices = configNotices(proj, home);
+    assert.deepStrictEqual(notices, [`[CoalLedger] UNREADABLE: ${globalConfigPath(home)} exists but is not a readable config (malformed JSON); it was skipped — canonical = ${globalConfigPath(home)}`]);
+  } finally { clean(home, proj); }
+});
+
+test('UMB-174 (b): a DIRECTORY at the canonical path still does not win the walk (UMB-133 F3 unchanged), and nothing UNREADABLE is reported for it', () => {
+  const { home, proj } = sandbox();
+  try {
+    putDir(path.join(proj, '.claude', 'coal', 'coalledger.json'));
+    assert.deepStrictEqual(configNotices(proj, home), [], 'a directory candidate loses the walk silently, exactly as before this unit — F3\'s own selection is untouched');
+  } finally { clean(home, proj); }
+});
+
+test('UMB-174 (b): an EACCES/EPERM-denied winner (chmod 0) is reported "unreadable" (capability-gated, C-6)', (t) => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.writeFileSync(cfgPath, '{"ok":true}');
+    fs.chmodSync(cfgPath, 0);
+    let denied = false;
+    try { fs.readFileSync(cfgPath); } catch (e) { denied = !!(e && (e.code === 'EACCES' || e.code === 'EPERM')); }
+    if (!denied) { t.skip('this volume/OS does not enforce a read denial for the owning process via chmod (e.g. NTFS)'); return; }
+    const notices = configNotices(proj, home);
+    assert.deepStrictEqual(notices, [`[CoalLedger] UNREADABLE: ${cfgPath} exists but is not a readable config (unreadable); it was skipped — canonical = .claude/coal/coalledger.json`]);
+  } finally { try { fs.chmodSync(path.join(proj, '.claude', 'coal', 'coalledger.json'), 0o600); } catch {} clean(home, proj); }
+});
+
 test('CWK-137: the GLOBAL config (root = null, a home file) still kind-gates and bounds, but does NOT require containment (a dotfile-manager symlink reads through)', (t) => {
   if (!CFG_SYMLINK_OK) { t.skip('this seat cannot create a file symlink without elevation on this box'); return; }
   const { home, proj } = sandbox();

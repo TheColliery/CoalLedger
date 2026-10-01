@@ -14,7 +14,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { parseJsonc } from './jsonc.mjs';
 import { CONFIG_SCHEMA } from './config-schema.mjs';
-import { readRepoFileBounded, MAX_CONFIG_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, repoEntryKind, MAX_CONFIG_BYTES } from './repo-fs.mjs';
 
 export function claudeBaseDir(home = os.homedir()) {
   const c = process.env.CLAUDE_CONFIG_DIR;
@@ -206,6 +206,48 @@ const NEAR_MISS_REL = [
   ...AGENT_DIR_ORDER.filter((d) => d !== '.claude').map((d) => path.join(d, '.coalledger.json')),
   ...AGENT_DIR_ORDER.map((d) => path.join(d, 'coal', '.coalledger.json')),
 ];
+// UMB-174 (b) — classify ONE config file that IS a plain file (F3 already handles a
+// directory separately: `won`/`isFile` skip past it, so it never reaches here as the
+// walk's winner) -> the flock's reason a PRESENT config could not be used, or null when
+// it reads fine. `'unreadable'` covers EACCES and EPERM both (a Windows ACL denial
+// surfaces as EPERM, not EACCES — C-6) and, by extension here, any OTHER kind this
+// room's own CWK-137 gate refuses before ever opening (a FIFO/socket/device/escaping
+// symlink, via repoEntryKind) and a config over MAX_CONFIG_BYTES: none of those had a
+// name in the flock's exemplars (CoalFace/CoalHearth), because none of them had a
+// bounded reader yet when UMB-174 (b) shipped there — 'unreadable' is the honest,
+// user-facing-accurate extension of the SAME word to the SAME outcome ("this file
+// exists, and you cannot have its contents"), not a new vocabulary term invented here.
+// A leading U+FEFF is stripped BEFORE the parse (RFC 8259 §8.1), so a BOM-prefixed
+// VALID object is never reported as malformed (same rule config-load's readJsonc
+// already applies). Branches on the fs error's CODE, never its message (node/runtime.md
+// §7). Exemplar: CoalFace v0.12.0 / CoalHearth / CoalTipple — ported, re-verified
+// against this room's own bounded-read primitives.
+function classifyConfigRead(file, root) {
+  const kind = repoEntryKind(file, root);
+  if (kind === 'missing') return null; // absent — the normal, silent case
+  if (kind === 'dir') return 'a directory';
+  if (kind === 'other') return 'unreadable'; // FIFO/socket/device/escaping-or-dangling symlink (CWK-137)
+  let fd;
+  try { fd = fs.openSync(file, fs.constants.O_RDONLY); }
+  catch (e) { return (e && (e.code === 'EACCES' || e.code === 'EPERM')) ? 'unreadable' : null; }
+  let content;
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) return 'unreadable';
+    if (st.size > MAX_CONFIG_BYTES) return 'unreadable'; // over the bound — CWK-137 skips it, never reads it
+    const buf = Buffer.alloc(st.size);
+    let n = 0;
+    while (n < st.size) { const r = fs.readSync(fd, buf, n, st.size - n, n); if (r <= 0) break; n += r; }
+    content = buf.slice(0, n).toString('utf8');
+  } catch { return null; }
+  finally { try { fs.closeSync(fd); } catch {} }
+  if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
+  let parsed;
+  try { parsed = parseJsonc(content); } catch { return 'malformed JSON'; }
+  if (!(parsed && typeof parsed === 'object' && !Array.isArray(parsed))) return 'not a JSON object';
+  return null;
+}
+
 export function configNotices(cwd = process.cwd(), home = os.homedir()) {
   const root = findProjectRoot(cwd, home);
   const out = [];
@@ -214,6 +256,23 @@ export function configNotices(cwd = process.cwd(), home = os.homedir()) {
   if (won >= AGENT_DIR_ORDER.length) {
     out.push(`[CoalLedger] LEGACY: ${candidates[won]} is a deprecated config path (still read); move it to ${CANONICAL_REL}`);
   }
+  // UMB-174 (b): the candidate that actually WON the walk still PASSED isFile() (stat
+  // only needs directory execute permission, not read permission on the file itself),
+  // so a chmod-0/ACL-denied/malformed/non-object/over-bound winner silently read as {}
+  // with no report before this line existed. CWK-135 (a): the project tier keeps the
+  // verbatim flock canonical string; only the GLOBAL tier (below) names its own path.
+  if (won !== -1) {
+    const reason = classifyConfigRead(candidates[won], root);
+    if (reason) out.push(`[CoalLedger] UNREADABLE: ${candidates[won]} exists but is not a readable config (${reason}); it was skipped — canonical = ${CANONICAL_REL}`);
+  }
+  // The GLOBAL config is read independently of the project candidate walk (both layers
+  // merge in loadMergedConfig), so it is reported independently too. CWK-135 (a): this
+  // line names the GLOBAL file's OWN path as its canonical — a project-relative
+  // canonical would send the user to the wrong place for a file that has no project
+  // location to move to.
+  const globalPath = globalConfigPath(home);
+  const globalReason = classifyConfigRead(globalPath, null);
+  if (globalReason) out.push(`[CoalLedger] UNREADABLE: ${globalPath} exists but is not a readable config (${globalReason}); it was skipped — canonical = ${globalPath}`);
   for (const rel of NEAR_MISS_REL) {
     const p = path.join(root, rel);
     // isGlobalConfig: a CLAUDE_CONFIG_DIR pointed at another agent dir must not
