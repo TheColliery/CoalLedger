@@ -41,8 +41,11 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]  # supported LTS only (24 Active, 22 Maintenance); 18/20 are EOL — bump as the Node LTS schedule moves
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10 # testing.md: every run has a finite clock; CWK-154 (2) — sized from this room's own measured suite time (~12-15s locally, zero-dependency, no install step), not the template's generic placeholder
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # CWK-154 (2) — this job reads, tests and compares; it pushes nothing
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
@@ -62,6 +65,7 @@ jobs:
     needs: gate
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5 # testing.md: every run has a finite clock; CWK-154 (2) — a bare case statement, no checkout
     steps:
       - name: gate result
         run: |

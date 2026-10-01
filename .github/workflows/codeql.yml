@@ -51,8 +51,11 @@ jobs:
       # ungranted.
       contents: read
       security-events: write
+    timeout-minutes: 15 # testing.md: every run has a finite clock; CWK-154 (2) — sized a bit above ci.yml's own light workload: CodeQL's own init/analyze time is not under this room's control
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # CWK-154 (2) — this job uploads a SARIF via the analyze action, never a git push
       - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
         with:
           languages: javascript-typescript, actions
