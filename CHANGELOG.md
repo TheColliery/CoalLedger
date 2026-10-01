@@ -2,7 +2,7 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
-## [Unreleased]
+## [0.14.0-beta.1] - 2026-10-02
 
 Closes a git-spawn environment-poisoning hazard class with a census gate, bounds and contains every repo-derived file read and write, reports a config candidate that exists but cannot be read, and fixes a table-cell escaped-pipe bug in the structure engine.
 
