@@ -79,6 +79,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readRepoFileBounded, repoEntryKind, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 const EMDASH = String.fromCharCode(0x2014);
 const THAI = /[฀-๿]/;
@@ -253,7 +254,15 @@ export function scanText(text, mode = 'spaced') {
 export function scanFile(file, mode = 'spaced') {
   if (mode === 'off') return [];
   if (isLegalPath(file)) return [];
-  return scanText(fs.readFileSync(file, 'utf8'), mode);
+  // CWK-137: this room's docs-health tooling is pointed at a cloned, possibly-hostile
+  // repo's docs by design -- bounded + kind-gated, same shape as md-checks.mjs's and
+  // lang-mechanics.mjs's own CLI reads.
+  const text = readRepoFileBounded(file, null, MAX_DOC_BYTES);
+  if (text === null) {
+    const kind = repoEntryKind(file, null);
+    throw new Error(kind === 'missing' ? `ENOENT: no such file, open '${file}'` : `refused: not a plain file reachable at this path (kind: ${kind}), or over the ${MAX_DOC_BYTES / 1048576} MB bound`);
+  }
+  return scanText(text, mode);
 }
 
 // SELF-TEST — the positive control ships WITH the instrument, so a zero from a

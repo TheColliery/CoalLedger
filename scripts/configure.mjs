@@ -43,6 +43,7 @@ import { fileURLToPath } from 'url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { parseJsonc } from './lib/jsonc.mjs';
 import { findProjectRoot, projectConfigPath, ownDirDefault, globalConfigPath } from './lib/config-load.mjs';
+import { readRepoFileBounded, writeRepoFile, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
 
 function printHelp() {
   const lines = [
@@ -180,12 +181,14 @@ function main() {
   // for U+FEFF: this room's own hard-won lesson is that a raw BOM character
   // pasted into source gets silently converted to a real char by the tool
   // layer, which is exactly what a first draft of this line did.
-  let rawConfig = null;
-  try {
-    let content = fs.readFileSync(readPath, 'utf8');
-    if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
-    rawConfig = content;
-  } catch {}
+  // CWK-137: readPath is a repo-derived (project) or home (global) file -- a plain
+  // fs.readFileSync here opened a FIFO/device/escaping-symlink target unconditionally.
+  // root=null for the global file (a home-file read, kind-gated + bounded, no
+  // containment, matching config-load.mjs's own readJsonc); root=projectRoot for the
+  // project file (must resolve inside the project).
+  const readRoot = isGlobal ? null : projectRoot;
+  let rawConfig = readRepoFileBounded(readPath, readRoot, MAX_CONFIG_BYTES);
+  if (rawConfig !== null && rawConfig.charCodeAt(0) === 0xfeff) rawConfig = rawConfig.slice(1);
   if (rawConfig !== null) {
     try {
       hadComments = rawConfig.includes('//');
@@ -211,10 +214,19 @@ function main() {
       // run continues from defaults (the old config is backed up where possible).
       process.exitCode = 1;
       try {
-        fs.copyFileSync(readPath, readPath + '.bak');
+        // CWK-137: the .bak is written FROM THE BYTES ALREADY READ (rawConfig, via the
+        // bounded reader above), through the SAME contained writer the real config
+        // write uses below — never `fs.copyFileSync(readPath, readPath + '.bak')`,
+        // which re-opens readPath and would copy a SYMLINK TARGET's bytes into the
+        // backup (CoalMine's PoC-3: a `.bak` that way held `SECRET_TOKEN`). The target
+        // readPath itself is still refused the same way any other write target is —
+        // writeRepoFile throws on an existing symlink/non-file there, same as the real
+        // config write.
+        writeRepoFile(readPath + '.bak', rawConfig, readRoot);
         console.warn(`Warning: existing config is malformed — backed it up to ${readPath}.bak and rebuilding.`);
-      } catch {
-        console.warn('Warning: existing config is malformed. Overwriting.');
+      } catch (bakErr) {
+        if (bakErr instanceof RepoWriteRefused) console.warn(`Warning: existing config is malformed, and its backup was refused (${bakErr.message}). Overwriting without a backup.`);
+        else console.warn('Warning: existing config is malformed. Overwriting.');
       }
     }
   }
@@ -245,7 +257,16 @@ function main() {
 
   try {
     fs.mkdirSync(path.dirname(writePath), { recursive: true });
-    fs.writeFileSync(writePath, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+    // CWK-137: a plain fs.writeFileSync FOLLOWS a symlink at the destination
+    // (node/runtime.md §5) -- a repo-planted symlink at writePath would have written
+    // this config's JSON into whatever it points at (CoalMine's PoC-2 class:
+    // scripts/install.mjs's upsertConfig writing through a repo-planted symlink into
+    // ~/.bashrc). writeRepoFile refuses an existing symlink/non-file target and
+    // replaces via temp+rename, which swaps the directory entry rather than writing
+    // through it. writeRoot mirrors readRoot: null for the global (home) file, the
+    // project root otherwise.
+    const writeRoot = isGlobal ? null : projectRoot;
+    writeRepoFile(writePath, JSON.stringify(cfg, null, 2) + '\n', writeRoot);
     // Move-on-CONFIG-WRITE-only (no-old-version-leftover): the legacy root
     // file is removed only AFTER the new-home write above succeeded, and only
     // when this write actually migrated it (readPath was the legacy file and

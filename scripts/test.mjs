@@ -26,6 +26,7 @@ const TESTS = [
   'scripts/lib/pointer-check.test.mjs',
   'scripts/lib/git-env.test.mjs',
   'scripts/lib/git-env-census.test.mjs',
+  'scripts/lib/repo-fs.test.mjs',
   'scripts/lib/emdash.test.mjs',
   'scripts/lib/lang-mechanics.test.mjs',
   'scripts/lib/main-module-guard.test.mjs',

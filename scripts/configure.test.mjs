@@ -220,3 +220,61 @@ test('configure --help: the --global line names the path this run would ACTUALLY
       `the --global help line must name the resolved global path; got:\n${r.stdout}`);
   } finally { clean(home, proj); }
 });
+
+// CWK-137 -- bounded reads + a contained write. End-to-end through the real CLI
+// (hermetic spawn, never imported), matching this file's own house shape.
+function canSymlinkCli() {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-cfg-symlink-probe-')));
+  try {
+    const target = path.join(dir, 't.txt');
+    fs.writeFileSync(target, 'x');
+    fs.symlinkSync(target, path.join(dir, 'l.txt'), 'file');
+    return true;
+  } catch { return false; }
+  finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+const CLI_SYMLINK_OK = canSymlinkCli();
+
+test('configure: an OVER-SIZE project config is treated as absent, never read in full, and the run still succeeds with defaults', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.writeFileSync(cfgPath, '/*' + 'x'.repeat(1024 * 1024) + '*/'); // over MAX_CONFIG_BYTES
+    const r = run(['--updateCheckDays', '9'], { home, proj });
+    assert.strictEqual(r.status, 0, `an over-size existing config must not crash the run; got:\n${r.stdout}${r.stderr}`);
+    const written = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    assert.strictEqual(written.updateCheckDays, 9, 'the rebuild must still succeed from defaults, over-size old content treated as absent');
+  } finally { clean(home, proj); }
+});
+
+test('configure: writing to the PROJECT config target that is an EXISTING SYMLINK is REFUSED (the link target is never written through, capability-gated)', (t) => {
+  if (!CLI_SYMLINK_OK) { t.skip('this seat cannot create a file symlink without elevation on this box'); return; }
+  const { home, proj } = sandbox();
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-cfg-cli-victim-')));
+  try {
+    const victim = path.join(outside, 'victim.txt');
+    fs.writeFileSync(victim, 'ORIGINAL-OUTSIDE-FILE');
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.symlinkSync(victim, cfgPath, 'file');
+    const r = run(['--updateCheckDays', '9'], { home, proj });
+    assert.notStrictEqual(r.status, 0, 'a write refused by the write guard must exit non-zero (fail loud)');
+    assert.match(r.stderr + r.stdout, /refused/i, `the refusal must be reported, not silently swallowed; got:\n${r.stdout}${r.stderr}`);
+    assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'ORIGINAL-OUTSIDE-FILE', 'the symlink target outside the project must be UNTOUCHED -- this is the actual security property');
+  } finally { clean(home, proj); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
+test('configure: a MALFORMED config\'s .bak is written from the bytes ALREADY READ, never a re-open of the original path (CoalMine PoC-3 class, capability-gated)', (t) => {
+  if (!CLI_SYMLINK_OK) { t.skip('this seat cannot create a file symlink without elevation on this box'); return; }
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.writeFileSync(cfgPath, 'not valid json at all {{{');
+    const r = run(['--updateCheckDays', '9'], { home, proj });
+    assert.strictEqual(r.status, 0, `a malformed-but-readable config must still rebuild, got:\n${r.stdout}${r.stderr}`);
+    assert.ok(fs.existsSync(cfgPath + '.bak'), 'the malformed config must be backed up');
+    assert.strictEqual(fs.readFileSync(cfgPath + '.bak', 'utf8'), 'not valid json at all {{{', 'the backup must hold EXACTLY the bytes this run read, proving it came from rawConfig, not a fresh re-open of the config path');
+  } finally { clean(home, proj); }
+});

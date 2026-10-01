@@ -58,7 +58,11 @@ export const SKILL_ENGINE_DIR = path.join('skills', 'doc-structure', 'lib');
 // source (`scripts/lib/emdash.mjs`), never a second hand-tracked file.
 export const DOC_QUALITY_ENGINE_DIR = path.join('skills', 'doc-quality', 'lib');
 export const GENERATED = new Map([
-  ...['md-ast.mjs', 'md-checks.mjs'].map((f) => [
+  // CWK-137: repo-fs.mjs (the bounded, kind-gated repo-path reader) rides beside
+  // md-checks.mjs the same way md-ast.mjs already does -- md-checks.mjs's own
+  // cross-file anchor read and the CLI's primary file read both import it, so a
+  // self-contained skill copy needs its own copy, same mechanism, same reason.
+  ...['md-ast.mjs', 'md-checks.mjs', 'repo-fs.mjs'].map((f) => [
     path.join(SKILL_ENGINE_DIR, f),
     path.join('scripts', 'lib', f),
   ]),
@@ -67,6 +71,12 @@ export const GENERATED = new Map([
   // engine, generated the identical way, into the SAME skill dir, alongside
   // (not importing) emdash.mjs -- each engine stands alone.
   [path.join(DOC_QUALITY_ENGINE_DIR, 'lang-mechanics.mjs'), path.join('scripts', 'lib', 'lang-mechanics.mjs')],
+  // CWK-137: emdash.mjs and lang-mechanics.mjs each need their OWN bounded-read
+  // helper too (their CLI entry points read a repo-derived file path directly) --
+  // a second copy of repo-fs.mjs, same file, same "each engine stands alone" rule:
+  // this one is imported by BOTH siblings in this dir, which is fine, since
+  // neither imports the OTHER, only this shared leaf.
+  [path.join(DOC_QUALITY_ENGINE_DIR, 'repo-fs.mjs'), path.join('scripts', 'lib', 'repo-fs.mjs')],
 ]);
 
 const isTest = (p) => /\.test\.[cm]?js$/.test(p);

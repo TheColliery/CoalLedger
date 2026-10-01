@@ -80,6 +80,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readRepoFileBounded, repoEntryKind, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 // ---------------------------------------------------------------------------
 // Script ranges (CWK-101-DESIGN §2) -- detection by CODEPOINT, never by a
@@ -327,7 +328,16 @@ export function checkText(text, opts = {}) {
 
 export function checkFile(file, opts = {}) {
   if (isLegalPath(file)) return [];
-  return checkText(fs.readFileSync(file, 'utf8'), opts);
+  // CWK-137: this room's docs-health CLI is pointed at a cloned, possibly-hostile
+  // repo's docs by design -- a plain fs.readFileSync here opened a FIFO/device/
+  // escaping-symlink target unconditionally. Bounded + kind-gated, same shape as
+  // md-checks.mjs's own CLI read.
+  const text = readRepoFileBounded(file, null, MAX_DOC_BYTES);
+  if (text === null) {
+    const kind = repoEntryKind(file, null);
+    throw new Error(kind === 'missing' ? `ENOENT: no such file, open '${file}'` : `refused: not a plain file reachable at this path (kind: ${kind}), or over the ${MAX_DOC_BYTES / 1048576} MB bound`);
+  }
+  return checkText(text, opts);
 }
 
 // ---------------------------------------------------------------------------

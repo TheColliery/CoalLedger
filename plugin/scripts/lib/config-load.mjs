@@ -14,6 +14,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { parseJsonc } from './jsonc.mjs';
 import { CONFIG_SCHEMA } from './config-schema.mjs';
+import { readRepoFileBounded, MAX_CONFIG_BYTES } from './repo-fs.mjs';
 
 export function claudeBaseDir(home = os.homedir()) {
   const c = process.env.CLAUDE_CONFIG_DIR;
@@ -224,9 +225,20 @@ export function configNotices(cwd = process.cwd(), home = os.homedir()) {
   return out;
 }
 
-function readJsonc(file) {
+// CWK-137 — bounded, kind-gated read on a REPO-DERIVED path: this room runs wherever a
+// user invokes it, including a cloned repo neither we nor the user fully trust. A plain
+// `fs.readFileSync` here opened whatever `file` resolved to — a symlink to `/dev/zero`
+// read forever, a FIFO with no writer blocked forever, both reachable from a hostile
+// AGENTS.md-shaped `.coalledger.json` on every SessionStart (hooks/coalledger-conductor.js
+// + hooks/ag-conductor.js both call loadMergedConfig below). `root = null` for the GLOBAL
+// config (the user's own home file — still kind-gated and bounded, never containment-
+// checked; CoalMine's Step 3 ruling 1, re-decided for this room's one home-file read) —
+// `root = <project root>` for the project config (must resolve inside the project).
+function readJsonc(file, root) {
+  const raw = readRepoFileBounded(file, root, MAX_CONFIG_BYTES);
+  if (raw === null) return {}; // missing, over-bound, or not a plain file — same as before: absent
   try {
-    let content = fs.readFileSync(file, 'utf8');
+    let content = raw;
     if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
     const parsed = parseJsonc(content); // proto-pollution-guarded parse
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
@@ -454,7 +466,8 @@ export function mergeSafety(global, project) {
 // Two-level cascade: global overlaid by the nearest project config, with the
 // consent-bearing keys clamped safer-value-wins (mergeSafety above).
 export function loadMergedConfig({ cwd = process.cwd(), home = os.homedir() } = {}) {
-  const global = readJsonc(globalConfigPath(home));
-  const project = readJsonc(projectConfigPath(cwd, home));
+  const global = readJsonc(globalConfigPath(home), null); // a home file -- no containment, still bounded
+  const projectRoot = findProjectRoot(cwd, home);
+  const project = readJsonc(projectConfigPath(cwd, home), projectRoot); // must resolve inside the project
   return mergeSafety(global, project);
 }

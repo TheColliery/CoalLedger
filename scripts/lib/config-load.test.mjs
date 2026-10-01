@@ -777,3 +777,76 @@ test('UMB-133 F3: `.git` stays an existence check — it IS a directory and must
     assert.strictEqual(findProjectRoot(deep, home), proj);
   } finally { clean(home, proj); }
 });
+
+// CWK-137 — loadMergedConfig's readJsonc now routes through the bounded, kind-gated
+// reader (scripts/lib/repo-fs.mjs). A SessionStart hook calls loadMergedConfig on every
+// session (hooks/coalledger-conductor.js, hooks/ag-conductor.js), so this is this room's
+// real, confirmed, every-session-reachable instance of the class: a cloned repo's
+// project config, or the user's own global config, pointed at a device/FIFO/escaping
+// symlink used to be opened unconditionally by a plain fs.readFileSync.
+function canSymlinkCfg() {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-cfg-symlink-probe-')));
+  try {
+    const target = path.join(dir, 't.txt');
+    fs.writeFileSync(target, 'x');
+    fs.symlinkSync(target, path.join(dir, 'l.txt'), 'file');
+    return true;
+  } catch { return false; }
+  finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+const CFG_SYMLINK_OK = canSymlinkCfg();
+
+test('CWK-137: a project config OVER the size bound is treated as absent (skipped, never truncated/thrown)', () => {
+  const { home, proj } = sandbox();
+  try {
+    putDir(path.join(proj, '.claude')); // just to anchor the dir; isFile/putFile below writes the real config
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    // one byte over MAX_CONFIG_BYTES, padded inside a comment so it still parses as
+    // valid JSONC if it WERE read — isolates the size bound from the parse layer.
+    const big = `{\n"updateCheckDays": 9\n}\n` + '/*' + 'x'.repeat(1024 * 1024) + '*/';
+    fs.writeFileSync(cfgPath, big);
+    assert.deepStrictEqual(loadMergedConfig({ cwd: proj, home }), {}, 'an over-bound project config must resolve to the schema default (absent), never throw and never a partial parse');
+  } finally { clean(home, proj); }
+});
+
+test('CWK-137: a project config AT the size bound still loads in full', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    const body = `{"updateCheckDays": 9}`;
+    const pad = 1024 * 1024 - Buffer.byteLength(body, 'utf8');
+    fs.writeFileSync(cfgPath, body + ' '.repeat(Math.max(0, pad - 1))); // pad with trailing whitespace to land AT the byte bound
+    const atBound = fs.statSync(cfgPath).size <= 1024 * 1024;
+    assert.ok(atBound, 'the fixture must actually sit at or under the bound for this test to mean anything');
+    assert.strictEqual(loadMergedConfig({ cwd: proj, home }).updateCheckDays, 9, 'a config AT the bound must still load; only strictly OVER is skipped');
+  } finally { clean(home, proj); }
+});
+
+test('CWK-137: a project config that is a symlink ESCAPING the project root is refused -- the linked target\'s content never reaches the merged config (capability-gated)', (t) => {
+  if (!CFG_SYMLINK_OK) { t.skip('this seat cannot create a file symlink without elevation on this box'); return; }
+  const { home, proj } = sandbox();
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-cfg-escape-victim-')));
+  try {
+    const victim = path.join(outside, 'victim.json');
+    fs.writeFileSync(victim, '{"updateCheckDays": 999, "coalledgerMode": "auto"}');
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.symlinkSync(victim, cfgPath, 'file');
+    assert.deepStrictEqual(loadMergedConfig({ cwd: proj, home }), {}, 'an escaping-symlink project config must be refused -- the victim content must never win the merge');
+  } finally { clean(home, proj); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
+test('CWK-137: the GLOBAL config (root = null, a home file) still kind-gates and bounds, but does NOT require containment (a dotfile-manager symlink reads through)', (t) => {
+  if (!CFG_SYMLINK_OK) { t.skip('this seat cannot create a file symlink without elevation on this box'); return; }
+  const { home, proj } = sandbox();
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-cfg-global-dotfile-')));
+  try {
+    const real = path.join(outside, 'dotfile-managed.json');
+    fs.writeFileSync(real, '{"updateCheckDays": 5}');
+    fs.mkdirSync(path.dirname(globalConfigPath(home)), { recursive: true });
+    fs.symlinkSync(real, globalConfigPath(home), 'file');
+    assert.strictEqual(loadMergedConfig({ cwd: proj, home }).updateCheckDays, 5, 'root=null means a dotfile-manager symlink for the GLOBAL config is honoured, matching CoalMine Step 3 ruling 1, re-decided for this room\'s one home-file read');
+  } finally { clean(home, proj); fs.rmSync(outside, { recursive: true, force: true }); }
+});

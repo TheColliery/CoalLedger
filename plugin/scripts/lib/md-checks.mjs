@@ -95,6 +95,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseMarkdown, walk, textContent, makeSlugger, githubSlug } from './md-ast.mjs';
+import { readRepoFileBounded, repoEntryKind, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 // A real anchor id/name only — the negative lookbehind for a word-char or hyphen
@@ -216,7 +217,17 @@ function maxContainerDepth(src) {
 export function checkDocument(src, opts = {}) {
   const filePath = opts.filePath ? path.resolve(opts.filePath) : null;
   const fileExists = opts.fileExists || ((p) => { try { return fs.existsSync(p); } catch { return false; } });
-  const readFile = opts.readFile || ((p) => fs.readFileSync(p, 'utf8'));
+  // CWK-137: a cross-file anchor target (anchorsOf below) is a REPO-DERIVED path --
+  // a link inside the doc being scanned, which may name a file this engine never
+  // chose. root=null (no containment check: the target is deliberately outside the
+  // doc's own tree sometimes, e.g. a monorepo cross-link) but still kind-gated
+  // (refuses a FIFO/device/socket before ever opening) and bounded at this file's
+  // own MAX_DOC_BYTES, never the raw fs.readFileSync this used to be.
+  const readFile = opts.readFile || ((p) => {
+    const text = readRepoFileBounded(p, null, MAX_DOC_BYTES);
+    if (text === null) throw new Error(`unreadable or over MAX_DOC_BYTES: ${p}`); // caught by anchorsOf's own try/catch -> set=null, same as today's unreadable-target handling
+    return text;
+  });
   if (typeof src === 'string' && src.length > MAX_DOC_BYTES) {
     return [{ check: 'doc-too-large', line: 1, column: 1, message: `document is ${(src.length / 1048576).toFixed(1)} MB (> ${MAX_DOC_BYTES / 1048576} MB) — too large for a structural scan; split it into smaller docs` }];
   }
@@ -490,7 +501,19 @@ if (isMainModule(import.meta.url)) {
   for (const f of files) {
     let src;
     try {
-      src = fs.readFileSync(f, 'utf8');
+      // CWK-137: a FIFO/device/escaping-symlink named on the command line used to be
+      // opened unconditionally by a plain fs.readFileSync -- this room's own PRODUCT
+      // is pointing it at a cloned, possibly-hostile repo's docs. Bounded at the IO
+      // ceiling (4 MB), not at this file's own 512 KB parser-safety MAX_DOC_BYTES: a
+      // realistic over-512KB doc must still reach checkDocument's own size check below
+      // and come back as a graceful `doc-too-large` FINDING, exactly as before this
+      // fix -- only a kind mismatch (FIFO/device/escaping link) or an astronomically
+      // large file (> 4 MB, never a real doc) is refused at the READ layer.
+      src = readRepoFileBounded(f, null, IO_CEILING_BYTES);
+      if (src === null) {
+        const kind = repoEntryKind(f, null);
+        throw new Error(kind === 'missing' ? 'ENOENT: no such file' : `refused -- not a plain file reachable at this path (kind: ${kind}), or over the ${IO_CEILING_BYTES / 1048576} MB I/O ceiling`);
+      }
     } catch (e) {
       console.error(`FAIL ${f}: ${e.message}`);
       process.exitCode = 1;
