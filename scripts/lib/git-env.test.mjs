@@ -53,14 +53,14 @@ test('gitEnv: never mutates the real process.env (the caller passes a copy to th
 // a linked worktree's own hook exports -- and show (a) an UNGUARDED fixture git spawn
 // corrupts the victim, then (b) the SAME spawn wrapped in gitEnv() leaves it untouched.
 test('THE HAZARD (unguarded): an ambient GIT_DIR pointing at a victim repo makes a fixture `git init` re-touch the victim, not the fixture', (t) => {
-  const bare = spawnSync('git', ['--version'], { encoding: 'utf8', env: gitEnv(os.tmpdir()) });
+  const bare = spawnSync('git', ['--version'], { encoding: 'utf8', env: gitEnv(os.tmpdir()), timeout: 30_000 });
   if (bare.status !== 0) { t.skip('git is not on PATH in this environment'); return; }
 
   const victim = scratch('cl-git-env-victim-');
   const fixture = scratch('cl-git-env-fixture-');
   const victimGitDir = path.join(victim, '.git');
   try {
-    assert.equal(spawnSync('git', ['init', '-q'], { cwd: victim, env: gitEnv(path.dirname(victim)) }).status, 0,
+    assert.equal(spawnSync('git', ['init', '-q'], { cwd: victim, env: gitEnv(path.dirname(victim)), timeout: 30_000 }).status, 0,
       'the victim must be a real repo before the hazard can corrupt it');
     const before = fs.readFileSync(path.join(victimGitDir, 'config'), 'utf8');
     assert.doesNotMatch(before, /bare\s*=\s*true/, 'the victim repo must start non-bare');
@@ -68,7 +68,7 @@ test('THE HAZARD (unguarded): an ambient GIT_DIR pointing at a victim repo makes
     // UNGUARDED: the ambient env (what a linked worktree's hook would export) carries an
     // absolute GIT_DIR pointing at the victim. No gitEnv() wraps this spawn.
     const poisoned = { ...process.env, GIT_DIR: victimGitDir };
-    spawnSync('git', ['init', '-q'], { cwd: fixture, env: poisoned });
+    spawnSync('git', ['init', '-q'], { cwd: fixture, env: poisoned, timeout: 30_000 });
 
     assert.equal(fs.existsSync(path.join(fixture, '.git')), false,
       'the fixture dir must get NO .git of its own -- the hazard redirected the init elsewhere');
@@ -82,14 +82,14 @@ test('THE HAZARD (unguarded): an ambient GIT_DIR pointing at a victim repo makes
 });
 
 test('THE CURE: the identical poisoned GIT_DIR, with the fixture spawn wrapped in gitEnv(), leaves the victim repo config byte-unchanged', (t) => {
-  const bare = spawnSync('git', ['--version'], { encoding: 'utf8', env: gitEnv(os.tmpdir()) });
+  const bare = spawnSync('git', ['--version'], { encoding: 'utf8', env: gitEnv(os.tmpdir()), timeout: 30_000 });
   if (bare.status !== 0) { t.skip('git is not on PATH in this environment'); return; }
 
   const victim = scratch('cl-git-env-victim2-');
   const fixture = scratch('cl-git-env-fixture2-');
   const victimGitDir = path.join(victim, '.git');
   try {
-    assert.equal(spawnSync('git', ['init', '-q'], { cwd: victim, env: gitEnv(path.dirname(victim)) }).status, 0);
+    assert.equal(spawnSync('git', ['init', '-q'], { cwd: victim, env: gitEnv(path.dirname(victim)), timeout: 30_000 }).status, 0);
     const before = fs.readFileSync(path.join(victimGitDir, 'config'), 'utf8');
     assert.doesNotMatch(before, /bare\s*=\s*true/);
 
@@ -98,7 +98,7 @@ test('THE CURE: the identical poisoned GIT_DIR, with the fixture spawn wrapped i
     const saved = process.env.GIT_DIR;
     process.env.GIT_DIR = victimGitDir;
     try {
-      const r = spawnSync('git', ['init', '-q'], { cwd: fixture, env: gitEnv(path.dirname(fixture)) });
+      const r = spawnSync('git', ['init', '-q'], { cwd: fixture, env: gitEnv(path.dirname(fixture)), timeout: 30_000 });
       assert.equal(r.status, 0, `guarded init must succeed in the fixture, got: ${r.stderr}`);
     } finally {
       if (saved === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = saved;

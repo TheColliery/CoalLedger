@@ -22,9 +22,14 @@
 // `spawnSync('git', [...], {...})` or `execFileSync('git', [...], {...})`, with no
 // namespace import of child_process, no shell wrapping of git, and no env identifier
 // mutated after its `gitEnv(...)` assignment -- CoalHearth's extra generality defends
-// against shapes this room does not have. If a future spawn here takes one of those
-// shapes, this census will UNDER-detect it (named here, not silently assumed safe); widen
-// the census the day that shape actually lands, not before.
+// against shapes this room does not have. A FOURTH shape, found at R12 INSPECT (F6):
+// `CALL_RE` requires the binary name as a quoted literal AT THE CALL SITE
+// (`spawnSync('git', ...)`), so `const GIT = 'git'; spawnSync(GIT, [...], { env:
+// process.env })` -- a loop-friendly form with the identifier declared once and used
+// several times -- is invisible to the whole census, `env: process.env` and all. If a
+// future spawn here takes ANY of these four shapes, this census will UNDER-detect it
+// (named here, not silently assumed safe); widen the census the day that shape actually
+// lands, not before.
 //
 // Pure: a list of { rel, text } in, a findings array out -- unit-tested directly, red-
 // first, without a repo clone. collectScriptsMjs() is the real filesystem walk, kept

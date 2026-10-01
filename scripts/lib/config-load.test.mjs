@@ -730,12 +730,22 @@ test('UMB-133 F3: a DIRECTORY at the nested-legacy candidate does not win the wa
   } finally { clean(home, proj); }
 });
 
-test('UMB-133 F3: a DIRECTORY at the nested-legacy candidate earns NO "move it" LEGACY line', () => {
+// R12 bounce 1 F8: changed in its own named step (testing.md's own rule) -- the OLD
+// assertion ([legacyLine] alone) was the gap UMB-174 (b) exists to close: a directory
+// candidate above the winner used to be silently skipped. The LEGACY half of the title
+// is still exactly true (no "move it" wording for the directory, only for the real
+// winner); a SECOND line now reports the directory itself.
+test('UMB-133 F3: a DIRECTORY at the nested-legacy candidate earns NO "move it" LEGACY line, but IS now reported UNREADABLE', () => {
   const { home, proj } = sandbox();
   try {
-    putDir(path.join(proj, '.claude', '.coalledger.json'));
-    put(path.join(proj, '.coalledger.json')); // the real config, one candidate lower
-    assert.deepStrictEqual(configNotices(proj, home), [legacyLine(path.join(proj, '.coalledger.json'))]);
+    const nestedDir = path.join(proj, '.claude', '.coalledger.json');
+    putDir(nestedDir);
+    const rootLegacy = path.join(proj, '.coalledger.json');
+    put(rootLegacy); // the real config, one candidate lower
+    assert.deepStrictEqual(configNotices(proj, home), [
+      legacyLine(rootLegacy),
+      `[CoalLedger] UNREADABLE: ${nestedDir} exists but is not a readable config (a directory); it was skipped — canonical = .claude/coal/coalledger.json`,
+    ]);
   } finally { clean(home, proj); }
 });
 
@@ -894,13 +904,34 @@ test('UMB-174 (b) + CWK-135 (a): a GLOBAL config that is malformed is reported w
   } finally { clean(home, proj); }
 });
 
-test('UMB-174 (b): a DIRECTORY at the canonical path still does not win the walk (UMB-133 F3 unchanged), and nothing UNREADABLE is reported for it', () => {
+// R12 bounce 1 F8: this test was WRONG before this fix, and it is changed here rather
+// than silently -- testing.md's own rule ("a test proven wrong is changed in its own
+// named step, and the commit states why"). The OLD assertion ([], "nothing is reported")
+// was the exact UMB-174 (b) gap the row names: "a malformed OR directory-shaped config
+// is SILENTLY IGNORED ... nothing tells the user it is broken." The SELECTION half is
+// genuinely unchanged (F3's own fix) and still asserted directly: a directory candidate
+// still loses the walk, still contributes nothing to the merged config. The REPORT half
+// is now a separate question (CoalFace's own case-63 shape, ONE flock, one test shape).
+test('UMB-174 (b): a DIRECTORY at the canonical path does not win the walk (UMB-133 F3 unchanged), AND is now REPORTED (reason "a directory")', () => {
   const { home, proj } = sandbox();
   try {
-    putDir(path.join(proj, '.claude', 'coal', 'coalledger.json'));
-    assert.deepStrictEqual(configNotices(proj, home), [], 'a directory candidate loses the walk silently, exactly as before this unit — F3\'s own selection is untouched');
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    putDir(cfgPath);
+    assert.deepStrictEqual(
+      configNotices(proj, home),
+      [`[CoalLedger] UNREADABLE: ${cfgPath} exists but is not a readable config (a directory); it was skipped — canonical = .claude/coal/coalledger.json`],
+    );
+    const fileWinners = projectConfigCandidates(proj, home).filter((c) => {
+      try { return fs.statSync(c).isFile(); } catch { return false; }
+    });
+    assert.deepStrictEqual(fileWinners, [], 'the walk still finds no FILE candidate -- selection is untouched, the directory never wins');
+    assert.deepStrictEqual(linesStartingLegacy(configNotices(proj, home)), [], 'a directory at the CANONICAL path is not a legacy hit');
   } finally { clean(home, proj); }
 });
+
+function linesStartingLegacy(lines) {
+  return lines.filter((l) => l.startsWith('[CoalLedger] LEGACY:'));
+}
 
 test('UMB-174 (b): an EACCES/EPERM-denied winner (chmod 0) is reported "unreadable" (capability-gated, C-6)', (t) => {
   const { home, proj } = sandbox();

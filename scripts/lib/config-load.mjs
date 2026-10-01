@@ -222,28 +222,32 @@ const NEAR_MISS_REL = [
 // already applies). Branches on the fs error's CODE, never its message (node/runtime.md
 // §7). Exemplar: CoalFace v0.12.0 / CoalHearth / CoalTipple — ported, re-verified
 // against this room's own bounded-read primitives.
+// R12 bounce 1 F9: this used to open and read the file BY HAND (fstat + a raw read loop),
+// a SECOND read path on the same bytes that dropped the one flag the first path
+// (readRepoFileBounded, repo-fs.mjs) added deliberately -- O_NONBLOCK, so a FIFO swapped
+// in between the kind-gate and the open fails the open at once instead of hanging it
+// (repo-fs.mjs's own comment on REPO_READ_FLAGS says exactly why). This classifier is
+// reached by the SessionStart conductor on every session (coalledger-conductor.js /
+// ag-conductor.js -> loadMergedConfig -> configNotices), so a hang here is a hung
+// session, which Phoenix #4's fail-silent guarantee cannot rescue a call that never
+// returns. It also carried F2's truncation bug in a second copy. Delegating to the
+// shared helper fixes both at once and means any FUTURE hardening of the read path
+// (another flag, another bound) is inherited here too, never re-typed.
 function classifyConfigRead(file, root) {
   const kind = repoEntryKind(file, root);
   if (kind === 'missing') return null; // absent — the normal, silent case
   if (kind === 'dir') return 'a directory';
   if (kind === 'other') return 'unreadable'; // FIFO/socket/device/escaping-or-dangling symlink (CWK-137)
-  let fd;
-  try { fd = fs.openSync(file, fs.constants.O_RDONLY); }
-  catch (e) { return (e && (e.code === 'EACCES' || e.code === 'EPERM')) ? 'unreadable' : null; }
-  let content;
-  try {
-    const st = fs.fstatSync(fd);
-    if (!st.isFile()) return 'unreadable';
-    if (st.size > MAX_CONFIG_BYTES) return 'unreadable'; // over the bound — CWK-137 skips it, never reads it
-    const buf = Buffer.alloc(st.size);
-    let n = 0;
-    while (n < st.size) { const r = fs.readSync(fd, buf, n, st.size - n, n); if (r <= 0) break; n += r; }
-    content = buf.slice(0, n).toString('utf8');
-  } catch { return null; }
-  finally { try { fs.closeSync(fd); } catch {} }
-  if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
+  // kind === 'file' from here: readRepoFileBounded re-checks size/kind on the OPEN FD
+  // (the TOCTOU window between repoEntryKind's lstat and the open), so a null here means
+  // over-bound, denied (EACCES/EPERM), or the fd-level re-check caught something the
+  // lstat-based kind gate above could not see yet -- all of it is the SAME user-facing
+  // outcome ("this file exists, and you cannot have its contents"), hence one word.
+  const content = readRepoFileBounded(file, root, MAX_CONFIG_BYTES);
+  if (content === null) return 'unreadable';
+  const stripped = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
   let parsed;
-  try { parsed = parseJsonc(content); } catch { return 'malformed JSON'; }
+  try { parsed = parseJsonc(stripped); } catch { return 'malformed JSON'; }
   if (!(parsed && typeof parsed === 'object' && !Array.isArray(parsed))) return 'not a JSON object';
   return null;
 }
@@ -264,6 +268,22 @@ export function configNotices(cwd = process.cwd(), home = os.homedir()) {
   if (won !== -1) {
     const reason = classifyConfigRead(candidates[won], root);
     if (reason) out.push(`[CoalLedger] UNREADABLE: ${candidates[won]} exists but is not a readable config (${reason}); it was skipped — canonical = ${CANONICAL_REL}`);
+  }
+  // R12 bounce 1 F8: the row names TWO shapes ("a malformed OR directory-shaped config"),
+  // and `won` (above) can only ever find a FILE (F3's own fix) -- a DIRECTORY sitting at
+  // a higher-priority candidate than the winning file (or sitting alone, with no file
+  // candidate anywhere) is invisible to that branch. `existsIdx` finds the first
+  // candidate that is PRESENT AT ALL (file or not); it can never sit BELOW `won`, because
+  // `won` itself already satisfies "present". So existsIdx === won means the winner IS
+  // that entry (already reported above, if it needed reporting) -- only existsIdx < won
+  // (a non-file sits ABOVE the winning file) or won === -1 (no file candidate exists at
+  // all, but something non-file does) needs a SEPARATE line. The SELECTION stays exactly
+  // as F3 left it: a real file one candidate lower still wins and is still read; this
+  // only adds the notice CoalFace's case-63 already ships for the identical shape.
+  const existsIdx = candidates.findIndex((c) => repoEntryKind(c, root) !== 'missing');
+  if (existsIdx !== -1 && existsIdx !== won) {
+    const reason = classifyConfigRead(candidates[existsIdx], root);
+    if (reason) out.push(`[CoalLedger] UNREADABLE: ${candidates[existsIdx]} exists but is not a readable config (${reason}); it was skipped — canonical = ${CANONICAL_REL}`);
   }
   // The GLOBAL config is read independently of the project candidate walk (both layers
   // merge in loadMergedConfig), so it is reported independently too. CWK-135 (a): this

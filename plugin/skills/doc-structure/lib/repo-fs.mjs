@@ -98,6 +98,11 @@ export function readRepoFileBounded(file, root, maxBytes) {
       if (n <= 0) break;
       readSoFar += n;
     }
+    // R12 bounce 1 F2: a short read (the file shrank between fstat and here) must be
+    // SKIPPED, never returned as a truncated prefix -- the header above says exactly this
+    // and the old code violated it: a truncated config parses as "malformed JSON" (a wrong
+    // diagnosis) and a truncated doc half-scans silently (worse than a skip).
+    if (readSoFar !== st.size) return null;
     return buf.slice(0, readSoFar).toString('utf8');
   } catch { return null; }
   finally { try { fs.closeSync(fd); } catch {} }
@@ -154,11 +159,31 @@ export function writeRepoFile(target, content, root) {
   if (existingKind === 'symlink') throw new RepoWriteRefused(target, 'it already exists and is a symlink');
   if (existingKind === 'other') throw new RepoWriteRefused(target, 'it already exists and is not a regular file');
 
+  // R12 bounce 1 F3: the temp name is predictable (pid alone) and a stale leftover from a
+  // crashed earlier run blocks this one. A raw EEXIST from the open is not an actionable
+  // message (security.md's problem-report MUST — "never a raw stack trace or an internal
+  // error code standing alone"), so it is caught and reported through this module's own
+  // RepoWriteRefused channel. A throw from the write itself (ENOSPC, a full disk) must not
+  // leave the temp on disk either (Phoenix #1) — unlike the open failure, the temp DOES
+  // exist here, so it is unlinked before the error propagates.
   const temp = `${target}.coalledger-tmp-${process.pid}`;
-  const fd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL);
+  let fd;
+  try {
+    fd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL);
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      throw new RepoWriteRefused(target, `a leftover temp file blocks the write — remove ${temp} and re-run`);
+    }
+    throw e;
+  }
   try {
     fs.writeSync(fd, content);
-  } finally { fs.closeSync(fd); }
+  } catch (e) {
+    try { fs.closeSync(fd); } catch {}
+    try { fs.unlinkSync(temp); } catch {}
+    throw e;
+  }
+  fs.closeSync(fd);
   try {
     fs.renameSync(temp, target);
   } catch (e) {
@@ -166,17 +191,43 @@ export function writeRepoFile(target, content, root) {
     if (e.code === 'EPERM' || e.code === 'EBUSY' || e.code === 'EACCES') {
       // Windows: a rename over a file another process holds open (e.g. this process's
       // own .githooks/pre-commit running the installer that rewrites it) fails here
-      // while the old in-place writeFileSync succeeded. Fall back ONLY if the target is
-      // still a regular file with exactly one link — a hard link or a symlink swapped
-      // in between the check above and now still refuses; the window is named, not
-      // claimed closed.
-      let st;
-      try { st = fs.lstatSync(target); } catch { throw new RepoWriteRefused(target, 'the rename failed and the target is no longer readable'); }
-      if (st.isFile() && st.nlink === 1) {
-        fs.writeFileSync(target, content);
-        return;
+      // while the old in-place writeFileSync succeeded.
+      //
+      // R12 bounce 1 F1 (ported verbatim from CoalMine 3cd7c4c, "R8 INSPECT MEDIUM-1 +
+      // LOW-1" — the CoalMine commit this room's own header cited as the port source for
+      // this fallback, before that fix had landed there): the OLD shape here checked the
+      // PATH (lstatSync) and then wrote the PATH (writeFileSync(target, ...)) — anything
+      // planted between those two calls redirects the write, and a hard link swapped in
+      // is written THROUGH the shared inode because nlink was read from the stale lstat
+      // and never re-checked. The fix is check-the-FD, not the path: open the target
+      // directly without truncating, O_NOFOLLOW so a symlink planted in this window fails
+      // the OPEN on POSIX instead of being followed, O_NONBLOCK so a FIFO planted in the
+      // same window fails ENXIO at the open instead of blocking until a reader appears
+      // (the installer would otherwise hang). fstat the FD itself (never lstat the path
+      // again — the open already resolved past any link or hard link) and refuse unless
+      // it is a regular file with exactly one link; only THEN truncate and write through
+      // that SAME fd, so a link or hard link swapped in after this point can no longer
+      // redirect anything. RESIDUAL, named rather than claimed closed: Windows has no
+      // O_NOFOLLOW/O_NONBLOCK (both fall back to 0 there), so a symlink planted in this
+      // exact window on Windows would still be followed — it must still resolve to a
+      // single-link regular file, and creating a file symlink on Windows needs a
+      // privilege most callers of this module do not have.
+      const flags = fs.constants.O_WRONLY | (fs.constants.O_NONBLOCK || 0) | (fs.constants.O_NOFOLLOW || 0);
+      let wfd;
+      try { wfd = fs.openSync(target, flags); } catch { throw new RepoWriteRefused(target, 'the rename failed (file busy) and the fallback open also failed'); }
+      try {
+        const st = fs.fstatSync(wfd);
+        if (!st.isFile() || st.nlink > 1) {
+          throw new RepoWriteRefused(target, 'the rename failed (file busy) and the target is a symlink or hard-linked — no safe in-place fallback');
+        }
+        const buf = Buffer.from(content, 'utf8');
+        fs.ftruncateSync(wfd, 0);
+        let off = 0;
+        while (off < buf.length) off += fs.writeSync(wfd, buf, off, buf.length - off, off);
+      } finally {
+        fs.closeSync(wfd);
       }
-      throw new RepoWriteRefused(target, 'the rename failed (file busy) and the target is a symlink or hard-linked — no safe in-place fallback');
+      return;
     }
     throw e;
   }

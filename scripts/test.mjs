@@ -57,7 +57,13 @@ if (missing.length) {
     console.error(`test runner: ${orphans.length} on-disk test(s) NOT in the suite — ${orphans.join(', ')}. Add to scripts/test.mjs.`);
     process.exitCode = 1;
   } else {
-    const r = spawnSync(process.execPath, ['--test', ...TESTS], { cwd: repo, stdio: 'inherit' });
+    // R12 bounce 1 F7: testing.md's finite-clock MUST -- a node:test test has NO timeout
+    // by default, so a single hung child (a `git` spawn blocked on a credential prompt, a
+    // stale index.lock) hangs the whole suite with nothing to report it as a failure. 60s
+    // per test is ~2x this room's measured full-suite wall time (duration_ms ~27000 at
+    // this writing, re-derive rather than trust this comment) -- generous for one test,
+    // still far short of ci.yml's 10-minute job bound (CWK-154 (2)).
+    const r = spawnSync(process.execPath, ['--test', '--test-timeout=60000', ...TESTS], { cwd: repo, stdio: 'inherit' });
     process.exitCode = r.status ?? 1;
   }
 }
