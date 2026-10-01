@@ -222,7 +222,7 @@ Fourth CoalBoard dogfood pass (full-mirror, nasa-L3)—a HIGH the beta.3 fix lef
 
 ## [0.1.0-beta.5] - 2026-07-09
 
-A reconciliation pass (`plugin.json` vs `CHANGELOG.md`) plus the third CoalBoard dogfood pass (full-mirror, nasa—`.coalboard/reports/audit-2026-07-09-nasa-full-mirror.md`): two LOW findings and a bookkeeping gap.
+A reconciliation pass (`plugin.json` vs `CHANGELOG.md`) plus the third CoalBoard dogfood pass (full-mirror, nasa—recorded in commit `cbb5fe7`): two LOW findings and a bookkeeping gap.
 
 ### Fixed
 - **CHANGELOG backfill: v0.1.0-beta.4 shipped with no entry.** `plugin.json` had already moved to `0.1.0-beta.4` while this file's newest entry stayed at beta.3—an undocumented version bump, caught by a reconciliation pass, not the audit. Reconstructed from `git log`/`git show` v0.1.0-beta.3..v0.1.0-beta.4 (never from memory) and backfilled below. Lesson: a version bump without its CHANGELOG entry is an undocumented release—the release checklist's entry-before-tag order exists for exactly this.
