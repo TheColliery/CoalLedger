@@ -265,16 +265,33 @@ test('configure: writing to the PROJECT config target that is an EXISTING SYMLIN
   } finally { clean(home, proj); fs.rmSync(outside, { recursive: true, force: true }); }
 });
 
-test('configure: a MALFORMED config\'s .bak is written from the bytes ALREADY READ, never a re-open of the original path (CoalMine PoC-3 class, capability-gated)', (t) => {
-  if (!CLI_SYMLINK_OK) { t.skip('this seat cannot create a file symlink without elevation on this box'); return; }
+// R12 bounce 2 — changed in its own named step (testing.md's own rule: "a test proven
+// wrong is changed in its own named step, and the commit states why it was wrong"). Two
+// things were wrong, both self-caught at the first push: (1) this test writes a plain
+// malformed TEXT file and never creates a symlink, so `CLI_SYMLINK_OK` was the WRONG
+// gate -- copy-paste residue from the symlink-refusal test right above it. Gating a test
+// on a capability it does not use means it never runs where that capability happens to
+// be absent (this box), so no local gate could ever see what CI's ubuntu/macos/windows
+// legs all caught: the assertion below. (2) `assert.strictEqual(r.status, 0, ...)`
+// contradicted this room's own fail-loud discipline (scripts-quality.md §1) and the
+// sibling test right above ("an ARRAY top-level config takes the MALFORMED path -- exit
+// 1"): `configure.mjs`'s malformed-config catch block ALWAYS sets `process.exitCode = 1`
+// -- a malformed config silently overwritten is a partial failure the user must notice,
+// run continues from defaults, old config backed up where possible, but the exit code
+// still reports non-zero. The code was correct; this test's exit-0 expectation was not,
+// and the gate hid that for as long as this box could not create symlinks.
+// Fixes: f411f330a1d57ff16dff6a9c32ee1e6e532d3cfb
+test('configure: a MALFORMED config\'s .bak is written from the bytes ALREADY READ, never a re-open of the original path (CoalMine PoC-3 class, exits non-zero per scripts-quality §1 fail-loud)', () => {
   const { home, proj } = sandbox();
   try {
     fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
     const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
     fs.writeFileSync(cfgPath, 'not valid json at all {{{');
     const r = run(['--updateCheckDays', '9'], { home, proj });
-    assert.strictEqual(r.status, 0, `a malformed-but-readable config must still rebuild, got:\n${r.stdout}${r.stderr}`);
+    assert.strictEqual(r.status, 1, `a malformed config must exit non-zero (fail loud, scripts-quality §1), got ${r.status}:\n${r.stdout}${r.stderr}`);
     assert.ok(fs.existsSync(cfgPath + '.bak'), 'the malformed config must be backed up');
     assert.strictEqual(fs.readFileSync(cfgPath + '.bak', 'utf8'), 'not valid json at all {{{', 'the backup must hold EXACTLY the bytes this run read, proving it came from rawConfig, not a fresh re-open of the config path');
+    const written = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    assert.strictEqual(written.updateCheckDays, 9, 'the rebuild from defaults must still succeed and apply the flag, despite the non-zero exit');
   } finally { clean(home, proj); }
 });
