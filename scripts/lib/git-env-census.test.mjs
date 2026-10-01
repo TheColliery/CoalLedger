@@ -1,0 +1,133 @@
+import { test } from 'node:test';
+import assert from 'node:assert';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { censusGitSpawns, collectScriptsMjs } from './git-env-census.mjs';
+
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+// Every fixture below needs its TEXT VALUE to read as a real `spawnSync('git', ...)` /
+// `execFileSync('git', ...)` call, so censusGitSpawns can parse it the way it would a real
+// file. But THIS FILE is itself walked by the production census (it lives under scripts/),
+// so the literal SOURCE CHARACTERS "spawnSync(" / "execFileSync(" must never appear
+// contiguously here -- the same convention this room already uses for a comment that
+// would otherwise manufacture the exact citation it describes (verify.test.mjs's
+// CWK-079 non-locality test). Built via concatenation so the SOURCE text never contains
+// the whole function name; the STRING VALUE a fixture carries is unaffected.
+const SS = ['spawn', 'Sync'].join('');
+const EF = ['exec', 'FileSync'].join('');
+
+test('censusGitSpawns: a git spawn with NO env: at all is a CWK-133 finding', () => {
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text: `${SS}('git', ['init'], { cwd: dir });` }], { exemptions: [] });
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /scripts\/x\.mjs:1/);
+  assert.match(findings[0], /carries no 'env:'/);
+  assert.match(findings[0], /CWK-133/);
+});
+
+test('censusGitSpawns: env: process.env -- the CWK-136 hole -- is a FAIL, the whole point of the "next rung" (build order item 2)', () => {
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text: `${SS}('git', ['init'], { cwd: dir, env: process.env });` }], { exemptions: [] });
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /mentions process\.env/);
+  assert.match(findings[0], /CWK-136/);
+});
+
+test('censusGitSpawns: env: { ...process.env, GIT_CEILING_DIRECTORIES } -- a spread pass-through -- also FAILs', () => {
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text: `${SS}('git', ['init'], { cwd: dir, env: { ...process.env, GIT_CEILING_DIRECTORIES: '/x' } });` }], { exemptions: [] });
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /mentions process\.env/);
+});
+
+test('censusGitSpawns: env: process["env"] (bracket form) is caught the same as the dotted form', () => {
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text: `${SS}('git', ['init'], { cwd: dir, env: process["env"] });` }], { exemptions: [] });
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /mentions process\.env/);
+});
+
+test('censusGitSpawns: env: gitEnv(...) directly -- PASSES, zero findings', () => {
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text: `${SS}('git', ['init'], { cwd: dir, env: gitEnv(path.dirname(dir)) });` }], { exemptions: [] });
+  assert.deepEqual(findings, []);
+});
+
+test('censusGitSpawns: env: <identifier> (full colon form) PASSES when the SAME file declares `const <identifier> = gitEnv(...)`', () => {
+  const text = `const env = gitEnv(path.dirname(dir));\n${SS}('git', ['init'], { cwd: dir, env: env });`;
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text }], { exemptions: [] });
+  assert.deepEqual(findings, []);
+});
+
+test('censusGitSpawns: env (ES6 shorthand property) PASSES too when declared from gitEnv()', () => {
+  const text = `const env = gitEnv(path.dirname(dir));\n${SS}('git', ['init'], { cwd: dir, env });`;
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text }], { exemptions: [] });
+  assert.deepEqual(findings, []);
+});
+
+test('censusGitSpawns: env: <identifier> FAILs when that identifier is NOT declared from gitEnv() in the same file', () => {
+  const text = `const env = { ...process.env };\n${SS}('git', ['init'], { cwd: dir, env });`;
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text }], { exemptions: [] });
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /is not declared/);
+  assert.match(findings[0], /CWK-136/);
+});
+
+test('censusGitSpawns: a git spawn written inside a // comment is not counted at all', () => {
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text: `// ${SS}('git', ['init'], { cwd: dir });` }], { exemptions: [] });
+  assert.deepEqual(findings, []);
+});
+
+test('censusGitSpawns: execFileSync(git, ...) is covered the same as spawnSync', () => {
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text: `${EF}('git', ['rev-parse'], { cwd: dir });` }], { exemptions: [] });
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /execFileSync/);
+});
+
+test('censusGitSpawns: unbalanced parens are reported, not thrown/crashed', () => {
+  const findings = censusGitSpawns([{ rel: 'scripts/x.mjs', text: `${SS}('git', ['init'], { cwd: dir ` }], { exemptions: [] });
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /unbalanced parens/);
+});
+
+test('censusGitSpawns: a declared exemption absorbs exactly its counted spawn(s); a spawn BEYOND the count is a finding', () => {
+  const text = `${SS}('git', ['init'], { cwd: dir, env: poisoned });\n${SS}('git', ['init'], { cwd: dir2, env: poisoned });`;
+  const findings = censusGitSpawns([{ rel: 'x.test.mjs', text }], {
+    exemptions: [{ rel: 'x.test.mjs', expr: 'poisoned', count: 1, reason: 'test' }],
+  });
+  assert.equal(findings.length, 1, findings.join('\n'));
+  assert.match(findings[0], /spawn 2/);
+});
+
+test('censusGitSpawns: an exemption that matches FEWER spawns than its declared count is reported stale', () => {
+  const findings = censusGitSpawns([{ rel: 'x.test.mjs', text: '// no git spawns here at all' }], {
+    exemptions: [{ rel: 'x.test.mjs', expr: 'poisoned', count: 1, reason: 'test' }],
+  });
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /stale exemption/);
+});
+
+test('collectScriptsMjs: walks the real scripts/ tree and returns every .mjs file with its text', () => {
+  const files = collectScriptsMjs(repo);
+  assert.ok(files.length > 10, `expected many .mjs files, got ${files.length}`);
+  const verify = files.find((f) => f.rel === 'scripts/verify.mjs');
+  assert.ok(verify, 'scripts/verify.mjs must be in the walk');
+  assert.ok(verify.text.includes('gitEnv'), 'the real verify.mjs must already reference gitEnv');
+});
+
+// THE LIVENESS CONTROL AND THE GREEN PROOF, together: the census against the REAL tree,
+// after every git-spawn site in this room was fixed, must report ZERO findings -- and the
+// control proves the census is actually LOOKING (it is not vacuously empty because it
+// never matched anything), by independently counting the git spawns the instrument saw.
+test('censusGitSpawns against THIS ROOM\'s real scripts/ tree: zero findings post-fix, and the census genuinely saw every git spawn (non-vacuity control)', () => {
+  const files = collectScriptsMjs(repo);
+  const findings = censusGitSpawns(files);
+  assert.deepEqual(findings, [], `every git spawn in this room must carry env: gitEnv(...) alone (or a declared exemption); got:\n${findings.join('\n')}`);
+
+  // Non-vacuity: a plain text count, taken independently of the census's own internal
+  // CALL_RE logic (a different regex, built differently), so a silent census bug (one
+  // that never matches anything) cannot hide behind a vacuously-empty findings array.
+  // Still built from SS/EF, same reason as every fixture above: `files` includes THIS
+  // test file's own source, and a literal "spawnSync('git'" written here would be a
+  // second, self-inflicted hit the real-tree "zero findings" assertion above would then
+  // have to explain away.
+  const nameRe = new RegExp(`(${SS}|${EF})\\('git'`, 'g');
+  const bySimpleCount = files.reduce((n, f) => n + (f.text.match(nameRe) || []).length, 0);
+  assert.ok(bySimpleCount >= 14, `expected the census to have real git spawns to judge (independently counted ${bySimpleCount}) -- a count of 0 here would mean this test proves nothing`);
+});

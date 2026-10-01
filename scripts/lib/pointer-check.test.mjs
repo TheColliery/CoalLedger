@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { checkPointers, pointerCandidates, PENDING_POINTERS, classifyCheckIgnoreResult, applyCheckIgnoreProbe, PROBE_SUFFIX } from './pointer-check.mjs';
+import { gitEnv } from './git-env.mjs';
 
 const NL = String.fromCharCode(10);
 // A resolver standing in for git + the filesystem. Each fixture names its own tree, so no
@@ -336,8 +337,9 @@ test('a BACKSLASH is not a separator this gate reads -- the traversal DOTSEG cou
 // subprocess to source from, since a missing git never reaches this call in production
 // (verify.mjs's own ls-files pre-gate already SKIPs before this spawn fires).
 function mkGitRepoForIgnoreProbe() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-ci-classify-'));
-  const g = (args) => spawnSync('git', args, { cwd: tmp, encoding: 'utf8' });
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-ci-classify-')));
+  const env = gitEnv(path.dirname(tmp)); // CWK-133/C-4 -- never inherit an ambient GIT_DIR
+  const g = (args) => spawnSync('git', args, { cwd: tmp, encoding: 'utf8', env });
   g(['init', '-q', '-b', 'main']);
   g(['config', 'user.email', 'test@test.invalid']);
   g(['config', 'user.name', 'Test']);
@@ -368,7 +370,7 @@ test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit other than
   const tmp = mkGitRepoForIgnoreProbe();
   try {
     const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'],
-      { cwd: tmp, encoding: 'utf8', input: 'ignored-dir/probe\n' });
+      { cwd: tmp, encoding: 'utf8', input: 'ignored-dir/probe\n', env: gitEnv(path.dirname(tmp)) });
     assert.notEqual(ci.status, 0, 'this probe only proves anything if git actually took a non-0/1 exit');
     assert.notEqual(ci.status, 1, 'this probe only proves anything if git actually took a non-0/1 exit');
 
@@ -391,7 +393,7 @@ test('classifyCheckIgnoreResult: a REAL exit 0 (a fed path IS ignored) succeeds,
   const tmp = mkGitRepoForIgnoreProbe();
   try {
     const ci = spawnSync('git', ['check-ignore', '--stdin'],
-      { cwd: tmp, encoding: 'utf8', input: 'ignored-dir/probe\n' });
+      { cwd: tmp, encoding: 'utf8', input: 'ignored-dir/probe\n', env: gitEnv(path.dirname(tmp)) });
     assert.equal(ci.status, 0);
     const verdict = classifyCheckIgnoreResult(ci);
     assert.equal(verdict.ok, true);
@@ -405,7 +407,7 @@ test('classifyCheckIgnoreResult: a REAL exit 1 (nothing fed is ignored) succeeds
   const tmp = mkGitRepoForIgnoreProbe();
   try {
     const ci = spawnSync('git', ['check-ignore', '--stdin'],
-      { cwd: tmp, encoding: 'utf8', input: 'not-ignored-at-all/probe\n' });
+      { cwd: tmp, encoding: 'utf8', input: 'not-ignored-at-all/probe\n', env: gitEnv(path.dirname(tmp)) });
     assert.equal(ci.status, 1);
     const verdict = classifyCheckIgnoreResult(ci);
     assert.equal(verdict.ok, true);
