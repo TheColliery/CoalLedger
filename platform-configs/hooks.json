@@ -1,0 +1,35 @@
+// CoalLedger — Antigravity (AG 2.0) hooks template.
+//
+// AG shipped a real IDE hooks.json engine (pilot-verified live 2026-07-12), but the
+// WIRE LOCATION regressed on an AG update (2026-07-12 -> 07-16): the two previously
+// documented locations — global ~/.gemini/config/hooks.json and project
+// <workspace>/.agents/hooks.json — stopped executing, and the AG state dir migrated
+// from ~/.gemini/antigravity-cli/ to ~/.gemini/antigravity/. RE-DERIVE the current
+// hooks.json location + enable switch from AG's current primary docs before wiring.
+// Wiring this file at a dead path is inert-harmless: the adapter simply never runs,
+// and manual canary invocation (the AG floor tier) is unaffected.
+//
+// Once the live path is known: copy the object below there and replace
+// __COALLEDGER_DIR__ with the directory holding CoalLedger's hooks/ + scripts/lib
+// (a global file-copy install puts them at ~/.gemini/config/skills/coalledger,
+// keeping the repo-relative layout — the adapter resolves the engine via ../scripts/lib).
+// If AG's parser rejects // comments, strip these comment lines — the object below is
+// otherwise strict JSON. (This template mirrors the repo's platform-configs/ idiom.)
+//
+// Event mapping (AG has NO one-shot SessionStart — it never fires in the AG CLI/IDE;
+// PreInvocation fires per MODEL CALL, not per user prompt):
+//   PreInvocation -> ag-conductor.js : the docs-health canary offers, injected at
+//                    most ONCE per session (a per-session tmp marker guards against
+//                    re-injecting on every model call; fail-closed on any marker
+//                    failure). The self-update nudge is deliberately NOT ported
+//                    (its payload is Claude-Code plugin machinery).
+// Fail-silent, zero-dep, no network, no child process; the only output is the
+// sanctioned {"injectSteps":[{"ephemeralMessage":...}]} JSON (the current AG contract;
+// input payload is camelCase protojson: conversationId, workspacePaths[], transcriptPath).
+{
+  "coalledger": {
+    "PreInvocation": [
+      { "type": "command", "command": "node \"__COALLEDGER_DIR__/hooks/ag-conductor.js\" PreInvocation", "timeout": 30 }
+    ]
+  }
+}

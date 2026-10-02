@@ -1,0 +1,93 @@
+{
+  // Master switch. auto = the session-start conductor offers the installed doc
+  // canaries at the right moment (domain entry, ask-gated); manual = conductor
+  // silent, you invoke canaries yourself; off = fully silent.
+  "coalledgerMode": "auto",
+
+  // Language for prompts and nudges. auto = follow the conversation's language;
+  // a locked value pins user-facing prose (technical terms stay verbatim).
+  "language": "auto",
+
+  // Canary names to disable, e.g. ["doc-structure"]. "conductor" or "all"
+  // silences the conductor entirely.
+  "disabledCanaries": [],
+
+  // Report findings at or above this severity (low, medium, high, critical).
+  // Severity is assigned by context in the report step, never mechanically.
+  // Fully settable per project, same as quickVsFull below — the global-vs-
+  // project CODE clamp still has no path to this key (every reader is the
+  // agent, never a hook), but per the one-read-path convention the agent
+  // itself reads it as a global+project merge (project wins when set),
+  // never the project file alone: a project setting a high floor is
+  // honoured as written and can silently narrow what a run reports. Unlike quickVsFull's
+  // spend, which is backstopped unconditionally at run-time regardless of
+  // this file, a narrowed report is inspectable only ON REQUEST via
+  // `/coalledger:stats` — not visible by default, and stats shows the
+  // floor's value, never the count of findings it withheld.
+  "severityFloor": "low",
+
+  // Default scan tier for the mixed canaries: quick = mechanical layer only
+  // (~free, report-only); full = adds the semantic layer (paid; always a
+  // separate consent).
+  // Fully settable per project: unlike coalledgerMode / updateMode /
+  // disabledCanaries / docLeak, the global-vs-project CODE clamp has no
+  // path to this key — but per the one-read-path convention the agent
+  // itself reads it as a global+project merge (project wins when set),
+  // never the project file alone, so a project setting "full" is honoured
+  // as written. The per-run consent ask is what gates the actual spend.
+  "quickVsFull": "quick",
+
+  // Enable the #7 doc-leak canary (prose-level public/private boundary).
+  // Default on; a private-only project (docs never published) turns it off.
+  "docLeak": true,
+
+  // Treat this project's docs as PUBLIC-facing (raises leak/grounding stakes
+  // in severity context).
+  "publicMode": false,
+
+  // Docs memory-drift advisory (the DOCS mirror of CoalMine's memoryDriftNudge,
+  // which covers CODE). When the agent finishes responding, if documentation
+  // files were edited but MEMORY.md has not been updated this session, one QUIET
+  // model-context note is emitted — no report, no fix menu, never blocks. Once
+  // you update MEMORY.md it stays quiet for the rest of the session. Default on;
+  // set false to silence.
+  "docsDriftNudge": true,
+
+  // doc-quality's em-dash typography rule (CWK-073). "unspaced" = the house
+  // form word—word, so a SPACED em-dash is the finding; "spaced" = the
+  // inverse; "off" (this factory default) = the rule does not run at all --
+  // a house choice, never forced on another user's repo. The owner sets
+  // this to "unspaced" globally on his own machine; a repo's own project
+  // file never should.
+  "emDash": "off",
+
+  // scanEverything (CWK-057, the owner's antivirus-scope law — one flock, one
+  // colour with CoalMine's key of the same name, polarity and default). ON for
+  // a run, every finding is reported down to severityFloor "low" regardless of
+  // the floor you configured. Positive polarity: true = MORE disclosure, never
+  // a double negative.
+  //
+  // BOUNDED, and deliberately narrower than its name suggests elsewhere in the
+  // flock: CoalLedger has no automatic scan-scope cut to bypass at all (every
+  // canary is agent-invoked, never auto-batch-scanned), so this key reaches
+  // severityFloor and NOTHING else. It does NOT re-enable a canary you turned
+  // off via disabledCanaries / docLeak / coalledgerMode — those are ON/OFF
+  // consent switches, not scan scope — and it does NOT force quickVsFull to
+  // "full", because that would escalate PAID spend through a scope key.
+  //
+  // REACH: the agent reads this as a global+project merge (project wins
+  // when set), never the project file alone, per the one-read-path
+  // convention. But it is still an instruction your agent FOLLOWS, not a
+  // gate the code enforces — like severityFloor, the clamp that stops a
+  // cloned repo escalating other keys has no path to this one.
+  "scanEverything": false,
+
+  // Self-update (series standard). The session-start hook only SCHEDULES a check
+  // via a throttled local stamp (no network); the AGENT verifies the latest tag
+  // and offers the update, consent-gated. ask = offer when due; auto = standing
+  // consent to check + offer; remind = a free reminder, you run it; off = silent.
+  "updateMode": "ask",
+
+  // Days between self-update checks/reminders (1-365; out-of-range clamps to 14 on read).
+  "updateCheckDays": 14
+}
