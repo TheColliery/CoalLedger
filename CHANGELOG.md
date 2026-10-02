@@ -2,6 +2,25 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.15.0-beta.1] - 2026-10-02
+
+Doc-quality's language-mechanics layer now checks English, Japanese and Korean punctuation as well as Chinese, the em-dash CLI no longer reports a clean total over a file it could not read, and the claude.ai ZIP now builds with the skill folder at its top level.
+
+### Added
+- **Language-mechanics rules for English, Japanese and Korean (`lang-mechanics.mjs`, run by doc-quality's Method step 2c).** The layer detects the script of each line and applies that script's table; before this it shipped Chinese only. Each rule names its authority, and a rule with no verified authority does not ship. English: `en-double-space-after-period` (warn; Microsoft Writing Style Guide, Periods). Japanese: `ja-halfwidth-punct` (error), `ja-fullwidth-comma-period` (warn) and `ja-space-between-fullwidth` (warn), all from the JTF Japanese Standard Style Guide 4.0 (clauses 1.2.1 and 2.3.1.2). Korean: `ko-fullwidth-punct` (error; 새국어생활 24권 4호, 문장 부호 appendix). An error-severity hit is objectively wrong under its authority; a warn-severity hit rests on a single-author vendor or industry guide, so treat it as SUSPECTED. `--script en|zh|ja|ko` limits a run to one table. A line in another script (Thai included) still reports nothing until its table ships.
+
+### Changed
+- **The release workflow no longer posts a Release for a pre-release tag push.** A Release with its ZIPs is posted for a stable tag only. The single launch-form Release for a first pre-release is posted by a manual run of the workflow, and only while the repository has no Release for another tag.
+- **Docs.** The README's claude.ai badge and install paragraph now claim only what is documented: the ZIP layout and the upload place, and that no CoalLedger ZIP has been uploaded to claude.ai yet. `CONTRIBUTING.md` names the secret scan as the first step of the repo gate. `SECURITY.md` states the SkillSpector scan as pinned to a commit and an upstream tag.
+
+### Fixed
+- **A claude.ai ZIP from an earlier build put `SKILL.md` at the archive root, which claude.ai does not recognise as a skill.** The ZIP now holds `<skill-name>/SKILL.md`, and the workflow checks every archive's layout before upload. No Release has carried a CoalLedger ZIP yet, so there is nothing to re-download today; after the next Release that carries ZIPs, download them again instead of reusing an earlier build.
+- **The em-dash CLI (`emdash.mjs`) printed a clean total and exited 0 when a file could not be read.** An unreadable file now makes the closing line `TOTAL: unknown (U unreadable; M found in the readable files)`, with the readable files' hits still printed, and the exit code 1.
+- **Test-only corrections, no behaviour change.** Several tests asserted a property of the host (git's own bare-repository heuristic, the casing of an environment key, the exit code of a malformed config path) instead of the module's contract, and failed only on CI hosts. They now probe the capability they need or assert the contract. One census entry in the shipped `scripts/lib/git-env-census.mjs` changed with them, so the `plugin/` dist moved by that file.
+
+### Security
+- **The repo gate runs the house secret scan first.** `.githooks/pre-commit` scans the tracked tree and `.githooks/pre-push` scans every pushed commit (message and tag included) with `scripts/secret-gate.mjs`, ahead of `verify.mjs` and `test.mjs`. A public repository gets GitHub's provider-token scan for free; this adds the generic kinds (a private key, a connection string, an HTTP authentication header). It is a development gate and is not part of the installed plugin.
+
 ## [0.14.0-beta.1] - 2026-10-02
 
 Closes a git-spawn environment-poisoning hazard class with a census gate, bounds and contains every repo-derived file read and write, reports a config candidate that exists but cannot be read, and fixes a table-cell escaped-pipe bug in the structure engine.
