@@ -1,7 +1,7 @@
 // CWK-101 -- doc-quality's SECOND mechanical engine (after emdash.mjs):
 // language-mechanics rules keyed on SCRIPT RANGE, never on a doc's declared
 // language. The design shipped with ZH (r34); R14 adds EN, JA and KO, one
-// unit each (EN and JA done below; KO follows). CLDR/TH join later -- per the CWK-101 design record (a
+// unit each (EN, JA and KO below). CLDR/TH join later -- per the CWK-101 design record (a
 // room-internal working note, not a tracked file this header can point at).
 // Disagree with THIS header and this header wins: it is the tracked,
 // load-bearing contract.
@@ -158,6 +158,23 @@ export const RULES = {
   // straight quotation marks" and states no consistency clause; the Chicago Manual of Style is paywalled and was
   // NOT read, so no Chicago clause is cited anywhere here. (b) a doubled space that does NOT follow a period: outside
   // the clause, a recall gap named by a test. (c) the spaced/unspaced em dash: already its own engine, emdash.mjs.
+  // R14 KO. Authority (read 2026-10-02, the saved PDF text of korean.go.kr/nkview/nklife/2014_4/24_0413.pdf): 새국어생활 제24권
+  // 제4호 (2014 겨울), [부록] <한글 맞춤법> 부분 개정안(문장 부호), the National Institute of Korean Language's own journal
+  // printing the 2014 revision of the 문장 부호 appendix. It names each mark with its ASCII-shaped form: 1. 마침표( . ),
+  // 2. 물음표(?), 3. 느낌표(!), 4. 쉼표( , ), 6. 쌍점( : ). So a full-width ， ． ？ ！ ： standing beside Hangul is the leak
+  // (the inverse of the ZH table). Only those five forms are flagged. NOT flagged, named: 。 and 、 -- the text read names no
+  // such form either way (a secondary news report says the 2014 revision dropped the vertical-writing 고리점/모점, NOT read
+  // at the primary: ⚠️ unverified, check the notice itself), so no clause supports calling them a leak; and ； / （ ）
+  // (no clause read for them). The mark must touch a Hangul character (before or after): a full-width mark between two
+  // Latin words on a Korean line is not a Korean-text leak.
+  'ko-fullwidth-punct': {
+    id: 'ko-fullwidth-punct',
+    script: 'ko',
+    severity: 'error',
+    description: 'a full-width comma ， period ． question mark ？ exclamation mark ！ or colon ： directly beside Hangul -- Korean text uses the ASCII forms . , ? ! :',
+    authority: '새국어생활 제24권 제4호 (2014 겨울), [부록] <한글 맞춤법> 부분 개정안(문장 부호): 1. 마침표( . ), 2. 물음표(?), 3. 느낌표(!), 4. 쉼표( , ), 6. 쌍점( : ) -- the revised appendix names each mark in its ASCII-shaped form',
+  },
+
   // R14 JA. Authority (read 2026-10-02, the saved PDF text of jtf.jp/pdf/jtf_style_guide.pdf): JTF Japanese Standard Style
   // Guide (translation use), 4.0 edition, 2026-07-25, Japan Translation Federation. 1.2.1 句点（。）と読点（、）: "句読点には
   // 全角の「、」と「。」を使います。和文の句読点としてピリオド（.）とカンマ（,）を使用しません。" 1.2.2 keeps the ASCII forms
@@ -217,6 +234,8 @@ const JA_FULLWIDTH_COMMA_PERIOD_RE = /(?<=[぀-ヿ一-鿿㐀-䶿])([，．])/g;
 // The space run sits between two Japanese characters that are NOT both Katakana: (Hiragana|Han) then any Japanese, or
 // Katakana then (Hiragana|Han).
 const JA_SPACE_BETWEEN_RE = /(?<=[ぁ-ゟ一-鿿㐀-䶿])([ 　]+)(?=[ぁ-ヿ一-鿿㐀-䶿])|(?<=[ァ-ヿ])([ 　]+)(?=[ぁ-ゟ一-鿿㐀-䶿])/g;
+// R14 KO. A full-width mark touching a Hangul syllable or jamo on either side.
+const KO_FULLWIDTH_PUNCT_RE = /(?<=[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F])[\uFF0C\uFF0E\uFF1F\uFF01\uFF1A]|[\uFF0C\uFF0E\uFF1F\uFF01\uFF1A](?=[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F])/g;
 const EN_DOUBLE_SPACE_RE = /(?<=[A-Za-z0-9)\]"'”’]\.)(?<!^\s*\d+\.)( {2,})(?=\S)/g;
 
 // Each CHECKS entry: [id, RegExp]. A rule fires on a line only when
@@ -228,6 +247,7 @@ const CHECKS = [
   ['ja-halfwidth-punct', JA_HALFWIDTH_PUNCT_RE],
   ['ja-fullwidth-comma-period', JA_FULLWIDTH_COMMA_PERIOD_RE],
   ['ja-space-between-fullwidth', JA_SPACE_BETWEEN_RE],
+  ['ko-fullwidth-punct', KO_FULLWIDTH_PUNCT_RE],
   ['en-double-space-after-period', EN_DOUBLE_SPACE_RE],
 ];
 

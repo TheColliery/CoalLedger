@@ -605,3 +605,96 @@ test('ja CLI: --script ja reports the JA rule, --script zh reports none of it', 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// R14 / CWK-101 KO unit -- ONE rule, one authority: the 2014 revision of the 문장 부호 appendix of 한글 맞춤법
+// (새국어생활 제24권 제4호, 2014 겨울, [부록] <한글 맞춤법> 부분 개정안(문장 부호)). It names each mark's form
+// ASCII-shaped: 1. 마침표( . ), 2. 물음표( ? ), 3. 느낌표( ! ), 4. 쉼표( , ), 6. 쌍점( : ). A full-width form
+// (， ． ？ ！ ：) beside Hangul is the leak. A KO rule fires only on a line carrying Hangul and no Kana.
+// ---------------------------------------------------------------------------
+const ko = (text, opts) => checkText(text, opts).filter((h) => h.rule === 'ko-fullwidth-punct');
+
+for (const [mark, name] of [['，', 'comma'], ['．', 'period'], ['？', 'question mark'], ['！', 'exclamation mark'], ['：', 'colon']]) {
+  test(`ko-fullwidth-punct: a full-width ${name} directly after Hangul fires`, () => {
+    assert.equal(ko(`안녕하세요${mark}세계`).length, 1);
+  });
+}
+
+test('ko-fullwidth-punct: the finding column points at the mark itself', () => {
+  assert.equal(ko('안녕하세요，세계')[0].col, 6);
+});
+
+test('ko-fullwidth-punct: a full-width comma directly after Hangul and before LATIN text fires (the left neighbour alone decides)', () => {
+  assert.equal(ko('안녕하세요，Hello').length, 1);
+});
+
+test('ko-fullwidth-punct: a full-width mark directly BEFORE Hangul (after Latin) fires', () => {
+  assert.equal(ko('Hello，안녕').length, 1);
+});
+
+test('ko-fullwidth-punct: a mark after Hanja and before Hangul fires (the adjacent Hangul decides)', () => {
+  assert.equal(ko('大韓民國，한국은 나라다').length, 1);
+});
+
+test('ko-fullwidth-punct: the rule is an error and names the 2014 appendix and its marks', () => {
+  assert.equal(RULES['ko-fullwidth-punct'].severity, 'error');
+  assert.match(RULES['ko-fullwidth-punct'].authority, /새국어생활/);
+  assert.match(RULES['ko-fullwidth-punct'].authority, /마침표/);
+});
+
+test('ko native clean: the standard ASCII forms (. , ? ! :) yield 0', () => {
+  assert.equal(ko('안녕하세요, 세계. 맞나? 네! 값: 3').length, 0);
+});
+
+test('ko script boundary: a full-width mark with NO Hangul next to it, on a Hangul line, yields 0', () => {
+  assert.equal(ko('Hello，World 한글').length, 0);
+});
+
+test('ko script boundary: a Hanja-only line (no Hangul) is ZH, so the KO rule yields 0', () => {
+  assert.equal(ko('大韓民國，日本').length, 0);
+});
+
+test('ko/ja split: a Kana-bearing line is JA, so the KO rule yields 0', () => {
+  assert.equal(ko('これは，한글です').length, 0);
+});
+
+test('ko script boundary: a Thai line and a Latin line yield 0', () => {
+  assert.equal(ko('สวัสดี，Hello').length + ko('Hello，World').length, 0);
+});
+
+test('ko recall gap (named): the ideographic stop 。 is not flagged (the appendix text read names no 。 form either way, so no clause supports calling it a leak), yields 0', () => {
+  assert.equal(ko('안녕하세요。').length, 0);
+});
+
+test('ko markdown exclusion: inside a fenced block yields 0', () => {
+  assert.equal(ko('```\n안녕하세요，세계\n```').length, 0);
+});
+
+test('ko markdown exclusion: inside inline code yields 0', () => {
+  assert.equal(ko('이것은 `안녕，세계` 입니다').length, 0);
+});
+
+test('ko markdown exclusion: inside a URL yields 0', () => {
+  assert.equal(ko('이것은 https://example.com/가，나 입니다').length, 0);
+});
+
+test('ko markdown exclusion: a blockquote line yields 0', () => {
+  assert.equal(ko('> 안녕하세요，세계').length, 0);
+});
+
+test('ko --plain: markdown awareness off, a fenced line fires', () => {
+  assert.equal(ko('```\n안녕하세요，세계\n```', { plain: true }).length, 1);
+});
+
+test('ko CLI: --script ko reports the KO rule, --script zh reports none of it', () => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-lm-ko-'));
+  try {
+    const f = path.join(dir, 'a.md');
+    fs.writeFileSync(f, '안녕하세요，세계\n');
+    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' } });
+    assert.match(run('ko').stdout, /\[ko-fullwidth-punct\]/);
+    assert.match(run('zh').stdout, /^0 finding\(s\)/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
