@@ -1,10 +1,10 @@
 // CWK-101 -- doc-quality's SECOND mechanical engine (after emdash.mjs):
 // language-mechanics rules keyed on SCRIPT RANGE, never on a doc's declared
-// language. This unit ships the design + exactly ONE language end-to-end:
-// ZH (two rules, one authority). JA/KO/CLDR/TH/EN join later, one unit each
-// -- per the CWK-101 design record (a room-internal working note, not a
-// tracked file this header can point at). Disagree with THIS header and
-// this header wins: it is the tracked, load-bearing contract.
+// language. The design shipped with ZH (r34); R14 adds EN, JA and KO, one
+// unit each. CLDR/TH join later -- per the CWK-101 design record (a
+// room-internal working note, not a tracked file this header can point at).
+// Disagree with THIS header and this header wins: it is the tracked,
+// load-bearing contract.
 //
 // PREMISE, stated so nobody widens the wrong file: at the time this shipped,
 // CoalLedger had NO Thai mechanics engine and NO Thai mechanics test. The
@@ -90,6 +90,7 @@ const HAN_RE = /[一-鿿㐀-䶿]/;
 const KANA_RE = /[぀-ゟ゠-ヿ]/;
 const HANGUL_RE = /[가-힯ᄀ-ᇿ㄰-㆏]/;
 const THAI_RE = /[฀-๿]/;
+const LATIN_RE = /[A-Za-z]/;
 
 // Resolve ONE line's script, post-masking (a code span's own script must
 // never influence the surrounding prose's classification): any Kana => 'ja'
@@ -98,7 +99,7 @@ const THAI_RE = /[฀-๿]/;
 // writing a place name in Hanja is outside GB/T 15834-2011's own §1 scope,
 // 汉语的书面语, so letting Han win there is a false positive, not a bounded
 // misread); Han with neither Kana nor Hangul => 'zh'; else Thai => 'th',
-// else null (Latin/no script of interest).
+// else Latin letters alone => 'en' (R14), else null (no script of interest).
 //
 // RULED (design question the reviewer raised): VETO, never a majority-
 // script count. This is a CONFIRMED-severity rule in a suite whose thesis
@@ -111,6 +112,9 @@ function classifyLine(line) {
   if (HANGUL_RE.test(line)) return 'ko';
   if (HAN_RE.test(line)) return 'zh';
   if (THAI_RE.test(line)) return 'th';
+  // R14 EN: a line with Latin letters and NONE of the scripts above. Checked LAST, so any CJK/Hangul/Thai
+  // character vetoes it (a mixed line belongs to the other script's table, never to EN).
+  if (LATIN_RE.test(line)) return 'en';
   return null;
 }
 
@@ -144,6 +148,23 @@ export const RULES = {
     // ？！ under §5.1.2, never folded into one citation.
     authority: 'GB/T 15834-2011《标点符号用法》§5.1.1 (句号、逗号、顿号、分号、冒号均置于相应文字之后，占一个字位置 -- covers 。，、；：) and §5.1.2 (问号、叹号均置于相应文字之后，占一个字位置 -- covers ？！, a separate clause)',
   },
+
+  // R14 EN. ONE rule: the authority states exactly one mechanical spacing clause. Microsoft Writing Style Guide,
+  // "Periods" (learn.microsoft.com/en-us/style-guide/punctuation/periods, page updated 2026-07-06, read 2026-10-02):
+  // "End all sentences with a period, even if they're only two words. Put one space, not two, after a period."
+  // A vendor guideline, not a multi-party standard (AGENTS.md THE PRECEDENCE OF STANDARDS), so severity is 'warn'
+  // (SUSPECTED), never 'error'. WHAT DID NOT SHIP, and why (a rule with no verified authority does not ship):
+  // (a) mixed straight/curly quotation marks in one document: the Microsoft page says "In most content, use
+  // straight quotation marks" and states no consistency clause; the Chicago Manual of Style is paywalled and was
+  // NOT read, so no Chicago clause is cited anywhere here. (b) a doubled space that does NOT follow a period: outside
+  // the clause, a recall gap named by a test. (c) the spaced/unspaced em dash: already its own engine, emdash.mjs.
+  'en-double-space-after-period': {
+    id: 'en-double-space-after-period',
+    script: 'en',
+    severity: 'warn',
+    description: 'two or more spaces after a sentence-ending period -- one space, not two',
+    authority: 'Microsoft Writing Style Guide, Periods (learn.microsoft.com/en-us/style-guide/punctuation/periods): "Put one space, not two, after a period." -- a vendor guideline, not a multi-party standard',
+  },
 };
 
 // Group 1 is the defect span itself (the ASCII punct, or the space run) --
@@ -152,6 +173,10 @@ export const RULES = {
 // several half-width commas) are each found independently.
 const ZH_HALFWIDTH_PUNCT_RE = /(?<=[一-鿿㐀-䶿])([,;:?!])(?=[一-鿿㐀-䶿])/g;
 const ZH_SPACE_BEFORE_PUNCT_RE = /(?<=[一-鿿㐀-䶿])( +)(?=[，。、；：？！])/g;
+// R14 EN: the period must follow a letter, a digit or a closer (so an ellipsis never matches), the run must be followed by
+// text (a trailing double space is a Markdown hard line break), and a list marker ("1.  item") is not a sentence end.
+// A table row is skipped in checkText below (cell padding is alignment, not prose).
+const EN_DOUBLE_SPACE_RE = /(?<=[A-Za-z0-9)\]"'”’]\.)(?<!^\s*\d+\.)( {2,})(?=\S)/g;
 
 // Each CHECKS entry: [id, RegExp]. A rule fires on a line only when
 // classifyLine(line) matches ITS OWN `script` field (CWK-101-DESIGN §2's
@@ -159,6 +184,7 @@ const ZH_SPACE_BEFORE_PUNCT_RE = /(?<=[一-鿿㐀-䶿])( +)(?=[，。、；：�
 const CHECKS = [
   ['zh-halfwidth-punct', ZH_HALFWIDTH_PUNCT_RE],
   ['zh-space-before-punct', ZH_SPACE_BEFORE_PUNCT_RE],
+  ['en-double-space-after-period', EN_DOUBLE_SPACE_RE],
 ];
 
 // ---------------------------------------------------------------------------
@@ -294,6 +320,8 @@ export function checkText(text, opts = {}) {
     if (!script) continue;
     for (const [id, re] of checks) {
       if (RULES[id].script !== script) continue;
+      // R14 EN: a Markdown table row pads its cells with runs of spaces, which is alignment, never a sentence gap.
+      if (id === 'en-double-space-after-period' && !opts.plain && /^\s*\|/.test(raw)) continue;
       re.lastIndex = 0;
       let m;
       while ((m = re.exec(line))) {
@@ -341,7 +369,7 @@ export function checkFile(file, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// CLI: node lang-mechanics.mjs [--plain] [--json] [--script zh|ja|ko|...] <file...>
+// CLI: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] <file...>
 // Exit contract (load-bearing, see header): exit 0 on a findings run, exit 1
 // ONLY on an unreadable file -- mirrors md-checks.mjs's own CLI exactly.
 // ---------------------------------------------------------------------------
@@ -376,7 +404,7 @@ if (isMainModule(import.meta.url)) {
   if (scriptIdx !== -1) opts.script = args[scriptIdx + 1];
   const files = args.filter((a, i) => !a.startsWith('--') && (scriptIdx === -1 || i !== scriptIdx + 1));
   if (!files.length) {
-    console.error('usage: node lang-mechanics.mjs [--plain] [--json] [--script zh|ja|ko|...] <file.md> [more.md ...]');
+    console.error('usage: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] <file.md> [more.md ...]');
     process.exitCode = 1;
   } else {
     const out = [];

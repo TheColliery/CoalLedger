@@ -350,3 +350,98 @@ test('snippet comes from the RAW line, never the masked one (a masked span insid
   assert.ok(raw.includes(hits[0].snippet),
     `the snippet must be a substring of the raw line; got ${JSON.stringify(hits[0].snippet)}`);
 });
+
+// ---------------------------------------------------------------------------
+// R14 / CWK-101 EN unit -- ONE rule, one authority. en-double-space-after-period
+// (Microsoft Writing Style Guide, Periods: "Put one space, not two, after a
+// period."). An EN rule fires only on a line with Latin letters and NO Han / Kana /
+// Hangul / Thai (detected by script range, never by a declared language). Rules the
+// authority does not state do not ship: see the engine header's EN decision record.
+// ---------------------------------------------------------------------------
+const en = (text, opts) => checkText(text, opts).filter((h) => h.rule === 'en-double-space-after-period');
+
+test('en-double-space-after-period: two spaces after a period before the next sentence fire', () => {
+  assert.equal(en('First sentence.  Second sentence.').length, 1);
+});
+
+test('en-double-space-after-period: the finding column is the start of the space run', () => {
+  assert.equal(en('First sentence.  Second sentence.')[0].col, 16); // "First sentence." is 15 chars
+});
+
+test('en-double-space-after-period: the finding length covers the WHOLE run (three spaces = 3)', () => {
+  assert.equal(en('First sentence.   Second sentence.')[0].length, 3);
+});
+
+test('en-double-space-after-period: the rule is a warn (a vendor guideline, not a multi-party standard) and names its authority', () => {
+  assert.equal(RULES['en-double-space-after-period'].severity, 'warn');
+  assert.match(RULES['en-double-space-after-period'].authority, /Microsoft Writing Style Guide/);
+});
+
+test('en native clean: one space after a period yields 0', () => {
+  assert.equal(en('First sentence. Second sentence.').length, 0);
+});
+
+test('en recall gap (named): a doubled space that does NOT follow a period is outside the cited clause and yields 0', () => {
+  assert.equal(en('two  spaces between words').length, 0);
+});
+
+test('en: an ellipsis is not a period (the period must follow a letter, digit or closer), yields 0', () => {
+  assert.equal(en('Wait...  then go.').length, 0);
+});
+
+test('en: a trailing double space (a Markdown hard line break) is not a finding', () => {
+  assert.equal(en('End of the line.  \nNext line.').length, 0);
+});
+
+test('en: a numbered list marker with two spaces after the period is not a finding', () => {
+  assert.equal(en('1.  The first item').length, 0);
+});
+
+test('en script boundary: a Han line carrying the same period-two-spaces shape yields 0 for the EN rule', () => {
+  assert.equal(en('你好.  再见').length, 0);
+});
+
+test('en script boundary: a Kana line yields 0 for the EN rule', () => {
+  assert.equal(en('これは本です.  次の文').length, 0);
+});
+
+test('en script boundary: a Hangul line yields 0 for the EN rule', () => {
+  assert.equal(en('안녕하세요.  Hello').length, 0);
+});
+
+test('en script boundary: a Thai line yields 0 for the EN rule', () => {
+  assert.equal(en('สวัสดี.  Hello').length, 0);
+});
+
+test('en markdown exclusion: inside a fenced code block yields 0', () => {
+  assert.equal(en('```\nFirst.  Second.\n```').length, 0);
+});
+
+test('en markdown exclusion: inside inline code yields 0', () => {
+  assert.equal(en('see `First.  Second.` here').length, 0);
+});
+
+test('en markdown exclusion: a blockquote line yields 0', () => {
+  assert.equal(en('> First.  Second.').length, 0);
+});
+
+test('en markdown exclusion: a table row (cell padding) yields 0', () => {
+  assert.equal(en('| First.  Second | x |').length, 0);
+});
+
+test('en --plain: markdown awareness off, a fenced line is scanned and fires', () => {
+  assert.equal(en('```\nFirst.  Second.\n```', { plain: true }).length, 1);
+});
+
+test('en CLI: --script en reports only EN rules, and --script zh reports none of them', () => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-lm-en-'));
+  try {
+    const f = path.join(dir, 'a.md');
+    fs.writeFileSync(f, 'First sentence.  Second sentence.\n');
+    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' } });
+    assert.match(run('en').stdout, /\[en-double-space-after-period\]/);
+    assert.match(run('zh').stdout, /^0 finding\(s\)/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
