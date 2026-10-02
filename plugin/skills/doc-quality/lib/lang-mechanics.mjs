@@ -1,7 +1,7 @@
 // CWK-101 -- doc-quality's SECOND mechanical engine (after emdash.mjs):
 // language-mechanics rules keyed on SCRIPT RANGE, never on a doc's declared
 // language. The design shipped with ZH (r34); R14 adds EN, JA and KO, one
-// unit each. CLDR/TH join later -- per the CWK-101 design record (a
+// unit each (EN and JA done below; KO follows). CLDR/TH join later -- per the CWK-101 design record (a
 // room-internal working note, not a tracked file this header can point at).
 // Disagree with THIS header and this header wins: it is the tracked,
 // load-bearing contract.
@@ -158,6 +158,39 @@ export const RULES = {
   // straight quotation marks" and states no consistency clause; the Chicago Manual of Style is paywalled and was
   // NOT read, so no Chicago clause is cited anywhere here. (b) a doubled space that does NOT follow a period: outside
   // the clause, a recall gap named by a test. (c) the spaced/unspaced em dash: already its own engine, emdash.mjs.
+  // R14 JA. Authority (read 2026-10-02, the saved PDF text of jtf.jp/pdf/jtf_style_guide.pdf): JTF Japanese Standard Style
+  // Guide (translation use), 4.0 edition, 2026-07-25, Japan Translation Federation. 1.2.1 句点（。）と読点（、）: "句読点には
+  // 全角の「、」と「。」を使います。和文の句読点としてピリオド（.）とカンマ（,）を使用しません。" 1.2.2 keeps the ASCII forms
+  // where a Latin proper noun or a number carries them ("785,105", "12.5", "The Ministry of Economy, Trade and Industry"), so
+  // a mark is flagged only when a Japanese character stands directly before it. 2.3.1.2 全角文字どうし: "原則として、全角
+  // 文字どうしの間にスペースを入れません。カタカナ複合語の場合は「2.1.7 カタカナ複合語」を参照" -- so a space between
+  // two KATAKANA is left alone (2.1.7 governs it); 2.3.1.1 (full-width beside half-width) is a separate clause and is NOT
+  // enforced here, since it is the more taste-shaped half. JTF is an industry-association guide, not a national or
+  // multi-party standard: the guide itself lists other style guides that keep ，． (its comparison table), so the full-width
+  // comma/period and the space rule are 'warn'; the ASCII , . leak is 'error' because the guide states it as a prohibition.
+  // Not enforced: the W3C JLReq note (cited at r34) was not re-read for this unit.
+  'ja-halfwidth-punct': {
+    id: 'ja-halfwidth-punct',
+    script: 'ja',
+    severity: 'error',
+    description: 'an ASCII , or . directly after a Japanese character (before more Japanese, a space or the line end) -- Japanese text uses 、 and 。',
+    authority: 'JTF Japanese Standard Style Guide (translation use) 4.0, 2026-07-25, 1.2.1: 句読点には全角の「、」と「。」を使います。和文の句読点としてピリオド（.）とカンマ（,）を使用しません。 (1.2.2 keeps the ASCII forms inside Latin proper nouns and numbers)',
+  },
+  'ja-fullwidth-comma-period': {
+    id: 'ja-fullwidth-comma-period',
+    script: 'ja',
+    severity: 'warn',
+    description: 'a full-width comma ， or period ． directly after a Japanese character -- the guide marks これは，見本となる例です． as not to be used',
+    authority: 'JTF Japanese Standard Style Guide (translation use) 4.0, 2026-07-25, 1.2.1 (the x example これは，見本となる例です．); the guide itself notes other style guides allow ，． -- hence warn',
+  },
+  'ja-space-between-fullwidth': {
+    id: 'ja-space-between-fullwidth',
+    script: 'ja',
+    severity: 'warn',
+    description: 'a space (ASCII or U+3000) between two full-width Japanese characters, unless both are Katakana (compound words, JTF 2.1.7)',
+    authority: 'JTF Japanese Standard Style Guide (translation use) 4.0, 2026-07-25, 2.3.1.2 全角文字どうし: 原則として、全角文字どうしの間にスペースを入れません。(a Katakana compound is governed by 2.1.7 instead)',
+  },
+
   'en-double-space-after-period': {
     id: 'en-double-space-after-period',
     script: 'en',
@@ -176,6 +209,14 @@ const ZH_SPACE_BEFORE_PUNCT_RE = /(?<=[一-鿿㐀-䶿])( +)(?=[，。、；：�
 // R14 EN: the period must follow a letter, a digit or a closer (so an ellipsis never matches), the run must be followed by
 // text (a trailing double space is a Markdown hard line break), and a list marker ("1.  item") is not a sentence end.
 // A table row is skipped in checkText below (cell padding is alignment, not prose).
+// R14 JA. A Japanese character = Hiragana, Katakana or Han. The ASCII mark must follow one and be followed by another
+// Japanese character, whitespace or the end of the line; a following Latin letter or digit (a file extension, a
+// version, a Latin proper noun) is JTF 1.2.2's own exception and never matches.
+const JA_HALFWIDTH_PUNCT_RE = /(?<=[぀-ヿ一-鿿㐀-䶿])([,.])(?=$|\s|[぀-ヿ一-鿿㐀-䶿])/g;
+const JA_FULLWIDTH_COMMA_PERIOD_RE = /(?<=[぀-ヿ一-鿿㐀-䶿])([，．])/g;
+// The space run sits between two Japanese characters that are NOT both Katakana: (Hiragana|Han) then any Japanese, or
+// Katakana then (Hiragana|Han).
+const JA_SPACE_BETWEEN_RE = /(?<=[ぁ-ゟ一-鿿㐀-䶿])([ 　]+)(?=[ぁ-ヿ一-鿿㐀-䶿])|(?<=[ァ-ヿ])([ 　]+)(?=[ぁ-ゟ一-鿿㐀-䶿])/g;
 const EN_DOUBLE_SPACE_RE = /(?<=[A-Za-z0-9)\]"'”’]\.)(?<!^\s*\d+\.)( {2,})(?=\S)/g;
 
 // Each CHECKS entry: [id, RegExp]. A rule fires on a line only when
@@ -184,6 +225,9 @@ const EN_DOUBLE_SPACE_RE = /(?<=[A-Za-z0-9)\]"'”’]\.)(?<!^\s*\d+\.)( {2,})(?
 const CHECKS = [
   ['zh-halfwidth-punct', ZH_HALFWIDTH_PUNCT_RE],
   ['zh-space-before-punct', ZH_SPACE_BEFORE_PUNCT_RE],
+  ['ja-halfwidth-punct', JA_HALFWIDTH_PUNCT_RE],
+  ['ja-fullwidth-comma-period', JA_FULLWIDTH_COMMA_PERIOD_RE],
+  ['ja-space-between-fullwidth', JA_SPACE_BETWEEN_RE],
   ['en-double-space-after-period', EN_DOUBLE_SPACE_RE],
 ];
 
