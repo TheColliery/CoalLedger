@@ -1,11 +1,22 @@
 #!/usr/bin/env node
 // Stages one directory per skill under dist-claude-ai/<name>/, copied from
 // plugin/skills/<name>/ with ONLY the SKILL.md frontmatter `description`
-// field rewritten to claude.ai's ZIP-install 200-char skill-listing cap
-// (vs our own 1024 cross-platform cap, desc-cap.mjs) — a DERIVED artifact;
+// field rewritten to a 200-char skill-listing cap (our own cross-platform cap
+// is 1024, desc-cap.mjs). claude.ai's skills page, read 2026-10-02, states a
+// 1,024-char limit, so the 200 trim is conservative: a description that is too
+// short still uploads, one that is too long may not. It stays until one real
+// upload at the longer length is on record (UMB-333). A DERIVED artifact;
 // skills/*/SKILL.md and plugin/skills/*/SKILL.md are never touched. The
 // claude-ai-zips workflow zips each staged directory and attaches it to
-// the GitHub Release as an asset (board #40, C2-v2 design).
+// the GitHub Release as an asset. The workflow zips each staged FOLDER from its
+// parent, so an archive holds <name>/SKILL.md (a SKILL.md at the archive root is
+// not recognized as a skill) and checks every archive's layout before upload.
+// Canonical exemplar: CoalMine (board #40).
+//
+// NAMED DIVERGENCE from the canon blob 6293443 (ONE FLOCK ONE COLOR, R14): this room keeps
+// three fixes the canon copy lacks -- the block-scalar blank-line scan (CWK-120 row 9), the
+// empty plugin/skills guard (CWK-120 row 2) and the realpath main-module guard (r33/r34
+// INSPECT). Everything else, header included, is the canon text.
 //
 // Entry-point imports node builtins only at the top level (node/runtime.md
 // §1) — local libs are dynamic, inside main().
@@ -41,7 +52,18 @@ function replaceDescriptionField(text, newValue) {
   let end = i + 1;
   const v = lines[i].slice('description:'.length).trim();
   if (/^[>|][-+]?$/.test(v)) {
-    while (end < lines.length && /^\s+\S/.test(lines[end])) end++;
+    // CWK-120 row 9's class, SECOND site (the claim named `desc-cap.mjs:29`;
+    // this scan is the same shape and its miss is worse): an internal BLANK line
+    // used to end the block scalar, so a rewrite would have replaced only the
+    // HEAD of the description and left the orphaned tail lines standing in the
+    // frontmatter of a SHIPPED SKILL.md. Carry blank lines through, end at the
+    // last real continuation line (so trailing blanks are preserved, not eaten),
+    // and stop at the next top-level field.
+    let j = i + 1;
+    while (j < lines.length && (/^\s*$/.test(lines[j]) || /^\s/.test(lines[j]))) {
+      if (/\S/.test(lines[j])) end = j + 1;
+      j++;
+    }
   }
   const escaped = newValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const newLines = [...lines.slice(0, i), `description: "${escaped}"`, ...lines.slice(end)];
@@ -60,6 +82,17 @@ async function main() {
 
   fs.rmSync(outDir, { recursive: true, force: true });
   const skills = fs.readdirSync(pluginSkills, { withFileTypes: true }).filter((e) => e.isDirectory());
+  // CWK-120 row 2 (CodeRabbit, this line): the guard above covers plugin/skills
+  // ABSENT; an EMPTY plugin/skills fell straight through — the loop never ran,
+  // `failed` stayed 0, and the script exited 0 printing `Done: 0/0 skill(s)
+  // staged`. The claude-ai-zips workflow would then attach ZERO assets to a
+  // Release and report success: a failure reported as a clean bill, which is the
+  // class this room has already paid for in its own link-check gate (CWK-092).
+  if (skills.length === 0) {
+    console.error(`FAIL: ${pluginSkills} holds no skill directories — nothing to stage; run node scripts/build-plugin.mjs first.`);
+    process.exitCode = 1;
+    return;
+  }
   let failed = 0;
   for (const skill of skills) {
     try {

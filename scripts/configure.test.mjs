@@ -17,9 +17,17 @@ const CLI = path.join(REPO, 'scripts', 'configure.mjs');
 
 // home = a throwaway ~ (no global .coalledger.json -> global write lands clean)
 // proj = the project dir the CLI runs from (cwd)
+// UMB-133: `proj` lives INSIDE the sandbox `home`, never beside it. This CLI
+// WRITES, and its root walk stops only AT `home`: a sibling `proj` climbed on
+// out of the sandbox, through %TEMP%, to the developer's REAL home, where their
+// real `~/.claude/.coalledger.json` — spelled exactly like the nested legacy,
+// and not the sandbox home's global, so not excluded — became the walk's root
+// marker and the WRITE TARGET. `--language th` landed in the real global config.
+// Nesting proj under the sandbox home makes the walk terminate there.
 function sandbox() {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-cfg-home-')));
-  const proj = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-cfg-proj-')));
+  const proj = path.join(home, 'proj');
+  fs.mkdirSync(proj);
   return { home, proj };
 }
 function clean(...dirs) { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); }
@@ -94,6 +102,32 @@ test('configure: a LEGACY-root config migrates on write, and the old file is rem
   } finally { clean(home, proj); }
 });
 
+// UMB-133 addendum (2): the NESTED legacy `.claude/.coalledger.json` migrates on
+// write exactly as the root legacy does — one deprecation, one migration path.
+// One assertion per test, on purpose.
+function nestedLegacySandbox(t) {
+  const { home, proj } = sandbox();
+  t.after(() => clean(home, proj));
+  const nested = path.join(proj, '.claude', '.coalledger.json');
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.writeFileSync(nested, JSON.stringify({ updateCheckDays: 30 }));
+  return { home, proj, nested, r: run(['--language', 'en'], { home, proj }) };
+}
+test('configure: a NESTED-legacy config migrates on write — its values land at the canonical path', (t) => {
+  const { proj, r } = nestedLegacySandbox(t);
+  assert.strictEqual(r.status, 0, `expected exit 0, stderr: ${r.stderr}`);
+  const migrated = path.join(proj, '.claude', 'coal', 'coalledger.json');
+  assert.strictEqual(JSON.parse(fs.readFileSync(migrated, 'utf8')).updateCheckDays, 30);
+});
+test('configure: a NESTED-legacy config migrates on write — the old file is removed', (t) => {
+  const { nested } = nestedLegacySandbox(t);
+  assert.strictEqual(fs.existsSync(nested), false);
+});
+test('configure: a NESTED-legacy migration is announced, not silent', (t) => {
+  const { r } = nestedLegacySandbox(t);
+  assert.ok(r.stdout.includes('Migrated the project config'), r.stdout);
+});
+
 // --------------------------------------------------------------------------
 // CWK-023 finding 1's own regression guard: an `.agents`-only project must
 // never get a foreign `.claude/` planted by a fresh write. RED-FIRST,
@@ -119,5 +153,145 @@ test('configure: an .agents-only project (no .claude/ dir anywhere) does NOT get
     const agentsTarget = path.join(proj, '.agents', 'coal', 'coalledger.json');
     assert.ok(fs.existsSync(agentsTarget), 'the write must land under the agent dir the project already has');
     assert.strictEqual(fs.existsSync(path.join(proj, '.claude')), false, 'no foreign .claude/ may be planted into an .agents-only project');
+  } finally { clean(home, proj); }
+});
+
+// ---------------------------------------------------------------------------
+// CWK-120 rows 4 + 8 (CodeRabbit claims, verified at source before adopting).
+// ONE ASSERTION PER BEHAVIOUR (this room has paid five times for a
+// multi-assertion sabotage test that could not discriminate).
+//
+// Row 4 / ride-along (a), the flock class from main's `.github` adjudication
+// #14: `parseJsonc(raw) || {}` accepts a parsed body that is NOT a plain
+// object -- `[]`, `"str"`, `42` -- as the config. The read side already
+// refuses it (`config-load.mjs` readJsonc: `parsed && typeof parsed ===
+// 'object' && !Array.isArray(parsed) ? parsed : {}`); this CLI did not.
+// ---------------------------------------------------------------------------
+test('configure: an ARRAY top-level config is refused, and the file written back is a plain object', () => {
+  const { home, proj } = sandbox();
+  try {
+    const target = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, '[]\n', 'utf8'); // valid JSON, not a plain object
+    run(['--language', 'th'], { home, proj });
+    const written = JSON.parse(fs.readFileSync(target, 'utf8'));
+    assert.strictEqual(Array.isArray(written) || written === null || typeof written !== 'object', false,
+      'a non-object config must never be carried forward as the config -- the write-back must be a plain object');
+  } finally { clean(home, proj); }
+});
+
+test('configure: an ARRAY top-level config takes the MALFORMED path -- exit 1 (scripts-quality §1, fail loud)', () => {
+  const { home, proj } = sandbox();
+  try {
+    const target = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, '[]\n', 'utf8');
+    const r = run(['--language', 'th'], { home, proj });
+    assert.strictEqual(r.status, 1, `a malformed (non-object) config must exit non-zero, got ${r.status}: ${r.stdout}${r.stderr}`);
+  } finally { clean(home, proj); }
+});
+
+test('configure: a STRING top-level config is refused the same way (the class is not array-only)', () => {
+  const { home, proj } = sandbox();
+  try {
+    const target = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, '"just a string"\n', 'utf8');
+    run(['--language', 'th'], { home, proj });
+    const written = JSON.parse(fs.readFileSync(target, 'utf8'));
+    assert.strictEqual(written.language, 'th',
+      'the rebuilt config must be a plain object carrying the requested key');
+  } finally { clean(home, proj); }
+});
+
+// Row 8: the --global help line printed a FIXED `~/.claude/.coalledger.json`
+// while `globalConfigPath()` honours CLAUDE_CONFIG_DIR -- so a user with that
+// variable set was told the wrong destination by the tool that writes it.
+test('configure --help: the --global line names the path this run would ACTUALLY write (CLAUDE_CONFIG_DIR honoured)', () => {
+  const { home, proj } = sandbox();
+  const cfgDir = path.join(home, 'custom-agent-dir');
+  try {
+    fs.mkdirSync(cfgDir, { recursive: true });
+    const r = spawnSync(process.execPath, [CLI, '--help'], {
+      cwd: proj, encoding: 'utf8', timeout: 20000,
+      env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: cfgDir },
+    });
+    assert.ok(r.stdout.includes(path.join(cfgDir, '.coalledger.json')),
+      `the --global help line must name the resolved global path; got:\n${r.stdout}`);
+  } finally { clean(home, proj); }
+});
+
+// CWK-137 -- bounded reads + a contained write. End-to-end through the real CLI
+// (hermetic spawn, never imported), matching this file's own house shape.
+function canSymlinkCli() {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-cfg-symlink-probe-')));
+  try {
+    const target = path.join(dir, 't.txt');
+    fs.writeFileSync(target, 'x');
+    fs.symlinkSync(target, path.join(dir, 'l.txt'), 'file');
+    return true;
+  } catch { return false; }
+  finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+const CLI_SYMLINK_OK = canSymlinkCli();
+
+test('configure: an OVER-SIZE project config is treated as absent, never read in full, and the run still succeeds with defaults', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.writeFileSync(cfgPath, '/*' + 'x'.repeat(1024 * 1024) + '*/'); // over MAX_CONFIG_BYTES
+    const r = run(['--updateCheckDays', '9'], { home, proj });
+    assert.strictEqual(r.status, 0, `an over-size existing config must not crash the run; got:\n${r.stdout}${r.stderr}`);
+    const written = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    assert.strictEqual(written.updateCheckDays, 9, 'the rebuild must still succeed from defaults, over-size old content treated as absent');
+  } finally { clean(home, proj); }
+});
+
+test('configure: writing to the PROJECT config target that is an EXISTING SYMLINK is REFUSED (the link target is never written through, capability-gated)', (t) => {
+  if (!CLI_SYMLINK_OK) { t.skip('this seat cannot create a file symlink without elevation on this box'); return; }
+  const { home, proj } = sandbox();
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-cfg-cli-victim-')));
+  try {
+    const victim = path.join(outside, 'victim.txt');
+    fs.writeFileSync(victim, 'ORIGINAL-OUTSIDE-FILE');
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.symlinkSync(victim, cfgPath, 'file');
+    const r = run(['--updateCheckDays', '9'], { home, proj });
+    assert.notStrictEqual(r.status, 0, 'a write refused by the write guard must exit non-zero (fail loud)');
+    assert.match(r.stderr + r.stdout, /refused/i, `the refusal must be reported, not silently swallowed; got:\n${r.stdout}${r.stderr}`);
+    assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'ORIGINAL-OUTSIDE-FILE', 'the symlink target outside the project must be UNTOUCHED -- this is the actual security property');
+  } finally { clean(home, proj); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
+// R12 bounce 2 — changed in its own named step (testing.md's own rule: "a test proven
+// wrong is changed in its own named step, and the commit states why it was wrong"). Two
+// things were wrong, both self-caught at the first push: (1) this test writes a plain
+// malformed TEXT file and never creates a symlink, so `CLI_SYMLINK_OK` was the WRONG
+// gate -- copy-paste residue from the symlink-refusal test right above it. Gating a test
+// on a capability it does not use means it never runs where that capability happens to
+// be absent (this box), so no local gate could ever see what CI's ubuntu/macos/windows
+// legs all caught: the assertion below. (2) `assert.strictEqual(r.status, 0, ...)`
+// contradicted this room's own fail-loud discipline (scripts-quality.md §1) and the
+// sibling test right above ("an ARRAY top-level config takes the MALFORMED path -- exit
+// 1"): `configure.mjs`'s malformed-config catch block ALWAYS sets `process.exitCode = 1`
+// -- a malformed config silently overwritten is a partial failure the user must notice,
+// run continues from defaults, old config backed up where possible, but the exit code
+// still reports non-zero. The code was correct; this test's exit-0 expectation was not,
+// and the gate hid that for as long as this box could not create symlinks.
+// Fixes: f411f330a1d57ff16dff6a9c32ee1e6e532d3cfb
+test('configure: a MALFORMED config\'s .bak is written from the bytes ALREADY READ, never a re-open of the original path (CoalMine PoC-3 class, exits non-zero per scripts-quality §1 fail-loud)', () => {
+  const { home, proj } = sandbox();
+  try {
+    fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+    const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+    fs.writeFileSync(cfgPath, 'not valid json at all {{{');
+    const r = run(['--updateCheckDays', '9'], { home, proj });
+    assert.strictEqual(r.status, 1, `a malformed config must exit non-zero (fail loud, scripts-quality §1), got ${r.status}:\n${r.stdout}${r.stderr}`);
+    assert.ok(fs.existsSync(cfgPath + '.bak'), 'the malformed config must be backed up');
+    assert.strictEqual(fs.readFileSync(cfgPath + '.bak', 'utf8'), 'not valid json at all {{{', 'the backup must hold EXACTLY the bytes this run read, proving it came from rawConfig, not a fresh re-open of the config path');
+    const written = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    assert.strictEqual(written.updateCheckDays, 9, 'the rebuild from defaults must still succeed and apply the flag, despite the non-zero exit');
   } finally { clean(home, proj); }
 });

@@ -1,10 +1,10 @@
 // CWK-101 -- doc-quality's SECOND mechanical engine (after emdash.mjs):
 // language-mechanics rules keyed on SCRIPT RANGE, never on a doc's declared
-// language. This unit ships the design + exactly ONE language end-to-end:
-// ZH (two rules, one authority). JA/KO/CLDR/TH/EN join later, one unit each
-// -- per the CWK-101 design record (a room-internal working note, not a
-// tracked file this header can point at). Disagree with THIS header and
-// this header wins: it is the tracked, load-bearing contract.
+// language. The design shipped with ZH (r34); R14 adds EN, JA and KO, one
+// unit each (EN, JA and KO below). CLDR/TH join later -- per the CWK-101 design record (a
+// room-internal working note, not a tracked file this header can point at).
+// Disagree with THIS header and this header wins: it is the tracked,
+// load-bearing contract.
 //
 // PREMISE, stated so nobody widens the wrong file: at the time this shipped,
 // CoalLedger had NO Thai mechanics engine and NO Thai mechanics test. The
@@ -80,6 +80,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readRepoFileBounded, repoEntryKind, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 // ---------------------------------------------------------------------------
 // Script ranges (CWK-101-DESIGN §2) -- detection by CODEPOINT, never by a
@@ -89,6 +90,7 @@ const HAN_RE = /[一-鿿㐀-䶿]/;
 const KANA_RE = /[぀-ゟ゠-ヿ]/;
 const HANGUL_RE = /[가-힯ᄀ-ᇿ㄰-㆏]/;
 const THAI_RE = /[฀-๿]/;
+const LATIN_RE = /[A-Za-z]/;
 
 // Resolve ONE line's script, post-masking (a code span's own script must
 // never influence the surrounding prose's classification): any Kana => 'ja'
@@ -97,7 +99,7 @@ const THAI_RE = /[฀-๿]/;
 // writing a place name in Hanja is outside GB/T 15834-2011's own §1 scope,
 // 汉语的书面语, so letting Han win there is a false positive, not a bounded
 // misread); Han with neither Kana nor Hangul => 'zh'; else Thai => 'th',
-// else null (Latin/no script of interest).
+// else Latin letters alone => 'en' (R14), else null (no script of interest).
 //
 // RULED (design question the reviewer raised): VETO, never a majority-
 // script count. This is a CONFIRMED-severity rule in a suite whose thesis
@@ -110,6 +112,9 @@ function classifyLine(line) {
   if (HANGUL_RE.test(line)) return 'ko';
   if (HAN_RE.test(line)) return 'zh';
   if (THAI_RE.test(line)) return 'th';
+  // R14 EN: a line with Latin letters and NONE of the scripts above. Checked LAST, so any CJK/Hangul/Thai
+  // character vetoes it (a mixed line belongs to the other script's table, never to EN).
+  if (LATIN_RE.test(line)) return 'en';
   return null;
 }
 
@@ -143,6 +148,73 @@ export const RULES = {
     // ？！ under §5.1.2, never folded into one citation.
     authority: 'GB/T 15834-2011《标点符号用法》§5.1.1 (句号、逗号、顿号、分号、冒号均置于相应文字之后，占一个字位置 -- covers 。，、；：) and §5.1.2 (问号、叹号均置于相应文字之后，占一个字位置 -- covers ？！, a separate clause)',
   },
+
+  // R14 EN. ONE rule: the authority states exactly one mechanical spacing clause. Microsoft Writing Style Guide,
+  // "Periods" (learn.microsoft.com/en-us/style-guide/punctuation/periods, page updated 2026-07-06, read 2026-10-02):
+  // "End all sentences with a period, even if they're only two words. Put one space, not two, after a period."
+  // A vendor guideline, not a multi-party standard (AGENTS.md THE PRECEDENCE OF STANDARDS), so severity is 'warn'
+  // (SUSPECTED), never 'error'. WHAT DID NOT SHIP, and why (a rule with no verified authority does not ship):
+  // (a) mixed straight/curly quotation marks in one document: the Microsoft page says "In most content, use
+  // straight quotation marks" and states no consistency clause; the Chicago Manual of Style is paywalled and was
+  // NOT read, so no Chicago clause is cited anywhere here. (b) a doubled space that does NOT follow a period: outside
+  // the clause, a recall gap named by a test. (c) the spaced/unspaced em dash: already its own engine, emdash.mjs.
+  // R14 KO. Authority (read 2026-10-02, the saved PDF text of korean.go.kr/nkview/nklife/2014_4/24_0413.pdf): 새국어생활 제24권
+  // 제4호 (2014 겨울), [부록] <한글 맞춤법> 부분 개정안(문장 부호), the National Institute of Korean Language's own journal
+  // printing the 2014 revision of the 문장 부호 appendix. It names each mark with its ASCII-shaped form: 1. 마침표( . ),
+  // 2. 물음표(?), 3. 느낌표(!), 4. 쉼표( , ), 6. 쌍점( : ). So a full-width ， ． ？ ！ ： standing beside Hangul is the leak
+  // (the inverse of the ZH table). Only those five forms are flagged. NOT flagged, named: 。 and 、 -- the text read names no
+  // such form either way (a secondary news report says the 2014 revision dropped the vertical-writing 고리점/모점, NOT read
+  // at the primary: ⚠️ unverified, check the notice itself), so no clause supports calling them a leak; and ； / （ ）
+  // (no clause read for them). The mark must touch a Hangul character (before or after): a full-width mark between two
+  // Latin words on a Korean line is not a Korean-text leak.
+  'ko-fullwidth-punct': {
+    id: 'ko-fullwidth-punct',
+    script: 'ko',
+    severity: 'error',
+    description: 'a full-width comma ， period ． question mark ？ exclamation mark ！ or colon ： directly beside Hangul -- Korean text uses the ASCII forms . , ? ! :',
+    authority: '새국어생활 제24권 제4호 (2014 겨울), [부록] <한글 맞춤법> 부분 개정안(문장 부호): 1. 마침표( . ), 2. 물음표(?), 3. 느낌표(!), 4. 쉼표( , ), 6. 쌍점( : ) -- the revised appendix names each mark in its ASCII-shaped form',
+  },
+
+  // R14 JA. Authority (read 2026-10-02, the saved PDF text of jtf.jp/pdf/jtf_style_guide.pdf): JTF Japanese Standard Style
+  // Guide (translation use), 4.0 edition, 2026-07-25, Japan Translation Federation. 1.2.1 句点（。）と読点（、）: "句読点には
+  // 全角の「、」と「。」を使います。和文の句読点としてピリオド（.）とカンマ（,）を使用しません。" 1.2.2 keeps the ASCII forms
+  // where a Latin proper noun or a number carries them ("785,105", "12.5", "The Ministry of Economy, Trade and Industry"), so
+  // a mark is flagged only when a Japanese character stands directly before it. 2.3.1.2 全角文字どうし: "原則として、全角
+  // 文字どうしの間にスペースを入れません。カタカナ複合語の場合は「2.1.7 カタカナ複合語」を参照" -- so a space between
+  // two KATAKANA is left alone (2.1.7 governs it); 2.3.1.1 (full-width beside half-width) is a separate clause and is NOT
+  // enforced here, since it is the more taste-shaped half. JTF is an industry-association guide, not a national or
+  // multi-party standard: the guide itself lists other style guides that keep ，． (its comparison table), so the full-width
+  // comma/period and the space rule are 'warn'; the ASCII , . leak is 'error' because the guide states it as a prohibition.
+  // Not enforced: the W3C JLReq note (cited at r34) was not re-read for this unit.
+  'ja-halfwidth-punct': {
+    id: 'ja-halfwidth-punct',
+    script: 'ja',
+    severity: 'error',
+    description: 'an ASCII , or . directly after a Japanese character (before more Japanese, a space or the line end) -- Japanese text uses 、 and 。',
+    authority: 'JTF Japanese Standard Style Guide (translation use) 4.0, 2026-07-25, 1.2.1: 句読点には全角の「、」と「。」を使います。和文の句読点としてピリオド（.）とカンマ（,）を使用しません。 (1.2.2 keeps the ASCII forms inside Latin proper nouns and numbers)',
+  },
+  'ja-fullwidth-comma-period': {
+    id: 'ja-fullwidth-comma-period',
+    script: 'ja',
+    severity: 'warn',
+    description: 'a full-width comma ， or period ． directly after a Japanese character -- the guide marks これは，見本となる例です． as not to be used',
+    authority: 'JTF Japanese Standard Style Guide (translation use) 4.0, 2026-07-25, 1.2.1 (the x example これは，見本となる例です．); the guide itself notes other style guides allow ，． -- hence warn',
+  },
+  'ja-space-between-fullwidth': {
+    id: 'ja-space-between-fullwidth',
+    script: 'ja',
+    severity: 'warn',
+    description: 'a space (ASCII or U+3000) between two full-width Japanese characters, unless both are Katakana (compound words, JTF 2.1.7)',
+    authority: 'JTF Japanese Standard Style Guide (translation use) 4.0, 2026-07-25, 2.3.1.2 全角文字どうし: 原則として、全角文字どうしの間にスペースを入れません。(a Katakana compound is governed by 2.1.7 instead)',
+  },
+
+  'en-double-space-after-period': {
+    id: 'en-double-space-after-period',
+    script: 'en',
+    severity: 'warn',
+    description: 'two or more spaces after a sentence-ending period -- one space, not two',
+    authority: 'Microsoft Writing Style Guide, Periods (learn.microsoft.com/en-us/style-guide/punctuation/periods): "Put one space, not two, after a period." -- a vendor guideline, not a multi-party standard',
+  },
 };
 
 // Group 1 is the defect span itself (the ASCII punct, or the space run) --
@@ -151,6 +223,20 @@ export const RULES = {
 // several half-width commas) are each found independently.
 const ZH_HALFWIDTH_PUNCT_RE = /(?<=[一-鿿㐀-䶿])([,;:?!])(?=[一-鿿㐀-䶿])/g;
 const ZH_SPACE_BEFORE_PUNCT_RE = /(?<=[一-鿿㐀-䶿])( +)(?=[，。、；：？！])/g;
+// R14 EN: the period must follow a letter, a digit or a closer (so an ellipsis never matches), the run must be followed by
+// text (a trailing double space is a Markdown hard line break), and a list marker ("1.  item") is not a sentence end.
+// A table row is skipped in checkText below (cell padding is alignment, not prose).
+// R14 JA. A Japanese character = Hiragana, Katakana or Han. The ASCII mark must follow one and be followed by another
+// Japanese character, whitespace or the end of the line; a following Latin letter or digit (a file extension, a
+// version, a Latin proper noun) is JTF 1.2.2's own exception and never matches.
+const JA_HALFWIDTH_PUNCT_RE = /(?<=[぀-ヿ一-鿿㐀-䶿])([,.])(?=$|\s|[぀-ヿ一-鿿㐀-䶿])/g;
+const JA_FULLWIDTH_COMMA_PERIOD_RE = /(?<=[぀-ヿ一-鿿㐀-䶿])([，．])/g;
+// The space run sits between two Japanese characters that are NOT both Katakana: (Hiragana|Han) then any Japanese, or
+// Katakana then (Hiragana|Han).
+const JA_SPACE_BETWEEN_RE = /(?<=[ぁ-ゟ一-鿿㐀-䶿])([ 　]+)(?=[ぁ-ヿ一-鿿㐀-䶿])|(?<=[ァ-ヿ])([ 　]+)(?=[ぁ-ゟ一-鿿㐀-䶿])/g;
+// R14 KO. A full-width mark touching a Hangul syllable or jamo on either side.
+const KO_FULLWIDTH_PUNCT_RE = /(?<=[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F])[\uFF0C\uFF0E\uFF1F\uFF01\uFF1A]|[\uFF0C\uFF0E\uFF1F\uFF01\uFF1A](?=[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F])/g;
+const EN_DOUBLE_SPACE_RE = /(?<=[A-Za-z0-9)\]"'”’]\.)(?<!^\s*\d+\.)( {2,})(?=\S)/g;
 
 // Each CHECKS entry: [id, RegExp]. A rule fires on a line only when
 // classifyLine(line) matches ITS OWN `script` field (CWK-101-DESIGN §2's
@@ -158,6 +244,11 @@ const ZH_SPACE_BEFORE_PUNCT_RE = /(?<=[一-鿿㐀-䶿])( +)(?=[，。、；：�
 const CHECKS = [
   ['zh-halfwidth-punct', ZH_HALFWIDTH_PUNCT_RE],
   ['zh-space-before-punct', ZH_SPACE_BEFORE_PUNCT_RE],
+  ['ja-halfwidth-punct', JA_HALFWIDTH_PUNCT_RE],
+  ['ja-fullwidth-comma-period', JA_FULLWIDTH_COMMA_PERIOD_RE],
+  ['ja-space-between-fullwidth', JA_SPACE_BETWEEN_RE],
+  ['ko-fullwidth-punct', KO_FULLWIDTH_PUNCT_RE],
+  ['en-double-space-after-period', EN_DOUBLE_SPACE_RE],
 ];
 
 // ---------------------------------------------------------------------------
@@ -293,6 +384,8 @@ export function checkText(text, opts = {}) {
     if (!script) continue;
     for (const [id, re] of checks) {
       if (RULES[id].script !== script) continue;
+      // R14 EN: a Markdown table row pads its cells with runs of spaces, which is alignment, never a sentence gap.
+      if (id === 'en-double-space-after-period' && !opts.plain && /^\s*\|/.test(raw)) continue;
       re.lastIndex = 0;
       let m;
       while ((m = re.exec(line))) {
@@ -308,7 +401,16 @@ export function checkText(text, opts = {}) {
           line: i + 1,
           col: m.index + 1,
           length: m[1] ? m[1].length : m[0].length,
-          snippet: line.slice(Math.max(0, m.index - 12), m.index + (m[1] ? m[1].length : m[0].length) + 12),
+          // CWK-120 (CodeRabbit, this line): the snippet was sliced out of the
+          // MASKED line, so a finding whose 12-char context window reached an
+          // inline code span / link / tag / URL reported `xxxxxx` instead of the
+          // author's own text — a finding a human cannot act on without opening
+          // the file. The OFFSETS were never wrong: `mask` is length-preserving
+          // (`'x'.repeat(s.length)`), so the same indices address the same
+          // characters in `raw`. Only the snippet's SOURCE changes here; `col`
+          // and `length` above still come from the match on the masked line,
+          // which is what makes them correct.
+          snippet: raw.slice(Math.max(0, m.index - 12), m.index + (m[1] ? m[1].length : m[0].length) + 12),
         });
       }
     }
@@ -318,11 +420,20 @@ export function checkText(text, opts = {}) {
 
 export function checkFile(file, opts = {}) {
   if (isLegalPath(file)) return [];
-  return checkText(fs.readFileSync(file, 'utf8'), opts);
+  // CWK-137: this room's docs-health CLI is pointed at a cloned, possibly-hostile
+  // repo's docs by design -- a plain fs.readFileSync here opened a FIFO/device/
+  // escaping-symlink target unconditionally. Bounded + kind-gated, same shape as
+  // md-checks.mjs's own CLI read.
+  const text = readRepoFileBounded(file, null, MAX_DOC_BYTES);
+  if (text === null) {
+    const kind = repoEntryKind(file, null);
+    throw new Error(kind === 'missing' ? `ENOENT: no such file, open '${file}'` : `refused: not a plain file reachable at this path (kind: ${kind}), or over the ${MAX_DOC_BYTES / 1048576} MB bound`);
+  }
+  return checkText(text, opts);
 }
 
 // ---------------------------------------------------------------------------
-// CLI: node lang-mechanics.mjs [--plain] [--json] [--script zh|ja|ko|...] <file...>
+// CLI: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] <file...>
 // Exit contract (load-bearing, see header): exit 0 on a findings run, exit 1
 // ONLY on an unreadable file -- mirrors md-checks.mjs's own CLI exactly.
 // ---------------------------------------------------------------------------
@@ -357,7 +468,7 @@ if (isMainModule(import.meta.url)) {
   if (scriptIdx !== -1) opts.script = args[scriptIdx + 1];
   const files = args.filter((a, i) => !a.startsWith('--') && (scriptIdx === -1 || i !== scriptIdx + 1));
   if (!files.length) {
-    console.error('usage: node lang-mechanics.mjs [--plain] [--json] [--script zh|ja|ko|...] <file.md> [more.md ...]');
+    console.error('usage: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] <file.md> [more.md ...]');
     process.exitCode = 1;
   } else {
     const out = [];

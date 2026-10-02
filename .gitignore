@@ -21,3 +21,9 @@ dist-claude-ai/
 # CoalLedger/scratchpad/ as the return path) — machine-local, never shipped.
 # Flock-canonical: CoalMine's own .gitignore carries the identical `scratchpad/` line.
 scratchpad/
+coverage/
+
+# CWK-154 (3) — CoalBoard's own working state if this room is ever opened under a
+# board session; 0 of 13 room ignores named it before this (.claude/ above already
+# covers this room's own scratch, but a board run plants ITS OWN top-level dir).
+.coalboard/

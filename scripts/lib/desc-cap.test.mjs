@@ -45,3 +45,26 @@ test('description + when_to_use combine toward the cap', () => {
   assert.equal(r.len, 1100);
   assert.equal(r.over, true);
 });
+
+// ---------------------------------------------------------------------------
+// CWK-120 row 9 (CodeRabbit, `desc-cap.mjs:29`): a YAML block scalar may carry
+// an internal BLANK line followed by more indented text. The continuation loop
+// stopped at the blank line, so the parser returned a TRUNCATED value -- and
+// the consequence is not cosmetic: `descriptionCapCheck` then UNDERCOUNTS and a
+// description over the cap passes the gate. One assertion per behaviour.
+// ---------------------------------------------------------------------------
+test('block scalar: an internal blank line does NOT terminate the value', () => {
+  const text = '---\nname: x\ndescription: >-\n  line one\n\n  line two\n---\nbody';
+  assert.equal(frontmatterField(text, 'description'), 'line one line two');
+});
+
+test('block scalar: the scan still STOPS at the next top-level field (the fix must not over-reach)', () => {
+  const text = '---\ndescription: >-\n  only this\n\nname: not-part-of-the-description\n---\nbody';
+  assert.equal(frontmatterField(text, 'description'), 'only this');
+});
+
+test('block scalar with a blank line: the cap check no longer undercounts (an over-cap value FAILS)', () => {
+  const half = 'a'.repeat(600);
+  const text = `---\nname: x\ndescription: >-\n  ${half}\n\n  ${half}\n---\nbody`;
+  assert.equal(descriptionCapCheck(text).over, true);
+});

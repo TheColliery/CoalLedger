@@ -111,7 +111,7 @@ async function main() {
   // workspace — `workspacePaths[0]` = the current spec's field (re-derived
   // 2026-07-23), `cwd` kept as the legacy fallback — authoritative for the
   // project-config walk when present.
-  const [{ loadMergedConfig }, { clampedRead }] = await Promise.all([
+  const [{ loadMergedConfig, configNotices }, { clampedRead }] = await Promise.all([
     import(lib('config-load.mjs')),
     import(lib('config-schema.mjs')),
   ]);
@@ -119,10 +119,16 @@ async function main() {
   const cwd = (Array.isArray(wsPaths) && typeof wsPaths[0] === 'string' && wsPaths[0])
     ? wsPaths[0] : firstString(payload, ['cwd']);
   const cfg = loadMergedConfig(cwd ? { cwd } : {});
-
-  const out = buildOffers(cfg, clampedRead);
-  // null = off/disabled; [] = manual mode (offers silent, and KIND 1 is not
-  // ported here) — either way there is nothing to say on AG.
+  // UMB-133: the config-path notices, bound to THIS platform's workspace (the
+  // payload's, not the hook process's cwd) and handed to the shared assembly as
+  // a THUNK — LAZY (bounce-1 F4), so a gated-off session never pays the root
+  // walk; buildOffers resolves it past its own gates and owns the fail-silent
+  // wrap, which is why there is no try/catch here any more.
+  const out = buildOffers(cfg, clampedRead, () => configNotices(cwd));
+  // null = off/disabled (the Phoenix #13 consent gate: no notice either — see
+  // buildOffers); [] = manual mode with nothing to say (offers silent, and
+  // KIND 1 is not ported here). A non-empty array in manual mode is the
+  // config-path notices alone.
   if (!out || !out.length) return;
   const lang = languageLine(clampedRead(cfg, 'language'));
   if (lang) out.push(lang);

@@ -18,7 +18,7 @@ CoalLedger is **zero-dependency** (Node.js built-ins only, Node 22+). No `npm in
 
 ```bash
 node scripts/build-plugin.mjs   # regenerate plugin/ from source
-node scripts/verify.mjs         # gate: manifests, factory config vs schema, skills, version pins, fixtures, dist-sync
+node scripts/verify.mjs         # gate: manifests, factory config vs schema, skills, version pins, fixtures, dist-sync, git-spawn env census
 node scripts/test.mjs           # zero-dependency test suite (node --test, explicit file list)
 ```
 
@@ -28,7 +28,7 @@ node scripts/test.mjs           # zero-dependency test suite (node --test, expli
 - **`scripts/lib/config-schema.mjs` is the single source of truth** for every `.coalledger.json` key—`verify.mjs` validates the factory template against it; the README key table mirrors it.
 - **Detection goes through the AST, never regex over raw markdown:** `md-ast.mjs` (CommonMark+GFM) is the only way a structure check reads a doc—the anti-cry-wolf property. Honest ceiling stays "CommonMark+GFM fidelity", never a GitHub-pixel claim.
 - **Keep the hook Phoenix-pure:** zero dependencies, fail-silent (try/catch, exit 0, never `process.exit()`), no network, no child processes, silent except the sanctioned channel. **The opposite discipline binds `scripts/` and `.githooks/`:** those fail LOUD (`hooks-safety.md` §1.0's host table)—a CLI or a repo gate exits non-zero and blocks, on purpose.
-- **Enable the repo gate once per clone:** `git config core.hooksPath .githooks`—git deliberately never wires this for you, so `.githooks/pre-commit` and `.githooks/pre-push` (identical, running `verify.mjs` then `test.mjs`) sit inert until you run it, and skipping it means you meet the gate for the first time as a red CI check instead of a blocked local commit.
+- **Enable the repo gate once per clone:** `git config core.hooksPath .githooks`—git deliberately never wires this for you, so `.githooks/pre-commit` and `.githooks/pre-push` (identical bytes; the house secret scan `secret-gate.mjs` runs first, then `verify.mjs`, then `test.mjs`: pre-commit scans the tracked tree, pre-push scans every pushed commit) sit inert until you run it, and skipping it means you meet the gate for the first time as a red CI check instead of a blocked local commit.
 - **Add tests:** every lib change gets a unit test; every hook-behavior change gets a **hermetic spawn test** (spawn the real hook, sandbox TEMP + HOME). Register a new test *file* in `scripts/test.mjs` (the runner fails on an unlisted orphan).
 - **Language & tone:** shipped source and docs stay in English; the canaries themselves REPORT in the user's language.
 
@@ -49,13 +49,13 @@ Cross-agent by design—the canaries are plain SKILL.md contracts and the engine
 | `hooks/coalledger-doctrack.js` | PostToolUse: records edited DOC files and the `MEMORY.md`-update satisfier that feeds the docs memory-drift reminder (Phoenix-13). |
 | `hooks/coalledger-drift-stop.js` | Stop: emits the quiet docs memory-drift reminder when docs were edited but `MEMORY.md` was not (Phoenix-13). |
 | `hooks/hooks.json` | Hook wiring via `${CLAUDE_PLUGIN_ROOT}/hooks/…`. |
-| `scripts/lib/` | The engine (ESM, shipped): `md-ast` CommonMark+GFM parser · `md-checks` structure checks · config modules. |
+| `scripts/lib/` | The engine (ESM, shipped): `md-ast` CommonMark+GFM parser · `md-checks` structure checks · `emdash` and `lang-mechanics` mechanics engines · config modules. |
 | `skills/` | The 6+1 canary contracts (`doc-structure`, `doc-grounding`, `doc-standard`, `doc-rot`, `doc-consistency`, `doc-quality`, `doc-leak`). |
 | `commands/` | `/coalledger:stats` (measurement) · `/coalledger:update` (self-update procedure). |
-| `scripts/` | Tool scripts: `build-plugin.mjs`, `verify.mjs`, `test.mjs`, the unit/hermetic tests, and `fixtures/` (planted defects + clean decoys). |
+| `scripts/` | Tool scripts: `build-plugin.mjs`, `verify.mjs`, `test.mjs`, `secret-gate.mjs` (the house secret scan the git hooks run first), the unit/hermetic tests, and `fixtures/` (planted defects + clean decoys). |
 | `plugin/` | Generated Claude Code plugin distribution—never hand-edit. |
 | `platform-configs/.coalledger.json` | Commented factory default configuration. |
-| `.githooks/pre-commit`, `.githooks/pre-push` | The fail-loud repo gate (`verify.mjs` then `test.mjs`), identical bytes on both hooks—enable once per clone with `git config core.hooksPath .githooks` (see Developing & Testing above). |
+| `.githooks/pre-commit`, `.githooks/pre-push` | The fail-loud repo gate (`secret-gate.mjs`, then `verify.mjs`, then `test.mjs`), identical bytes on both hooks—enable once per clone with `git config core.hooksPath .githooks` (see Developing & Testing above). |
 
 ---
 

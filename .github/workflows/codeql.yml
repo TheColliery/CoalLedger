@@ -35,11 +35,29 @@ jobs:
     name: analyze (javascript)
     runs-on: ubuntu-latest
     permissions:
+      # CWK-120 row 5 (CodeRabbit). A job-level `permissions:` block REPLACES the
+      # workflow-level one -- it does not merge (this room measured that exact fact
+      # in its own board #117 work on claude-ai-zips.yml) -- so the top-level
+      # `contents: read` above does NOT reach this job, and every scope this block
+      # omits is `none`. `actions/checkout` below therefore ran with no contents
+      # read granted. It resolves TODAY because the repo is PUBLIC (measured, not
+      # reasoned: this workflow's runs on main are green, CWK-112's widening
+      # included); the grant is added so the job does not silently break the day
+      # the repo, the token defaults, or the checkout action change.
+      # The bot's claim said "both job-level permission blocks" and this file has
+      # exactly ONE job (`analyze`) with exactly ONE such block -- counted, not
+      # assumed. `actions: read` is NOT added: codeql-action recommends it for
+      # PRIVATE repos only, and minimum-power (Q#4) says an unneeded scope stays
+      # ungranted.
+      contents: read
       security-events: write
+    timeout-minutes: 15 # testing.md: every run has a finite clock; CWK-154 (2) — sized a bit above ci.yml's own light workload: CodeQL's own init/analyze time is not under this room's control
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
+        with:
+          persist-credentials: false # CWK-154 (2) — this job uploads a SARIF via the analyze action, never a git push
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
         with:
           languages: javascript-typescript, actions
           queries: security-and-quality
-      - uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4

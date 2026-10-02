@@ -14,6 +14,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { parseJsonc } from './jsonc.mjs';
 import { CONFIG_SCHEMA } from './config-schema.mjs';
+import { readRepoFileBounded, repoEntryKind, MAX_CONFIG_BYTES } from './repo-fs.mjs';
 
 export function claudeBaseDir(home = os.homedir()) {
   const c = process.env.CLAUDE_CONFIG_DIR;
@@ -35,22 +36,76 @@ export function physicalDir(p) {
 // projectConfigCandidates, so the two can never drift apart (DRY).
 const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
 
+// UMB-133 (the config-path unification): the NESTED legacy shape,
+// `<root>/.claude/.coalledger.json`, is honoured after the three canonical
+// agent-dir paths and BEFORE the root legacy `<root>/.coalledger.json`. It
+// used to be a silent dead end: a user who wrote it got a walk that missed
+// every candidate, `readJsonc` returned `{}`, and the config was dead with
+// nothing said. Its path is spelled EXACTLY like the GLOBAL config
+// (`~/.claude/.coalledger.json`), so everything that treats it as a project
+// path first asks `isGlobalConfig` — see that function for the trap.
+const NESTED_LEGACY_REL = path.join('.claude', '.coalledger.json');
+const CANONICAL_REL = '.claude/coal/coalledger.json'; // for the notices below: always shown as the same forward-slash string, one wording everywhere
+
+// Physical (symlink- and 8.3-collapsed) form of a file path for the
+// identity compare below; `.native` per node/runtime.md §4. An absent path has
+// no realpath — fall back to the lexical resolve (a compare of two ABSENT
+// paths that resolve equal is correctly "the same file").
+function physicalFile(p) {
+  try { return fs.realpathSync.native(p); } catch { return path.resolve(p); }
+}
+// UMB-133 bounce-1 F3: a config candidate must be a FILE. `existsSync` is TRUE
+// for a directory, so a stray `mkdir` (or a botched sync) at a candidate path
+// used to win the candidate walk, anchor the project root, and earn a
+// "move it to …" migration line — while a real config one candidate LOWER was
+// shadowed and silently unread (`readJsonc` catches the EISDIR and returns
+// `{}`). That is the silent-dead-config shape this unit exists to close, one
+// layer over. The mirror of `ownDirDefault`'s own `isDir`, which already had
+// this right for the agent-DIRECTORY question.
+// SCOPE, stated: this closes the directory case for the candidate walk
+// (`projectConfigPath`), the near-miss probe (`configNotices`) and this file's
+// CONFIG root markers. `.git` deliberately keeps a bare `existsSync` — it IS a
+// directory. `hooks/coalledger-doctrack.js` carries the room's other root
+// walk and gets the same split in the same unit, so the two finders cannot
+// disagree about whether a directory anchors a project.
+function isFile(p) {
+  try { return fs.statSync(p).isFile(); } catch { return false; }
+}
+// THE TRAP THE NESTED LEGACY CARRIES: `<home>/.claude/.coalledger.json` is the
+// GLOBAL config, and as a "nested legacy" it is spelled identically. Unguarded,
+// every user with a global config would (a) have any cwd under home resolve its
+// project root to HOME, (b) read their own global file back as a project layer,
+// and (c) be told to migrate a config that is not a project config at all.
+// `globalConfigPath(home)` honours CLAUDE_CONFIG_DIR, so this compares against
+// the SAME path the cascade actually reads as global, never a hand-built one.
+function isGlobalConfig(file, home) {
+  return physicalFile(file) === physicalFile(globalConfigPath(home));
+}
+
 // Walk up from startDir looking for a project-root marker (`.git`, the LEGACY
-// `.coalledger.json`, or a per-agent-dir config under AGENT_DIR_ORDER); NEVER
-// walk above `home` — stop there and fall back to startDir. The three
-// agent-dir markers were added by the namespace campaign alongside the
-// legacy dotfile: a project configured ONLY through the new shape (no
-// `.git`, and — since it migrated — no root `.coalledger.json` either) would
-// otherwise match nothing and fall through to the raw startDir fallback.
-// Adding a marker can only make the walk stop LOWER — a narrower anchor —
-// never higher; it never widens the search past what `.git`/the legacy file
-// already covers.
+// `.coalledger.json`, the NESTED legacy `.claude/.coalledger.json`, or a
+// per-agent-dir config under AGENT_DIR_ORDER); NEVER walk above `home` — stop
+// there and fall back to startDir. The three agent-dir markers were added by
+// the namespace campaign alongside the legacy dotfile: a project configured
+// ONLY through the new shape (no `.git`, and — since it migrated — no root
+// `.coalledger.json` either) would otherwise match nothing and fall through to
+// the raw startDir fallback. The nested legacy (UMB-133) is a marker for the
+// identical reason: a project anchored only by it must still resolve its own
+// root, or the candidate that finds its config would never be walked. The
+// GLOBAL config is not a marker (`isGlobalConfig`). Adding a marker can only
+// make the walk stop LOWER — a narrower anchor — never higher; it never widens
+// the search past what `.git`/the legacy file already covers.
 export function findProjectRoot(startDir = process.cwd(), home = os.homedir()) {
   let dir = physicalDir(startDir);
   const homeAbs = physicalDir(home);
   while (true) {
-    const hasAgentConfig = AGENT_DIR_ORDER.some((d) => fs.existsSync(path.join(dir, d, 'coal', 'coalledger.json')));
-    if (fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, '.coalledger.json')) || hasAgentConfig) return dir;
+    const hasAgentConfig = AGENT_DIR_ORDER.some((d) => isFile(path.join(dir, d, 'coal', 'coalledger.json')));
+    const nested = path.join(dir, NESTED_LEGACY_REL);
+    // isFile first (F3): the realpath inside isGlobalConfig is paid only by a dir that HAS the file.
+    const hasNestedLegacy = isFile(nested) && !isGlobalConfig(nested, home);
+    // `.git` stays an EXISTENCE check — it is legitimately a directory; every
+    // CONFIG marker is a file check (F3, see isFile above).
+    if (fs.existsSync(path.join(dir, '.git')) || isFile(path.join(dir, '.coalledger.json')) || hasNestedLegacy || hasAgentConfig) return dir;
     if (dir === homeAbs) return startDir;
     const parent = path.dirname(dir);
     if (parent === dir) return startDir; // filesystem root reached
@@ -71,21 +126,28 @@ export function findProjectRoot(startDir = process.cwd(), home = os.homedir()) {
 //      Claude Code can activate this room.
 //   2. Other known agent dirs, fixed order: `.claude` -> `.agents` ->
 //      `.gemini` (first FOUND wins).
-//   3. LEGACY: <project>/.<skill-dotfile>.json at the project root (today's
+//   3. LEGACY, both shapes, in this order (UMB-133 unified the flock on one
+//      legacy pair): <project>/.claude/.coalledger.json (the NESTED legacy),
+//      then <project>/.coalledger.json (the root legacy, today's original
 //      shape) — read normally, no breakage for an existing user.
+// A legacy hit is DEPRECATED, not removed: see configNotices below for the
+// one-line notice and README `## 🔧 Configure` for the deprecation record.
 // WRITE target = where the config was found; absent everywhere, ownDirDefault
 // below (CWK-023: the write side now exists — `scripts/configure.mjs` — and
 // a hook never performs this move on a mere READ, Phoenix #5; only
 // configure.mjs's own explicit write can trigger a legacy-file migration,
 // exactly the move-on-CONFIG-WRITE-only rail this comment already named
 // before there was a writer to exercise it).
-function candidatesForRoot(root) {
+function candidatesForRoot(root, home) {
   const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coalledger.json'));
-  candidates.push(path.join(root, '.coalledger.json')); // LEGACY, always last
-  return candidates;
+  candidates.push(path.join(root, NESTED_LEGACY_REL)); // LEGACY 1: nested
+  candidates.push(path.join(root, '.coalledger.json')); // LEGACY 2: root, always last
+  // When root IS home, the nested legacy is the GLOBAL config, not a project
+  // config: never offer it as a candidate (isGlobalConfig's trap (b)).
+  return candidates.filter((c) => !isGlobalConfig(c, home));
 }
 export function projectConfigCandidates(cwd = process.cwd(), home = os.homedir()) {
-  return candidatesForRoot(findProjectRoot(cwd, home));
+  return candidatesForRoot(findProjectRoot(cwd, home), home);
 }
 // Fresh-default / migration write target when NO config exists anywhere yet
 // (ported from CoalMine's INSPECT MEDIUM 2, 2026-08-08, CWK-023): the design
@@ -108,8 +170,8 @@ export function projectConfigPath(cwd = process.cwd(), home = os.homedir()) {
   // fallback (CWK-023 correction: calling findProjectRoot twice per read
   // walks the tree twice — a hook-path cost with no benefit).
   const root = findProjectRoot(cwd, home);
-  const candidates = candidatesForRoot(root);
-  for (const c of candidates) if (fs.existsSync(c)) return c;
+  const candidates = candidatesForRoot(root, home);
+  for (const c of candidates) if (isFile(c)) return c; // F3: a DIRECTORY at a candidate path is not a config
   // nothing found anywhere -- READS: behaviour-identical to the old
   // candidates[0] fallback (both this and `.claude` are equally absent, so
   // readJsonc returns {} either way — this change is only observable on a
@@ -117,9 +179,145 @@ export function projectConfigPath(cwd = process.cwd(), home = os.homedir()) {
   return ownDirDefault(root);
 }
 
-function readJsonc(file) {
+// UMB-133 holes (1)+(2): the two things a user must be TOLD about their own
+// project config, as an array of one-line strings ([] = nothing to say).
+//   LEGACY  — the candidate that WON is a legacy shape: it is still read, and
+//             the line names the canonical path to move it to. Exactly one line,
+//             and only for the winner (a shadowed legacy is not a second line).
+//   IGNORED — a file exists at a path a user plausibly writes by hand that this
+//             walk NEVER reads (the incident class: a consent written where it
+//             was reasonable to expect it, walked past, silence read as
+//             "honoured"). One line per file present.
+// The near-miss list is deliberately a near-MISS list, never a crawl: a FIXED
+// set derived from AGENT_DIR_ORDER, one `isFile` stat each — no readdir, no
+// recursion, nothing outside the ONE root the walk resolves. Three independent
+// typos, crossed with the three agent dirs the walk already knows:
+//   `coalledger.json`     the leading dot dropped (at the root and in each dir)
+//   `.<agent>/.coalledger.json`   the nested legacy at the OTHER agent dirs
+//                         (`.claude`'s IS a candidate now, so it is not here)
+//   `.<agent>/coal/.coalledger.json`   the dot kept inside `coal/`
+// A SIBLING room's config (`.coalmine.json` …) is not this room's to report on.
+// COST, stated: this resolves the root itself, so a caller that also called
+// loadMergedConfig has walked up to home twice — bounded by home, once per
+// SessionStart, never per edit; the per-edit doctrack hook does not call this.
+const NEAR_MISS_REL = [
+  'coalledger.json',
+  ...AGENT_DIR_ORDER.map((d) => path.join(d, 'coalledger.json')),
+  ...AGENT_DIR_ORDER.filter((d) => d !== '.claude').map((d) => path.join(d, '.coalledger.json')),
+  ...AGENT_DIR_ORDER.map((d) => path.join(d, 'coal', '.coalledger.json')),
+];
+// UMB-174 (b) — classify ONE config file that IS a plain file (F3 already handles a
+// directory separately: `won`/`isFile` skip past it, so it never reaches here as the
+// walk's winner) -> the flock's reason a PRESENT config could not be used, or null when
+// it reads fine. `'unreadable'` covers EACCES and EPERM both (a Windows ACL denial
+// surfaces as EPERM, not EACCES — C-6) and, by extension here, any OTHER kind this
+// room's own CWK-137 gate refuses before ever opening (a FIFO/socket/device/escaping
+// symlink, via repoEntryKind) and a config over MAX_CONFIG_BYTES: none of those had a
+// name in the flock's exemplars (CoalFace/CoalHearth), because none of them had a
+// bounded reader yet when UMB-174 (b) shipped there — 'unreadable' is the honest,
+// user-facing-accurate extension of the SAME word to the SAME outcome ("this file
+// exists, and you cannot have its contents"), not a new vocabulary term invented here.
+// A leading U+FEFF is stripped BEFORE the parse (RFC 8259 §8.1), so a BOM-prefixed
+// VALID object is never reported as malformed (same rule config-load's readJsonc
+// already applies). Branches on the fs error's CODE, never its message (node/runtime.md
+// §7). Exemplar: CoalFace v0.12.0 / CoalHearth / CoalTipple — ported, re-verified
+// against this room's own bounded-read primitives.
+// R12 bounce 1 F9: this used to open and read the file BY HAND (fstat + a raw read loop),
+// a SECOND read path on the same bytes that dropped the one flag the first path
+// (readRepoFileBounded, repo-fs.mjs) added deliberately -- O_NONBLOCK, so a FIFO swapped
+// in between the kind-gate and the open fails the open at once instead of hanging it
+// (repo-fs.mjs's own comment on REPO_READ_FLAGS says exactly why). This classifier is
+// reached by the SessionStart conductor on every session (coalledger-conductor.js /
+// ag-conductor.js -> loadMergedConfig -> configNotices), so a hang here is a hung
+// session, which Phoenix #4's fail-silent guarantee cannot rescue a call that never
+// returns. It also carried F2's truncation bug in a second copy. Delegating to the
+// shared helper fixes both at once and means any FUTURE hardening of the read path
+// (another flag, another bound) is inherited here too, never re-typed.
+function classifyConfigRead(file, root) {
+  const kind = repoEntryKind(file, root);
+  if (kind === 'missing') return null; // absent — the normal, silent case
+  if (kind === 'dir') return 'a directory';
+  if (kind === 'other') return 'unreadable'; // FIFO/socket/device/escaping-or-dangling symlink (CWK-137)
+  // kind === 'file' from here: readRepoFileBounded re-checks size/kind on the OPEN FD
+  // (the TOCTOU window between repoEntryKind's lstat and the open), so a null here means
+  // over-bound, denied (EACCES/EPERM), or the fd-level re-check caught something the
+  // lstat-based kind gate above could not see yet -- all of it is the SAME user-facing
+  // outcome ("this file exists, and you cannot have its contents"), hence one word.
+  const content = readRepoFileBounded(file, root, MAX_CONFIG_BYTES);
+  if (content === null) return 'unreadable';
+  const stripped = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+  let parsed;
+  try { parsed = parseJsonc(stripped); } catch { return 'malformed JSON'; }
+  if (!(parsed && typeof parsed === 'object' && !Array.isArray(parsed))) return 'not a JSON object';
+  return null;
+}
+
+export function configNotices(cwd = process.cwd(), home = os.homedir()) {
+  const root = findProjectRoot(cwd, home);
+  const out = [];
+  const candidates = candidatesForRoot(root, home);
+  const won = candidates.findIndex((c) => isFile(c)); // F3: same predicate the candidate walk uses, or the two disagree
+  if (won >= AGENT_DIR_ORDER.length) {
+    out.push(`[CoalLedger] LEGACY: ${candidates[won]} is a deprecated config path (still read); move it to ${CANONICAL_REL}`);
+  }
+  // UMB-174 (b): the candidate that actually WON the walk still PASSED isFile() (stat
+  // only needs directory execute permission, not read permission on the file itself),
+  // so a chmod-0/ACL-denied/malformed/non-object/over-bound winner silently read as {}
+  // with no report before this line existed. CWK-135 (a): the project tier keeps the
+  // verbatim flock canonical string; only the GLOBAL tier (below) names its own path.
+  if (won !== -1) {
+    const reason = classifyConfigRead(candidates[won], root);
+    if (reason) out.push(`[CoalLedger] UNREADABLE: ${candidates[won]} exists but is not a readable config (${reason}); it was skipped — canonical = ${CANONICAL_REL}`);
+  }
+  // R12 bounce 1 F8: the row names TWO shapes ("a malformed OR directory-shaped config"),
+  // and `won` (above) can only ever find a FILE (F3's own fix) -- a DIRECTORY sitting at
+  // a higher-priority candidate than the winning file (or sitting alone, with no file
+  // candidate anywhere) is invisible to that branch. `existsIdx` finds the first
+  // candidate that is PRESENT AT ALL (file or not); it can never sit BELOW `won`, because
+  // `won` itself already satisfies "present". So existsIdx === won means the winner IS
+  // that entry (already reported above, if it needed reporting) -- only existsIdx < won
+  // (a non-file sits ABOVE the winning file) or won === -1 (no file candidate exists at
+  // all, but something non-file does) needs a SEPARATE line. The SELECTION stays exactly
+  // as F3 left it: a real file one candidate lower still wins and is still read; this
+  // only adds the notice CoalFace's case-63 already ships for the identical shape.
+  const existsIdx = candidates.findIndex((c) => repoEntryKind(c, root) !== 'missing');
+  if (existsIdx !== -1 && existsIdx !== won) {
+    const reason = classifyConfigRead(candidates[existsIdx], root);
+    if (reason) out.push(`[CoalLedger] UNREADABLE: ${candidates[existsIdx]} exists but is not a readable config (${reason}); it was skipped — canonical = ${CANONICAL_REL}`);
+  }
+  // The GLOBAL config is read independently of the project candidate walk (both layers
+  // merge in loadMergedConfig), so it is reported independently too. CWK-135 (a): this
+  // line names the GLOBAL file's OWN path as its canonical — a project-relative
+  // canonical would send the user to the wrong place for a file that has no project
+  // location to move to.
+  const globalPath = globalConfigPath(home);
+  const globalReason = classifyConfigRead(globalPath, null);
+  if (globalReason) out.push(`[CoalLedger] UNREADABLE: ${globalPath} exists but is not a readable config (${globalReason}); it was skipped — canonical = ${globalPath}`);
+  for (const rel of NEAR_MISS_REL) {
+    const p = path.join(root, rel);
+    // isGlobalConfig: a CLAUDE_CONFIG_DIR pointed at another agent dir must not
+    // make the user's own GLOBAL config read as an ignored project file.
+    // isFile (F3): an IGNORED line says "a FILE exists here that nothing reads";
+    // a directory that happens to be named `coalledger.json` is not that.
+    if (isFile(p) && !isGlobalConfig(p, home)) out.push(`[CoalLedger] IGNORED: ${p} is not a config path; canonical = ${CANONICAL_REL}`);
+  }
+  return out;
+}
+
+// CWK-137 — bounded, kind-gated read on a REPO-DERIVED path: this room runs wherever a
+// user invokes it, including a cloned repo neither we nor the user fully trust. A plain
+// `fs.readFileSync` here opened whatever `file` resolved to — a symlink to `/dev/zero`
+// read forever, a FIFO with no writer blocked forever, both reachable from a hostile
+// AGENTS.md-shaped `.coalledger.json` on every SessionStart (hooks/coalledger-conductor.js
+// + hooks/ag-conductor.js both call loadMergedConfig below). `root = null` for the GLOBAL
+// config (the user's own home file — still kind-gated and bounded, never containment-
+// checked; CoalMine's Step 3 ruling 1, re-decided for this room's one home-file read) —
+// `root = <project root>` for the project config (must resolve inside the project).
+function readJsonc(file, root) {
+  const raw = readRepoFileBounded(file, root, MAX_CONFIG_BYTES);
+  if (raw === null) return {}; // missing, over-bound, or not a plain file — same as before: absent
   try {
-    let content = fs.readFileSync(file, 'utf8');
+    let content = raw;
     if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
     const parsed = parseJsonc(content); // proto-pollution-guarded parse
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
@@ -347,7 +545,8 @@ export function mergeSafety(global, project) {
 // Two-level cascade: global overlaid by the nearest project config, with the
 // consent-bearing keys clamped safer-value-wins (mergeSafety above).
 export function loadMergedConfig({ cwd = process.cwd(), home = os.homedir() } = {}) {
-  const global = readJsonc(globalConfigPath(home));
-  const project = readJsonc(projectConfigPath(cwd, home));
+  const global = readJsonc(globalConfigPath(home), null); // a home file -- no containment, still bounded
+  const projectRoot = findProjectRoot(cwd, home);
+  const project = readJsonc(projectConfigPath(cwd, home), projectRoot); // must resolve inside the project
   return mergeSafety(global, project);
 }

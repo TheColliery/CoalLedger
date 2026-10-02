@@ -10,7 +10,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { scanText, scanFile, isLegalPath, THIRD_PARTY_MARKER, CASES } from './emdash.mjs';
+
+const EMDASH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'emdash.mjs');
 
 for (const [name, text, want, mode] of CASES) {
   test('CASES: ' + name, () => {
@@ -113,4 +117,48 @@ test('blockquote is excluded under BOTH modes -- the ruling this unit made, not 
   const line = '> quoted alpha' + String.fromCharCode(0x2014) + 'beta';
   assert.deepEqual(scanText(line, 'spaced'), []);
   assert.deepEqual(scanText(line, 'unspaced'), []);
+});
+
+// R14 part C / CWK-166's sibling defect: the CLI block logged "unreadable, skipped" and then folded the file into a CLEAN
+// `TOTAL: N` with exit 0, so a scan that could not read a file read as a scan that found nothing there. A file the CLI
+// cannot read is COUNTED, the TOTAL reads unknown, and the exit code is 1; a clean TOTAL needs every file read.
+// Spawned for real (the CLI block is not importable logic), sandboxed to a temp dir, finite clock, capped heap.
+function runCli(args) {
+  const r = spawnSync(process.execPath, ['--max-old-space-size=128', EMDASH, ...args], {
+    encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL',
+    env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' },
+  });
+  return { code: r.status, out: (r.stdout || '') + (r.stderr || '') };
+}
+
+test('CLI unreadable: a file the scanner cannot read is counted, TOTAL reads unknown, exit 1 (never a clean TOTAL)', (t) => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-emdash-cli-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const good = path.join(dir, 'good.md');
+  fs.writeFileSync(good, 'word—word is a hit in one mode\nplain line\n');
+  const found = scanFile(good, 'spaced').length;
+  const missing = path.join(dir, 'missing.md');
+  const r = runCli([good, missing]);
+  assert.equal(r.code, 1, `exit ${r.code}: ${r.out}`);
+  assert.match(r.out, /unreadable, skipped/);
+  assert.match(r.out, new RegExp(`^TOTAL: unknown \\(1 unreadable; ${found} found in the readable files\\)$`, 'm'));
+  assert.doesNotMatch(r.out, /^TOTAL: \d+$/m, 'no clean numeric TOTAL line may be printed');
+});
+
+test('CLI unreadable (control): every file readable keeps the clean numeric TOTAL and exit 0', (t) => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-emdash-cli-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const good = path.join(dir, 'good.md');
+  fs.writeFileSync(good, 'plain line\nanother plain line\n');
+  const r = runCli([good]);
+  assert.equal(r.code, 0, `exit ${r.code}: ${r.out}`);
+  assert.match(r.out, /^TOTAL: 0$/m);
+});
+
+test('CLI unreadable: a directory passed as a file is unreadable too (EISDIR), counted the same way', (t) => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-emdash-cli-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const r = runCli([dir]);
+  assert.equal(r.code, 1, `exit ${r.code}: ${r.out}`);
+  assert.match(r.out, /^TOTAL: unknown \(1 unreadable; 0 found in the readable files\)$/m);
 });

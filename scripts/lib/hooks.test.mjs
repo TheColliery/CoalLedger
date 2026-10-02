@@ -412,3 +412,57 @@ test('disjoint end-to-end: a session editing BOTH code and a doc — CL records 
     assert.ok(driftEmitted(r.stdout), 'the doc half drives CL\'s nudge; the code half is CoalMine\'s');
   } finally { clean(home, tmp, proj); }
 });
+
+// --------------------------------------------------------------------------
+// UMB-133 — the tracker's project-root marker set gained the NESTED legacy
+// `.claude/.coalledger.json` (config-load.mjs findProjectRoot gained it in the
+// same unit; the two root-finders must stay in step). The nested legacy is
+// spelled exactly like the GLOBAL config, and this walk is unbounded upward.
+// --------------------------------------------------------------------------
+test('UMB-133 tracker: the NESTED legacy roots the project — a scratch doc inside a real project whose tmp is nested under it is EXCLUDED', () => {
+  const { home, tmp, proj } = sandbox();
+  try {
+    // A real project rooted ONLY by the nested legacy (no .git, no other config)
+    // whose os.tmpdir() sits inside it. With the marker the project root is
+    // `proj` (outside tmp -> the scratch doc is excluded); without it the walk
+    // finds nothing and falls back to the cwd, which is UNDER tmp -> tracked.
+    fs.rmSync(path.join(proj, '.coalledger.json'));
+    fs.mkdirSync(path.join(proj, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(proj, '.claude', '.coalledger.json'), '{}');
+    const hookTmp = path.join(proj, 'tmpdir');
+    const work = path.join(hookTmp, 'work');
+    fs.mkdirSync(work, { recursive: true });
+    const r = runHook(TRACK, trackPayload('U1', path.join(work, 'README.md'), work), hookTmp, home, work);
+    assertGraceful(r);
+    assert.strictEqual(fs.existsSync(path.join(hookTmp, 'coalledger-U1.docs')), false);
+  } finally { clean(home, tmp, proj); }
+});
+
+// The GLOBAL config guard. Skipped VISIBLY when the machine itself has a
+// foreign `.claude/.coalledger.json` above the temp dir (a developer's real
+// global on Windows, where %TEMP% is under the real home): the walk is
+// unbounded upward, so that file is an ancestor marker no sandbox can hide, and
+// the probe below decides skippability by the CAPABILITY, never by platform.
+test('UMB-133 tracker: the GLOBAL config is NOT a root marker — a tmp-rooted project under home is still tracked', (t) => {
+  const { home, tmp, proj } = sandbox();
+  try {
+    const globalCfg = path.join(home, '.claude', '.coalledger.json');
+    fs.mkdirSync(path.dirname(globalCfg), { recursive: true });
+    fs.writeFileSync(globalCfg, '{}');
+    const hookTmp = path.join(home, 'tmpdir'); // the hook's tmp lives UNDER home (Windows: %TEMP% is)
+    const work = path.join(hookTmp, 'work');
+    fs.mkdirSync(work, { recursive: true });
+    for (let d = path.dirname(work); ; d = path.dirname(d)) {
+      const f = path.join(d, '.claude', '.coalledger.json');
+      if (fs.existsSync(f) && path.resolve(f) !== path.resolve(globalCfg)) {
+        t.skip(`a foreign ${f} sits above the temp dir — it is an ancestor marker no sandbox can hide`);
+        return;
+      }
+      if (path.dirname(d) === d) break;
+    }
+    const r = runHook(TRACK, trackPayload('U2', path.join(work, 'README.md'), work), hookTmp, home, work);
+    assertGraceful(r);
+    // Unguarded, the walk resolves the "project root" to HOME (outside tmp) and excludes this doc.
+    assert.ok(fs.existsSync(path.join(hookTmp, 'coalledger-U2.docs')));
+  } finally { clean(home, tmp, proj); }
+});

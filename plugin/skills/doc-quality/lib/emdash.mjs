@@ -79,6 +79,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readRepoFileBounded, repoEntryKind, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 const EMDASH = String.fromCharCode(0x2014);
 const THAI = /[฀-๿]/;
@@ -253,7 +254,15 @@ export function scanText(text, mode = 'spaced') {
 export function scanFile(file, mode = 'spaced') {
   if (mode === 'off') return [];
   if (isLegalPath(file)) return [];
-  return scanText(fs.readFileSync(file, 'utf8'), mode);
+  // CWK-137: this room's docs-health tooling is pointed at a cloned, possibly-hostile
+  // repo's docs by design -- bounded + kind-gated, same shape as md-checks.mjs's and
+  // lang-mechanics.mjs's own CLI reads.
+  const text = readRepoFileBounded(file, null, MAX_DOC_BYTES);
+  if (text === null) {
+    const kind = repoEntryKind(file, null);
+    throw new Error(kind === 'missing' ? `ENOENT: no such file, open '${file}'` : `refused: not a plain file reachable at this path (kind: ${kind}), or over the ${MAX_DOC_BYTES / 1048576} MB bound`);
+  }
+  return scanText(text, mode);
 }
 
 // SELF-TEST — the positive control ships WITH the instrument, so a zero from a
@@ -356,14 +365,22 @@ if (isMainModule(import.meta.url)) {
     console.log(`FAIL: --mode must be 'unspaced', 'spaced', or 'off' (got '${mode}')`);
     process.exitCode = 1;
   } else {
-    let total = 0;
+    // R14 / CWK-166's sibling defect: a file the scanner cannot read is COUNTED, never folded into a clean total. One
+    // unreadable file makes the TOTAL unknown (the readable files' hits are still printed) and the exit code 1; a clean
+    // numeric TOTAL means every named file was read.
+    let total = 0, unreadable = 0;
     for (const f of args.filter((a) => !a.startsWith('--'))) {
       let hits;
-      try { hits = scanFile(f, mode); } catch { console.log(`  --   unreadable, skipped: ${f}`); continue; }
+      try { hits = scanFile(f, mode); } catch { console.log(`  --   unreadable, skipped: ${f}`); unreadable++; continue; }
       for (const h of hits) console.log(`${f}:${h.line}:${h.col}: ${h.context}`);
       if (hits.length) console.log(`  ${f}: ${hits.length}`);
       total += hits.length;
     }
-    console.log(`TOTAL: ${total}`);
+    if (unreadable) {
+      console.log(`TOTAL: unknown (${unreadable} unreadable; ${total} found in the readable files)`);
+      process.exitCode = 1;
+    } else {
+      console.log(`TOTAL: ${total}`);
+    }
   }
 }

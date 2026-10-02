@@ -18,6 +18,16 @@ import { checkConfigKeys, checkConfigReadPath } from './lib/config-keys.mjs';
 import { projectConfigCandidates, physicalDir } from './lib/config-load.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// CWK-133/C-4 -- every git spawn this gate makes carries gitEnv(), never the ambient
+// process.env: this gate is wired into a git pre-commit/pre-push hook, so an inherited
+// GIT_DIR/GIT_WORK_TREE (the shape a LINKED WORKTREE's own hook exports) would otherwise
+// silently redirect these spawns onto whatever repo GIT_DIR points at instead of `repo`.
+// Dynamic per node/runtime.md §1 (a GATE's local lib imports resolve inside the check that
+// consumes them); computed once here because both git-spawning checks below need it.
+const { gitEnv } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env.mjs')).href);
+const REPO_GIT_ENV = gitEnv(path.dirname(repo));
+
 let fails = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); fails++; };
@@ -266,7 +276,7 @@ try {
 // CoalMine's, ported unchanged; what differs per room is exactly these derivations.
 console.log('pointers (reachable from a clone):');
 try {
-  const lsAll = spawnSync('git', ['ls-files'], { cwd: repo, encoding: 'utf8' });
+  const lsAll = spawnSync('git', ['ls-files'], { cwd: repo, encoding: 'utf8', env: REPO_GIT_ENV });
   if (lsAll.error || lsAll.status !== 0) {
     // SKIP, NOT FAIL — and this is a PORT DEFECT found by this room's own fixture
     // tests, not by reading. The exemplar FAILs here; its wiring assumes git is always
@@ -407,6 +417,26 @@ try {
       ['hooks/hooks.json (JSON manifest, not prose)', (f) => f === 'hooks/hooks.json'],
       ['scripts/fixtures/*.md (planted-defect test fixtures, not real ship-text)', (f) => f.startsWith('scripts/fixtures/')],
       ['root non-doc files (LICENSE, NOTICE, lint/git config)', (f) => ['LICENSE', 'NOTICE', '.markdownlint.json', '.gitignore', '.gitattributes'].includes(f)],
+      // CWK-120 BOUNCE 1 (F1+F2) — three root files entered the TRACKED set in this
+      // unit and this accounting block is the one declared-out row that is a ROSTER
+      // rather than a predicate, so it takes the edit. The sibling shipped the same
+      // three rows under this very ticket (CoalMine/scripts/verify.mjs, its
+      // `.coderabbit.yaml` row cites `CWK-120 (c)`) — ONE FLOCK ONE COLOR: we had
+      // adopted the FILES and not the gate row beside them. Every reason below is
+      // RE-MEASURED HERE, never inherited: `pointerCandidates()` over each file
+      // returns 0 at this tree (0 / 0 / 0, run against the live bytes), so a
+      // DEFAULT_SURFACE_PLAN row would be vacuous — a declared-out row is the honest
+      // shape, not a shortcut around walking them.
+      ['.coderabbit.yaml (third-party review-bot config, byte-identical to the org canon template; fixed schema, and pointerCandidates() over it returns 0 at this tree — a plan row would be vacuous)', (f) => f === '.coderabbit.yaml'],
+      ['.gitbook.yaml (GitBook build config — one `root:` key plus a `structure:` map of `readme:`/`summary:`, no comments, pointerCandidates() = 0 here)', (f) => f === '.gitbook.yaml'],
+      // SUMMARY.md is the one of the three that carries real links, so its reason is
+      // the one that must name a LIVE gate rather than an absence: measured here, its
+      // 9 entries are read by `md-checks.mjs` (0 findings on the real tree; a broken
+      // entry produces a `file-missing` finding, proven on a scratch copy), and
+      // link-check.yml's own filter (`git ls-files '*.md'` minus plugin/ and
+      // scripts/fixtures/) now lists SUMMARY.md — so a dead nav entry reddens that
+      // workflow on every push. Coverage lives in that gate, not in a human promise.
+      ['SUMMARY.md (GitBook nav list, not ship-text prose; pointerCandidates() = 0 here, and its relative links are gated on every push by link-check.yml running md-checks.mjs over it)', (f) => f === 'SUMMARY.md'],
     ];
     let declaredOutCount = 0;
     const residueFiles = [];
@@ -516,7 +546,7 @@ try {
     // not own it.
     const ignoredRoots = applyCheckIgnoreProbe({
       toProbe, fail,
-      runCheckIgnore: (input) => spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input }),
+      runCheckIgnore: (input) => spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input, env: REPO_GIT_ENV }),
     });
     // NAMED BOUND -- FOREIGN-NAME COLLISION (CWK-079, ported). `candidateRoots` is fed
     // from every CITED first segment, unlike the disk-derived shape it replaces, which
@@ -589,6 +619,17 @@ try {
   if (!drift.length) ok('plugin/ matches source (manifest + commands + hooks + skills + scripts/lib); nothing else leaked');
   else for (const d of drift) fail(d);
 } catch (e) { fail(`plugin/ dist check: ${e.message}`); }
+
+// git spawn census (CWK-133/C-4 + CWK-136 -- every git spawn under scripts/ must carry
+// env: gitEnv(...) alone, never a bare env: or one that mentions process.env). Dynamic
+// per node/runtime.md §1, same as the dist check above.
+console.log('git spawn census (CWK-133/C-4 + CWK-136 -- every git spawn under scripts/ must take its env from gitEnv() alone, never bare or process.env):');
+try {
+  const { censusGitSpawns, collectScriptsMjs } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env-census.mjs')).href);
+  const gitSpawnFindings = censusGitSpawns(collectScriptsMjs(repo));
+  if (!gitSpawnFindings.length) ok('every git spawn under scripts/ takes its env from gitEnv() alone, or a declared exemption');
+  else for (const f of gitSpawnFindings) fail(f);
+} catch (e) { fail(`git spawn census: ${e.message}`); }
 
 console.log(fails ? `\nVERIFY: FAIL (${fails})` : '\nVERIFY: PASS');
 // CWK-071: `process.exit()` truncates pending stdout writes (node/runtime.md §7) --

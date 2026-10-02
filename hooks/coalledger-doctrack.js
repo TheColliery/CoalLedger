@@ -90,29 +90,78 @@ function isUnderTmpdir(absPath) {
 // out `await import()` too — that would make every edit pay an async ESM
 // load exactly to answer a question a handful of sync existsSync calls
 // already answer. Keep the marker list in sync by hand if AGENT_DIR_ORDER or
-// the LEGACY filename ever changes in config-load.mjs.
+// the LEGACY filenames ever change in config-load.mjs.
+//
+// UMB-133: the marker set gained the NESTED legacy `.claude/.coalledger.json`
+// (config-load.mjs findProjectRoot gained it in the same unit — a project
+// anchored only by it must resolve its own root in BOTH root-finders, or they
+// drift). It is spelled exactly like the GLOBAL config, and this walk is
+// unbounded upward, so it reaches every ancestor's home: WITHOUT the
+// `isGlobalConfigFile` guard below, a tmp-rooted project with no other marker
+// would resolve its "root" to the user's HOME, read as a real project outside
+// tmp, and have every doc edit silently excluded — the CWK-054/MED-1 defect
+// re-opened. Cost, stated: ONE more existsSync per level (the realpath compare
+// runs only for a dir that HAS the file), on top of the declared exception below.
 //
 // COST, stated rather than left implicit (CWK-054/LOW-1): unlike the rest of
 // this file, this walk is UNBOUNDED upward — no HOME-stop (config-load.mjs's
 // own HOME-stop bounds an upward CONFIG search, a different question this
-// walk never asks). Measured worst case (tmp file, no marker anywhere up to
-// the filesystem root, 9 levels deep): 70 existsSync calls, 7.4 ms — over
-// Phoenix #3's <=5ms per-edit budget. Accepted, not a blocker: it runs ONLY
+// walk never asks). The cost is OVER Phoenix #3's <=5ms per-edit budget, and
+// the figure is NOT pinned here — this room has paid for stale pinned numbers,
+// and UMB-133 invalidated the previous pair ("70 existsSync calls, 7.4 ms",
+// measured when the marker list held FIVE entries) by adding a sixth check per
+// level. Re-derive, never quote:
+//   STAT COUNT per level = 1 (the `.git` existsSync) + CONFIG_MARKERS_REL.length
+//   (each an isFile statSync, F3) + 1 (the nested-legacy check, separate from
+//   the list) — read the two lists, no run needed; `existsSync` and `statSync`
+//   are both one stat, so the split costs nothing;
+//   the total is that times the number of ancestors up to the filesystem root,
+//   so it scales with where the edited file sits, not with a constant.
+//   WALL CLOCK (whole hook spawn, interpreter startup INCLUDED — a different
+//   instrument from the old walk-only 7.4 ms, so the two are not comparable):
+//   node -e "const fs=require('node:fs'),os=require('node:os'),p=require('node:path'),{spawnSync}=require('node:child_process');const t=fs.realpathSync(fs.mkdtempSync(p.join(os.tmpdir(),'cl-cost-')));let d=t;for(let i=0;i<9;i++)d=p.join(d,'l'+i);fs.mkdirSync(d,{recursive:true});const f=p.join(d,'README.md');fs.writeFileSync(f,'#x');const ms=[];for(let i=0;i<11;i++){const s=process.hrtime.bigint();spawnSync(process.execPath,['hooks/coalledger-doctrack.js'],{input:JSON.stringify({session_id:'c'+i,cwd:d,tool_input:{file_path:f}}),env:{...process.env,TEMP:t,TMP:t,TMPDIR:t},encoding:'utf8'});ms.push(Number(process.hrtime.bigint()-s)/1e6)}ms.sort((a,b)=>a-b);console.log('n=11 min='+ms[0].toFixed(1)+' median='+ms[5].toFixed(1)+' max='+ms[10].toFixed(1)+' ms');fs.rmSync(t,{recursive:true,force:true})"
+// Accepted, not a blocker: it runs ONLY
 // once isUnderTmpdir(file) is already true (the short-circuit above), so an
 // ordinary edit outside tmp pays zero, and a real tmp-rooted project finds
 // its `.git` in one or two levels. Declared exception, not a redesign target
 // — do not chase the budget by adding a HOME-stop here.
-const ROOT_MARKERS_REL = [
-  '.git',
+// UMB-133 bounce-1 F3: the CONFIG markers are FILE checks, `.git` stays an
+// EXISTENCE check (it is legitimately a directory). `existsSync` is true for a
+// directory, so a stray `mkdir` at a config-marker path used to anchor a
+// project root here while config-load.mjs's own walk resolved a different one
+// — two root-finders disagreeing about the same tree is the drift this split
+// closes. Keep the two lists in step with config-load.mjs's `findProjectRoot`
+// (same CJS/ESM duplication reason as `globalConfigFile` below).
+const GIT_MARKER_REL = '.git';
+const CONFIG_MARKERS_REL = [
   path.join('.claude', 'coal', 'coalledger.json'),
   path.join('.agents', 'coal', 'coalledger.json'),
   path.join('.gemini', 'coal', 'coalledger.json'),
   '.coalledger.json',
 ];
+const NESTED_LEGACY_REL = path.join('.claude', '.coalledger.json'); // UMB-133
+// The GLOBAL config file, computed the way config-load.mjs's globalConfigPath
+// does (CLAUDE_CONFIG_DIR first entry, else ~/.claude) — duplicated for the
+// same CJS/ESM reason as the marker list; keep in step.
+function globalConfigFile() {
+  const c = process.env.CLAUDE_CONFIG_DIR;
+  return path.join((c && c.split(',')[0].trim()) || path.join(os.homedir(), '.claude'), '.coalledger.json');
+}
+function physicalFile(p) {
+  try { return fs.realpathSync.native(p); } catch { return path.resolve(p); }
+}
+function isGlobalConfigFile(p) { return physicalFile(p) === physicalFile(globalConfigFile()); }
+// F3 mirror of config-load.mjs's own `isFile` — a config marker must be a FILE.
+function isFile(p) {
+  try { return fs.statSync(p).isFile(); } catch { return false; }
+}
 function findProjectRootLocal(startDir) {
   let dir = path.resolve(startDir);
   while (true) {
-    if (ROOT_MARKERS_REL.some((m) => fs.existsSync(path.join(dir, m)))) return dir;
+    if (fs.existsSync(path.join(dir, GIT_MARKER_REL))) return dir;
+    if (CONFIG_MARKERS_REL.some((m) => isFile(path.join(dir, m)))) return dir;
+    const nested = path.join(dir, NESTED_LEGACY_REL);
+    if (isFile(nested) && !isGlobalConfigFile(nested)) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) return startDir; // filesystem root reached, no marker found
     dir = parent;

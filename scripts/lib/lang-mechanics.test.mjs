@@ -68,7 +68,10 @@ test('script boundary: a Thai line with an ASCII comma yields 0 (no Han present)
 // ---------------------------------------------------------------------------
 test('ZH/JA split: a Kana-bearing line with an ASCII comma between Kanji does NOT fire the ZH rule', () => {
   // アメリカ (Kana) ... 可以,可以 (Han-comma-Han, the exact fireable shape) ... です (Kana)
-  assert.equal(checkText('アメリカ可以,可以です').length, 0);
+  // R14 (test proven wrong in its own named step): this asserted ZERO findings of any kind, but the JA table now exists,
+  // and its ja-halfwidth-punct rule CORRECTLY fires on this very line (an ASCII comma after Han, JTF 1.2.1). The test's
+  // intent was only that the ZH rule does not, so it now filters to the zh-* rules.
+  assert.equal(checkText('アメリカ可以,可以です').filter((h) => h.rule.startsWith('zh-')).length, 0);
 });
 
 test('ZH/JA split: the SAME Han-comma-Han pattern with NO Kana on the line DOES fire (control proving the gate is live, not just absent Han)', () => {
@@ -333,4 +336,365 @@ test('FIXBACK 3 (named trade, mutation target B -- the FENCE stop): front matter
 // is, so real HTML stays masked and bare-bracket prose does not.
 test('the HTML mask requires a real tag/comment opener -- bare angle-bracket prose is NOT swallowed', () => {
   assert.equal(checkText('如果甲<乙,那么丙>丁,否则戊').length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// CWK-120 row 10 (CodeRabbit, `lang-mechanics.mjs:311`): `snippet` was sliced
+// out of the MASKED line, so a finding whose 12-char context window reaches an
+// inline code span / link / tag / URL reported `xxxxxx` instead of the author's
+// own text -- a finding a human cannot act on without opening the file. The
+// mask is length-preserving (`'x'.repeat(s.length)`), so the SAME indices are
+// valid in the raw line: only the snippet's SOURCE was wrong, never its offsets.
+// ---------------------------------------------------------------------------
+test('snippet comes from the RAW line, never the masked one (a masked span inside the context window)', () => {
+  const raw = '你好,再见 `inline code` 尾';
+  const hits = checkText(raw);
+  assert.equal(hits.length, 1);
+  assert.ok(raw.includes(hits[0].snippet),
+    `the snippet must be a substring of the raw line; got ${JSON.stringify(hits[0].snippet)}`);
+});
+
+// ---------------------------------------------------------------------------
+// R14 / CWK-101 EN unit -- ONE rule, one authority. en-double-space-after-period
+// (Microsoft Writing Style Guide, Periods: "Put one space, not two, after a
+// period."). An EN rule fires only on a line with Latin letters and NO Han / Kana /
+// Hangul / Thai (detected by script range, never by a declared language). Rules the
+// authority does not state do not ship: see the engine header's EN decision record.
+// ---------------------------------------------------------------------------
+const en = (text, opts) => checkText(text, opts).filter((h) => h.rule === 'en-double-space-after-period');
+
+test('en-double-space-after-period: two spaces after a period before the next sentence fire', () => {
+  assert.equal(en('First sentence.  Second sentence.').length, 1);
+});
+
+test('en-double-space-after-period: the finding column is the start of the space run', () => {
+  assert.equal(en('First sentence.  Second sentence.')[0].col, 16); // "First sentence." is 15 chars
+});
+
+test('en-double-space-after-period: the finding length covers the WHOLE run (three spaces = 3)', () => {
+  assert.equal(en('First sentence.   Second sentence.')[0].length, 3);
+});
+
+test('en-double-space-after-period: the rule is a warn (a vendor guideline, not a multi-party standard) and names its authority', () => {
+  assert.equal(RULES['en-double-space-after-period'].severity, 'warn');
+  assert.match(RULES['en-double-space-after-period'].authority, /Microsoft Writing Style Guide/);
+});
+
+test('en native clean: one space after a period yields 0', () => {
+  assert.equal(en('First sentence. Second sentence.').length, 0);
+});
+
+test('en recall gap (named): a doubled space that does NOT follow a period is outside the cited clause and yields 0', () => {
+  assert.equal(en('two  spaces between words').length, 0);
+});
+
+test('en: an ellipsis is not a period (the period must follow a letter, digit or closer), yields 0', () => {
+  assert.equal(en('Wait...  then go.').length, 0);
+});
+
+test('en: a trailing double space (a Markdown hard line break) is not a finding', () => {
+  assert.equal(en('End of the line.  \nNext line.').length, 0);
+});
+
+test('en: a numbered list marker with two spaces after the period is not a finding', () => {
+  assert.equal(en('1.  The first item').length, 0);
+});
+
+test('en script boundary: a Han line carrying the same period-two-spaces shape yields 0 for the EN rule', () => {
+  assert.equal(en('你好.  再见').length, 0);
+});
+
+test('en script boundary: a Kana line yields 0 for the EN rule', () => {
+  assert.equal(en('これは本です.  次の文').length, 0);
+});
+
+test('en script boundary: a Hangul line yields 0 for the EN rule', () => {
+  assert.equal(en('안녕하세요.  Hello').length, 0);
+});
+
+test('en script boundary: a Thai line yields 0 for the EN rule', () => {
+  assert.equal(en('สวัสดี.  Hello').length, 0);
+});
+
+test('en markdown exclusion: inside a fenced code block yields 0', () => {
+  assert.equal(en('```\nFirst.  Second.\n```').length, 0);
+});
+
+test('en markdown exclusion: inside inline code yields 0', () => {
+  assert.equal(en('see `First.  Second.` here').length, 0);
+});
+
+test('en markdown exclusion: a blockquote line yields 0', () => {
+  assert.equal(en('> First.  Second.').length, 0);
+});
+
+test('en markdown exclusion: a table row (cell padding) yields 0', () => {
+  assert.equal(en('| First.  Second | x |').length, 0);
+});
+
+test('en --plain: markdown awareness off, a fenced line is scanned and fires', () => {
+  assert.equal(en('```\nFirst.  Second.\n```', { plain: true }).length, 1);
+});
+
+test('en CLI: --script en reports only EN rules, and --script zh reports none of them', () => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-lm-en-'));
+  try {
+    const f = path.join(dir, 'a.md');
+    fs.writeFileSync(f, 'First sentence.  Second sentence.\n');
+    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' } });
+    assert.match(run('en').stdout, /\[en-double-space-after-period\]/);
+    assert.match(run('zh').stdout, /^0 finding\(s\)/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// R14 / CWK-101 JA unit -- three rules, ONE authority: JTF Japanese Standard Style Guide
+// (translation use) v4.0, 2026-07-25 -- 1.2.1 (句読点には全角の「、」と「。」を使います。和文の句読点として
+// ピリオド（.）とカンマ（,）を使用しません) and 2.3.1.2 (原則として、全角文字どうしの間にスペースを入れません).
+// A JA rule fires only on a line carrying Kana (the ZH/JA/KO veto); the ASCII exceptions JTF 1.2.2 keeps
+// (digits, Latin proper nouns) are covered by tests below.
+// ---------------------------------------------------------------------------
+const ja = (text, id, opts) => checkText(text, opts).filter((h) => h.rule === id);
+const JA_HALF = 'ja-halfwidth-punct';
+const JA_FULL = 'ja-fullwidth-comma-period';
+const JA_SPACE = 'ja-space-between-fullwidth';
+
+test('ja-halfwidth-punct: an ASCII comma between Japanese characters fires', () => {
+  assert.equal(ja('これは,見本です', JA_HALF).length, 1);
+});
+
+test('ja-halfwidth-punct: the finding column points at the comma itself', () => {
+  assert.equal(ja('これは,見本です', JA_HALF)[0].col, 4);
+});
+
+test('ja-halfwidth-punct: a comma followed by a space fires', () => {
+  assert.equal(ja('これは, 見本です', JA_HALF).length, 1);
+});
+
+test('ja-halfwidth-punct: an ASCII period closing a Japanese sentence at the end of the line fires', () => {
+  assert.equal(ja('これは見本です.', JA_HALF).length, 1);
+});
+
+test('ja-halfwidth-punct: the rule is an error and names JTF 1.2.1', () => {
+  assert.equal(RULES[JA_HALF].severity, 'error');
+  assert.match(RULES[JA_HALF].authority, /JTF/);
+  assert.match(RULES[JA_HALF].authority, /1\.2\.1/);
+});
+
+test('ja native clean: full-width 、 and 。 yield 0 for every ja rule', () => {
+  assert.equal(checkText('これは、見本です。').filter((h) => h.script === 'ja').length, 0);
+});
+
+test('ja-halfwidth-punct exception (JTF 1.2.2): a digit group separator after a digit yields 0', () => {
+  assert.equal(ja('従業員は約30,000人です', JA_HALF).length, 0);
+});
+
+test('ja-halfwidth-punct exception (JTF 1.2.2): a decimal point between digits yields 0', () => {
+  assert.equal(ja('精度は12.5ポイントです', JA_HALF).length, 0);
+});
+
+test('ja-halfwidth-punct exception (JTF 1.2.2): a comma inside a Latin proper noun yields 0', () => {
+  assert.equal(ja('これはThe Ministry of Economy, Trade and Industryです', JA_HALF).length, 0);
+});
+
+test('ja-halfwidth-punct: a file extension after Japanese text (period followed by Latin) yields 0', () => {
+  assert.equal(ja('これはまとめ.txtです', JA_HALF).length, 0);
+});
+
+test('ja script boundary: the same ASCII comma in a pure Latin sentence yields 0 for the JA rule', () => {
+  assert.equal(ja('hello, world', JA_HALF).length, 0);
+});
+
+test('ja/zh split: a Kana-bearing line with an ASCII comma between Kanji fires the JA rule and NOT the ZH rule', () => {
+  const hits = checkText('日本語,中文です');
+  assert.equal(hits.filter((h) => h.rule === JA_HALF).length, 1);
+  assert.equal(hits.filter((h) => h.rule === 'zh-halfwidth-punct').length, 0);
+});
+
+test('ja/ko split: a Hangul line (no Kana) with an ASCII comma after Han yields 0 for the JA rule', () => {
+  assert.equal(ja('大韓民國,한국은 나라다.', JA_HALF).length, 0);
+});
+
+test('ja/zh split: an all-Han line (no Kana) is ZH, so the JA rule yields 0 and the ZH rule fires', () => {
+  const hits = checkText('日本語,中文');
+  assert.equal(hits.filter((h) => h.rule === JA_HALF).length, 0);
+  assert.equal(hits.filter((h) => h.rule === 'zh-halfwidth-punct').length, 1);
+});
+
+test('ja markdown exclusion: inside a fenced block yields 0', () => {
+  assert.equal(ja('```\nこれは,見本です.\n```', JA_HALF).length, 0);
+});
+
+test('ja markdown exclusion: inside inline code yields 0', () => {
+  assert.equal(ja('これは `a,見本` です', JA_HALF).length, 0);
+});
+
+test('ja markdown exclusion: inside a URL yields 0', () => {
+  assert.equal(ja('これは https://example.com/あ,い です', JA_HALF).length, 0);
+});
+
+test('ja markdown exclusion: a blockquote line yields 0', () => {
+  assert.equal(ja('> これは,見本です.', JA_HALF).length, 0);
+});
+
+test('ja --plain: markdown awareness off, a fenced line fires', () => {
+  assert.equal(ja('```\nこれは,見本です\n```', JA_HALF, { plain: true }).length, 1);
+});
+
+test('ja-fullwidth-comma-period: a full-width comma after Japanese text fires (JTF 1.2.1 marks it x)', () => {
+  assert.equal(ja('これは，見本です', JA_FULL).length, 1);
+});
+
+test('ja-fullwidth-comma-period: a full-width period after Japanese text fires', () => {
+  assert.equal(ja('これは見本です．', JA_FULL).length, 1);
+});
+
+test('ja-fullwidth-comma-period: the rule is a warn (JTF itself notes other guides allow it)', () => {
+  assert.equal(RULES[JA_FULL].severity, 'warn');
+});
+
+test('ja-fullwidth-comma-period: a full-width comma inside a number context after a digit yields 0 for THIS rule', () => {
+  assert.equal(ja('これは785，105です', JA_FULL).length, 0);
+});
+
+test('ja-space-between-fullwidth: a space between two hiragana fires (JTF 2.3.1.2)', () => {
+  assert.equal(ja('これ は見本です', JA_SPACE).length, 1);
+});
+
+test('ja-space-between-fullwidth: the finding column is the start of the space run', () => {
+  assert.equal(ja('これ は見本です', JA_SPACE)[0].col, 3);
+});
+
+test('ja-space-between-fullwidth: an ideographic space (U+3000) fires and the length covers the whole run', () => {
+  const hits = ja('これ　 見本です', JA_SPACE);
+  assert.equal(hits[0].length, 2);
+});
+
+test('ja-space-between-fullwidth: Katakana then Han fires', () => {
+  assert.equal(ja('ブラウザ 設定を開く', JA_SPACE).length, 1);
+});
+
+test('ja-space-between-fullwidth exception (JTF 2.1.7): a Katakana compound split by a space yields 0', () => {
+  assert.equal(ja('これはブラウザ ソフトです', JA_SPACE).length, 0);
+});
+
+test('ja-space-between-fullwidth exception (JTF 2.3.1.1 is a separate clause): a space beside Latin text yields 0', () => {
+  assert.equal(ja('これは Windows です', JA_SPACE).length, 0);
+});
+
+test('ja-space-between-fullwidth: the rule is a warn (JTF says 原則として) and names 2.3.1.2', () => {
+  assert.equal(RULES[JA_SPACE].severity, 'warn');
+  assert.match(RULES[JA_SPACE].authority, /2\.3\.1\.2/);
+});
+
+test('ja-space-between-fullwidth: trailing spaces after Japanese text (a hard line break) yield 0', () => {
+  assert.equal(ja('これは見本です  \n次の行', JA_SPACE).length, 0);
+});
+
+test('ja CLI: --script ja reports the JA rule, --script zh reports none of it', () => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-lm-ja-'));
+  try {
+    const f = path.join(dir, 'a.md');
+    fs.writeFileSync(f, 'これは,見本です\n');
+    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' } });
+    assert.match(run('ja').stdout, /\[ja-halfwidth-punct\]/);
+    assert.match(run('zh').stdout, /^0 finding\(s\)/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// R14 / CWK-101 KO unit -- ONE rule, one authority: the 2014 revision of the 문장 부호 appendix of 한글 맞춤법
+// (새국어생활 제24권 제4호, 2014 겨울, [부록] <한글 맞춤법> 부분 개정안(문장 부호)). It names each mark's form
+// ASCII-shaped: 1. 마침표( . ), 2. 물음표( ? ), 3. 느낌표( ! ), 4. 쉼표( , ), 6. 쌍점( : ). A full-width form
+// (， ． ？ ！ ：) beside Hangul is the leak. A KO rule fires only on a line carrying Hangul and no Kana.
+// ---------------------------------------------------------------------------
+const ko = (text, opts) => checkText(text, opts).filter((h) => h.rule === 'ko-fullwidth-punct');
+
+for (const [mark, name] of [['，', 'comma'], ['．', 'period'], ['？', 'question mark'], ['！', 'exclamation mark'], ['：', 'colon']]) {
+  test(`ko-fullwidth-punct: a full-width ${name} directly after Hangul fires`, () => {
+    assert.equal(ko(`안녕하세요${mark}세계`).length, 1);
+  });
+}
+
+test('ko-fullwidth-punct: the finding column points at the mark itself', () => {
+  assert.equal(ko('안녕하세요，세계')[0].col, 6);
+});
+
+test('ko-fullwidth-punct: a full-width comma directly after Hangul and before LATIN text fires (the left neighbour alone decides)', () => {
+  assert.equal(ko('안녕하세요，Hello').length, 1);
+});
+
+test('ko-fullwidth-punct: a full-width mark directly BEFORE Hangul (after Latin) fires', () => {
+  assert.equal(ko('Hello，안녕').length, 1);
+});
+
+test('ko-fullwidth-punct: a mark after Hanja and before Hangul fires (the adjacent Hangul decides)', () => {
+  assert.equal(ko('大韓民國，한국은 나라다').length, 1);
+});
+
+test('ko-fullwidth-punct: the rule is an error and names the 2014 appendix and its marks', () => {
+  assert.equal(RULES['ko-fullwidth-punct'].severity, 'error');
+  assert.match(RULES['ko-fullwidth-punct'].authority, /새국어생활/);
+  assert.match(RULES['ko-fullwidth-punct'].authority, /마침표/);
+});
+
+test('ko native clean: the standard ASCII forms (. , ? ! :) yield 0', () => {
+  assert.equal(ko('안녕하세요, 세계. 맞나? 네! 값: 3').length, 0);
+});
+
+test('ko script boundary: a full-width mark with NO Hangul next to it, on a Hangul line, yields 0', () => {
+  assert.equal(ko('Hello，World 한글').length, 0);
+});
+
+test('ko script boundary: a Hanja-only line (no Hangul) is ZH, so the KO rule yields 0', () => {
+  assert.equal(ko('大韓民國，日本').length, 0);
+});
+
+test('ko/ja split: a Kana-bearing line is JA, so the KO rule yields 0', () => {
+  assert.equal(ko('これは，한글です').length, 0);
+});
+
+test('ko script boundary: a Thai line and a Latin line yield 0', () => {
+  assert.equal(ko('สวัสดี，Hello').length + ko('Hello，World').length, 0);
+});
+
+test('ko recall gap (named): the ideographic stop 。 is not flagged (the appendix text read names no 。 form either way, so no clause supports calling it a leak), yields 0', () => {
+  assert.equal(ko('안녕하세요。').length, 0);
+});
+
+test('ko markdown exclusion: inside a fenced block yields 0', () => {
+  assert.equal(ko('```\n안녕하세요，세계\n```').length, 0);
+});
+
+test('ko markdown exclusion: inside inline code yields 0', () => {
+  assert.equal(ko('이것은 `안녕，세계` 입니다').length, 0);
+});
+
+test('ko markdown exclusion: inside a URL yields 0', () => {
+  assert.equal(ko('이것은 https://example.com/가，나 입니다').length, 0);
+});
+
+test('ko markdown exclusion: a blockquote line yields 0', () => {
+  assert.equal(ko('> 안녕하세요，세계').length, 0);
+});
+
+test('ko --plain: markdown awareness off, a fenced line fires', () => {
+  assert.equal(ko('```\n안녕하세요，세계\n```', { plain: true }).length, 1);
+});
+
+test('ko CLI: --script ko reports the KO rule, --script zh reports none of it', () => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-lm-ko-'));
+  try {
+    const f = path.join(dir, 'a.md');
+    fs.writeFileSync(f, '안녕하세요，세계\n');
+    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' } });
+    assert.match(run('ko').stdout, /\[ko-fullwidth-punct\]/);
+    assert.match(run('zh').stdout, /^0 finding\(s\)/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

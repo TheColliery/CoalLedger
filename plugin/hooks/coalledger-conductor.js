@@ -97,7 +97,39 @@ function updateDue(cfg, clampedRead) {
 // conductor is gated fully off (mode off / disabledCanaries conductor|all),
 // else the offer lines ([] in manual mode — offers silent; callers append
 // their own platform-specific lines, e.g. the CC self-update nudge).
-function buildOffers(cfg, clampedRead) {
+//
+// UMB-133: `notices` = config-path lines from config-load.mjs `configNotices`
+// (a LEGACY hit, or an IGNORED file at a path nothing reads), passed in as a
+// THUNK by each CALLER bound to its own cwd — the CC path uses the process cwd,
+// the AG adapter its payload workspace — so both platforms get them by
+// construction from this ONE assembly. They are appended after the offer block,
+// and in MANUAL mode they are the only lines, the same shape as the CC
+// self-update nudge (offers silent, a caller-owned line still emitted).
+// THE PHOENIX #13 CEILING, named here rather than discovered later: a fully
+// gated-off conductor returns null BEFORE notices are considered, and that
+// silence is a consent gate (mode off / disabledCanaries conductor|all) that
+// stays. So a user who turned CoalLedger off, or who silenced the conductor,
+// gets NO notice from this hook — a config written at a path that is never
+// read stays invisible to them here. `/coalledger:stats` is their channel —
+// at PROSE strength, and the distinction is load-bearing: `configNotices` is
+// called by these two conductors and by nothing else, so stats does not
+// COMPUTE these lines, the agent assembles them by checking those paths, and
+// THE TWO CAN DIFFER (`commands/stats.md` ships exactly that wording; a
+// parity guarantee here would be false). A runtime warning is not a channel
+// at all, because a hook may emit on no surface but its sanctioned
+// SessionStart one.
+// bounce-1 F4 — THE THUNK IS THE SHAPE, and the parameter accepts NOTHING ELSE
+// (no array form): building notices costs a root walk plus up to ten stats, and
+// both gates below can return before a single line is used, so an off-mode user
+// was paying for output nobody sees. The gate is not duplicated in the two
+// callers — that is why this assembly is shared at all (the CONSTRAINT this fix
+// was given) — so the laziness has to live on THIS side of it, which a value
+// parameter cannot express: whoever computes an array has already paid. An
+// array|function union would let a future caller silently revert to eager at
+// its own call site, the exact defect; refusing the array makes eager
+// impossible by construction. Phoenix #4's fail-silent wrap travels with the
+// call: it is HERE now, not in the callers.
+function buildOffers(cfg, clampedRead, notices) {
   const mode = clampedRead(cfg, 'coalledgerMode');
   if (mode === 'off') return null; // fully silent
   const disabled = clampedRead(cfg, 'disabledCanaries');
@@ -112,6 +144,11 @@ function buildOffers(cfg, clampedRead) {
       .map((c) => c.line);
     if (offers.length) out.push(HEAD, ...offers, ...TAIL);
   }
+  // Past both gates: only now is the probe worth paying for.
+  if (typeof notices === 'function') {
+    // A notice must never cost the user their offers: any failure is swallowed.
+    try { out.push(...notices()); } catch { /* fail-silent (Phoenix #4) */ }
+  }
   return out;
 }
 
@@ -123,13 +160,15 @@ function languageLine(language) {
 }
 
 async function main() {
-  const [{ loadMergedConfig }, { clampedRead }] = await Promise.all([
+  const [{ loadMergedConfig, configNotices }, { clampedRead }] = await Promise.all([
     import(lib('config-load.mjs')),
     import(lib('config-schema.mjs')),
   ]);
 
   const cfg = loadMergedConfig();
-  const out = buildOffers(cfg, clampedRead);
+  // LAZY (F4): the thunk is resolved inside buildOffers, past its gates — so a
+  // gated-off session never pays the root walk. The try/catch lives there too.
+  const out = buildOffers(cfg, clampedRead, () => configNotices());
   if (!out) return; // off / disabled — silent, no update scheduling either
 
   if (updateDue(cfg, clampedRead)) {

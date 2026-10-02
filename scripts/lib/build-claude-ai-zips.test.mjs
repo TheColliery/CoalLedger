@@ -60,3 +60,27 @@ test('build-claude-ai-zips: fails loud when plugin/ has not been built', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// CWK-120 row 2 (CodeRabbit, `build-claude-ai-zips.mjs:62`): the existing test
+// above covers plugin/skills ABSENT. This is the other half -- the directory
+// EXISTS and holds ZERO skill directories: `readdirSync(...).filter(isDirectory)`
+// returns `[]`, the loop never runs, `failed` stays 0, and the script exits 0
+// printing `Done: 0/0 skill(s) staged`. The claude-ai-zips workflow would then
+// attach ZERO assets to a Release and report success -- a failure reported as a
+// clean bill, the class this room has already fixed twice elsewhere.
+// ---------------------------------------------------------------------------
+test('build-claude-ai-zips: fails loud when plugin/skills exists but holds NO skill directories', () => {
+  const tmp = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-claude-ai-empty-'));
+  try {
+    fs.mkdirSync(path.join(tmp, 'scripts', 'lib'), { recursive: true });
+    fs.cpSync(script, path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs'));
+    fs.cpSync(path.join(repo, 'scripts', 'lib', 'desc-cap.mjs'), path.join(tmp, 'scripts', 'lib', 'desc-cap.mjs'));
+    fs.cpSync(path.join(repo, 'scripts', 'lib', 'claude-ai-trim.mjs'), path.join(tmp, 'scripts', 'lib', 'claude-ai-trim.mjs'));
+    fs.mkdirSync(path.join(tmp, 'plugin', 'skills'), { recursive: true }); // present, but EMPTY
+    const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8' });
+    assert.notEqual(r.status, 0, `exits non-zero when there is nothing to stage; stdout: ${r.stdout}`);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

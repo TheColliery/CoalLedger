@@ -43,6 +43,7 @@ import { fileURLToPath } from 'url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { parseJsonc } from './lib/jsonc.mjs';
 import { findProjectRoot, projectConfigPath, ownDirDefault, globalConfigPath } from './lib/config-load.mjs';
+import { readRepoFileBounded, writeRepoFile, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
 
 function printHelp() {
   const lines = [
@@ -55,7 +56,12 @@ function printHelp() {
     const flags = [`--${spec.key}`, ...(spec.flags || [])].join(', ');
     lines.push(`  ${flags.padEnd(48)} ${spec.help}`);
   }
-  lines.push(`  ${'--global'.padEnd(48)} Write ~/.claude/.coalledger.json (the global layer) instead of the project config`);
+  // CWK-120 row 8: this line printed a FIXED `~/.claude/.coalledger.json` while
+  // the writer resolves the path through `globalConfigPath()`, which honours
+  // CLAUDE_CONFIG_DIR — so a user who sets that variable was told the wrong
+  // destination BY THE TOOL THAT WRITES IT. Derived from the same function the
+  // write uses, so the help can never drift from the behaviour again.
+  lines.push(`  ${'--global'.padEnd(48)} Write ${globalConfigPath()} (the global layer) instead of the project config`);
   lines.push(`  ${'--help, -h'.padEnd(48)} Show this help message`);
   lines.push('');
   lines.push('Examples:');
@@ -152,13 +158,20 @@ function main() {
   const isGlobal = globalIdx !== -1;
   if (isGlobal) args.splice(globalIdx, 1);
   const projectRoot = findProjectRoot(process.cwd());
-  const legacyPath = path.join(projectRoot, '.coalledger.json');
+  // UMB-133: BOTH legacy shapes migrate on write — the nested
+  // `.claude/.coalledger.json` as well as the root `.coalledger.json`. A
+  // deprecation whose migration fires for one legacy shape and not the other
+  // would be two rules wearing one name (and the README would have to describe
+  // the asymmetry to be true). `readPath` is whichever candidate the read walk
+  // returned, so at most one of these can match it.
+  const legacyPaths = [path.join(projectRoot, '.claude', '.coalledger.json'), path.join(projectRoot, '.coalledger.json')];
   const readPath = isGlobal
     ? globalConfigPath()
     : projectConfigPath(process.cwd());
+  const migrating = !isGlobal && legacyPaths.includes(readPath);
   const writePath = isGlobal
     ? readPath
-    : (readPath === legacyPath ? ownDirDefault(projectRoot) : readPath);
+    : (migrating ? ownDirDefault(projectRoot) : readPath);
 
   let cfg = {};
   let hadComments = false;
@@ -168,26 +181,52 @@ function main() {
   // for U+FEFF: this room's own hard-won lesson is that a raw BOM character
   // pasted into source gets silently converted to a real char by the tool
   // layer, which is exactly what a first draft of this line did.
-  let rawConfig = null;
-  try {
-    let content = fs.readFileSync(readPath, 'utf8');
-    if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
-    rawConfig = content;
-  } catch {}
+  // CWK-137: readPath is a repo-derived (project) or home (global) file -- a plain
+  // fs.readFileSync here opened a FIFO/device/escaping-symlink target unconditionally.
+  // root=null for the global file (a home-file read, kind-gated + bounded, no
+  // containment, matching config-load.mjs's own readJsonc); root=projectRoot for the
+  // project file (must resolve inside the project).
+  const readRoot = isGlobal ? null : projectRoot;
+  let rawConfig = readRepoFileBounded(readPath, readRoot, MAX_CONFIG_BYTES);
+  if (rawConfig !== null && rawConfig.charCodeAt(0) === 0xfeff) rawConfig = rawConfig.slice(1);
   if (rawConfig !== null) {
     try {
       hadComments = rawConfig.includes('//');
-      cfg = parseJsonc(rawConfig) || {}; // proto-pollution-guarded parse (jsonc.mjs)
+      const parsed = parseJsonc(rawConfig); // proto-pollution-guarded parse (jsonc.mjs)
+      // CWK-120 row 4 / the flock class (main's `.github` adjudication #14): the
+      // old `|| {}` only caught a FALSY parse, so a VALID JSON body that is not a
+      // plain object — `[]`, `"str"`, `42` — was carried forward AS the config:
+      // the key assignment below then landed on an array or was dropped onto a
+      // primitive, and the write-back shipped a config no reader can use. The
+      // READ side already refuses exactly this (`config-load.mjs` readJsonc:
+      // `parsed && typeof parsed === 'object' && !Array.isArray(parsed)`), so the
+      // predicate is mirrored rather than invented. Routed into the EXISTING
+      // malformed path (backup + warn + non-zero exit) by throwing here: "not an
+      // object" is malformed for this consumer, and a second handler would be a
+      // second place to keep in step.
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('top-level config value is not a JSON object');
+      }
+      cfg = parsed;
     } catch (e) {
       // Fail loud (scripts-quality §1): a malformed config we silently overwrite is a
       // partial failure the user must notice — flag the non-zero exit even though the
       // run continues from defaults (the old config is backed up where possible).
       process.exitCode = 1;
       try {
-        fs.copyFileSync(readPath, readPath + '.bak');
+        // CWK-137: the .bak is written FROM THE BYTES ALREADY READ (rawConfig, via the
+        // bounded reader above), through the SAME contained writer the real config
+        // write uses below — never `fs.copyFileSync(readPath, readPath + '.bak')`,
+        // which re-opens readPath and would copy a SYMLINK TARGET's bytes into the
+        // backup (CoalMine's PoC-3: a `.bak` that way held `SECRET_TOKEN`). The target
+        // readPath itself is still refused the same way any other write target is —
+        // writeRepoFile throws on an existing symlink/non-file there, same as the real
+        // config write.
+        writeRepoFile(readPath + '.bak', rawConfig, readRoot);
         console.warn(`Warning: existing config is malformed — backed it up to ${readPath}.bak and rebuilding.`);
-      } catch {
-        console.warn('Warning: existing config is malformed. Overwriting.');
+      } catch (bakErr) {
+        if (bakErr instanceof RepoWriteRefused) console.warn(`Warning: existing config is malformed, and its backup was refused (${bakErr.message}). Overwriting without a backup.`);
+        else console.warn('Warning: existing config is malformed. Overwriting.');
       }
     }
   }
@@ -218,16 +257,25 @@ function main() {
 
   try {
     fs.mkdirSync(path.dirname(writePath), { recursive: true });
-    fs.writeFileSync(writePath, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+    // CWK-137: a plain fs.writeFileSync FOLLOWS a symlink at the destination
+    // (node/runtime.md §5) -- a repo-planted symlink at writePath would have written
+    // this config's JSON into whatever it points at (CoalMine's PoC-2 class:
+    // scripts/install.mjs's upsertConfig writing through a repo-planted symlink into
+    // ~/.bashrc). writeRepoFile refuses an existing symlink/non-file target and
+    // replaces via temp+rename, which swaps the directory entry rather than writing
+    // through it. writeRoot mirrors readRoot: null for the global (home) file, the
+    // project root otherwise.
+    const writeRoot = isGlobal ? null : projectRoot;
+    writeRepoFile(writePath, JSON.stringify(cfg, null, 2) + '\n', writeRoot);
     // Move-on-CONFIG-WRITE-only (no-old-version-leftover): the legacy root
     // file is removed only AFTER the new-home write above succeeded, and only
     // when this write actually migrated it (readPath was the legacy file and
     // writePath moved away from it). Best-effort — a failed delete here still
     // leaves a correctly-written new config; the stray legacy file is simply
     // not cleaned up this run.
-    if (readPath === legacyPath && writePath !== legacyPath) {
-      try { fs.rmSync(legacyPath, { force: true }); } catch {}
-      console.log(`Migrated the project config from ${legacyPath} to ${writePath}.`);
+    if (migrating && writePath !== readPath) {
+      try { fs.rmSync(readPath, { force: true }); } catch {}
+      console.log(`Migrated the project config from ${readPath} to ${writePath}.`);
     }
     if (hadComments) {
       console.warn('Note: inline comments were stripped (this tool writes plain JSON). Every key stays documented in platform-configs/.coalledger.json.');
