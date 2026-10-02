@@ -365,14 +365,22 @@ if (isMainModule(import.meta.url)) {
     console.log(`FAIL: --mode must be 'unspaced', 'spaced', or 'off' (got '${mode}')`);
     process.exitCode = 1;
   } else {
-    let total = 0;
+    // R14 / CWK-166's sibling defect: a file the scanner cannot read is COUNTED, never folded into a clean total. One
+    // unreadable file makes the TOTAL unknown (the readable files' hits are still printed) and the exit code 1; a clean
+    // numeric TOTAL means every named file was read.
+    let total = 0, unreadable = 0;
     for (const f of args.filter((a) => !a.startsWith('--'))) {
       let hits;
-      try { hits = scanFile(f, mode); } catch { console.log(`  --   unreadable, skipped: ${f}`); continue; }
+      try { hits = scanFile(f, mode); } catch { console.log(`  --   unreadable, skipped: ${f}`); unreadable++; continue; }
       for (const h of hits) console.log(`${f}:${h.line}:${h.col}: ${h.context}`);
       if (hits.length) console.log(`  ${f}: ${hits.length}`);
       total += hits.length;
     }
-    console.log(`TOTAL: ${total}`);
+    if (unreadable) {
+      console.log(`TOTAL: unknown (${unreadable} unreadable; ${total} found in the readable files)`);
+      process.exitCode = 1;
+    } else {
+      console.log(`TOTAL: ${total}`);
+    }
   }
 }
