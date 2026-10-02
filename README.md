@@ -17,7 +17,7 @@
 ![Gemini CLI: works with](https://img.shields.io/badge/Gemini_CLI-works_with-blue)
 ![Cline: works with](https://img.shields.io/badge/Cline-works_with-blue)
 ![Copilot: works with](https://img.shields.io/badge/Copilot-works_with-blue)
-![claude.ai: works with](https://img.shields.io/badge/claude.ai-works_with-blue)
+![claude.ai: not yet verified](https://img.shields.io/badge/claude.ai-not_yet_verified-lightgrey)
 
 [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalLedger/releases)
 
@@ -86,7 +86,7 @@ claude plugin install coalledger@coalledger
 
 **Other agents**—the same file-copy from `plugin/skills/` into your platform's skill directory. No `install.mjs` step—the canaries are plain SKILL.md contracts over the zero-dep engine.
 
-**claude.ai**—read/analyze skills (like CoalLedger's canaries) upload as a custom skill. **Don't hand-zip `plugin/skills/` yourself**—our own frontmatter `description` runs up to 895 chars, well past claude.ai's 200-char skill-listing cap, so a hand-zipped folder is not guaranteed to work there. Download the right ZIP instead from the [Releases page](https://github.com/TheColliery/CoalLedger/releases) (one asset per canary, built by CI on every version tag, with its description deterministically trimmed to fit—source `skills/*/SKILL.md` is never edited) and add it in claude.ai's skill settings (paid plan with code execution on). Each Release also carries a `SHA256SUMS.txt` covering every ZIP—verify with `sha256sum --ignore-missing -c SHA256SUMS.txt` (you'll typically have just one of the seven canaries' ZIPs, and plain `-c` reports the other six as FAILED). Per-surface—an upload doesn't sync across surfaces.
+**claude.ai**—not yet verified as a working path: no one has uploaded a CoalLedger ZIP to claude.ai and seen it load, so this states how claude.ai documents the upload, not a promise that it works. claude.ai takes a skill as a ZIP whose top level is the skill folder itself (`<skill-name>/SKILL.md` inside the archive; a `SKILL.md` at the root of the ZIP is not recognised as a skill), added under Customize > Skills. **No Release carries a CoalLedger ZIP yet:** this repository has no Releases, a Release with ZIPs is posted only for a stable tag, and this project is on a beta line, so a beta tag posts none (the one launch-form Release, for `v0.1.0-beta.1`, predates the packaging scripts and carries no ZIPs). Until a Release carries ZIPs, build them from a checkout: `node scripts/build-claude-ai-zips.mjs` stages one folder per canary in a git-ignored output folder, and you zip each staged folder from its parent (`zip -r doc-structure.zip doc-structure/`, then `unzip -l doc-structure.zip` should list every entry under `doc-structure/`). **Don't hand-zip `plugin/skills/` or its contents instead:** the build trims each ZIP's frontmatter `description` to 200 characters (our own choice for the skill listing; claude.ai's documented limit is 1,024 and our source descriptions stay under it), and the source `skills/*/SKILL.md` is never edited. Once a Release carries ZIPs it will also carry a `SHA256SUMS.txt` covering every ZIP.
 
 The conductor hook wires automatically on Claude Code (validated) and, once you complete the AG wiring above, on Antigravity (works with, pending live validation); every other surface runs the canaries **manually** (invoke `doc-structure`, `doc-grounding`, … or ask for a docs scan). No API keys, no network, no `npm install`.
 
