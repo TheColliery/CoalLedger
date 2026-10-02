@@ -30,10 +30,17 @@ const TESTS = [
   'scripts/lib/emdash.test.mjs',
   'scripts/lib/lang-mechanics.test.mjs',
   'scripts/lib/main-module-guard.test.mjs',
+  'scripts/lib/release-shape.test.mjs',
+  'scripts/lib/asset-upload-mode.test.mjs',
+  'scripts/lib/release-prune.test.mjs',
   'scripts/configure.test.mjs',
   'scripts/build-plugin.test.mjs',
   'scripts/verify.test.mjs',
   'scripts/cli-guard.test.mjs',
+  'scripts/release-notes.test.mjs',
+  'scripts/verify-release-shape.test.mjs',
+  'scripts/decide-upload.test.mjs',
+  'scripts/prune-release-zips.test.mjs',
 ];
 
 // Top-level `return` is a SyntaxError in a real ESM module (unlike CJS, which

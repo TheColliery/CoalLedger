@@ -101,7 +101,10 @@ const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 // wholesale copy says nothing about whether it is ALSO the source of a
 // generated skill-local copy, and emdash.mjs is the first file in this room
 // to be both at once.
-const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs']);
+// R14 (CWK-124/185): release-shape.mjs, asset-upload-mode.mjs and release-prune.mjs are the
+// release workflow's derive/decide/prune libraries -- CI-time tooling like desc-cap.mjs, never
+// read by a hook or a skill, so the wholesale scripts/lib copy must not ship them.
+const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs', 'release-shape.mjs', 'asset-upload-mode.mjs', 'release-prune.mjs']);
 const isBuildOnlyLib = (p) => BUILD_ONLY_LIB_NAMES.has(path.basename(p));
 const isDistExcluded = (p) => isTest(p) || isBuildOnlyLib(p);
 
