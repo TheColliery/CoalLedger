@@ -36,6 +36,7 @@
 // separate so the pure function never touches disk.
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 const CALL_RE = /(spawnSync|execFileSync)\(\s*['"]git['"]/g;
 
@@ -127,10 +128,34 @@ export const GIT_ENV_EXEMPTIONS = [
   },
 ];
 
-export function censusGitSpawns(files, { exemptions = GIT_ENV_EXEMPTIONS } = {}) {
+// R14 / CWK-174: the house secret scan arrives as byte-equal copies of the published-code template
+// (SERIES-CANON "Secret scan"). Two of its files are TEST files that spawn git by their own shapes: secret-gate.test.mjs
+// spreads a LOCAL gitEnv() that strips the GIT_* family (blob 3fcd3f0d...), secret-scan.test.mjs spawns with no env
+// at all (blob a9cb7145..., the org template's own source). Neither can be edited here without breaking the byte-equal
+// parity, so each is exempt ONLY while its content is exactly the pinned blob: any edit, or a template re-sync that
+// changes it, makes the entry a finding again, so the exemption cannot widen or outlive its reason silently. The pin is a
+// git blob id (git hash-object <file>) against .github/templates/published-code/scripts/. The CoalMine and CoalBoard
+// R13/R14 precedent; a NEW spawn anywhere else is still judged by the two rungs above.
+export const EXEMPT_CARRIERS = {
+  'scripts/secret-gate.test.mjs': '3fcd3f0d020ea3b3f369feca01dc770d102ca5b3',
+  'scripts/secret-scan.test.mjs': 'a9cb7145e31139ec3c490dd7714df8fa7dc6cf86',
+};
+
+// The git blob id of `text`, as `git hash-object` prints it for a file holding exactly these bytes.
+export function blobId(text) {
+  const body = Buffer.from(text, 'utf8');
+  return createHash('sha1').update(Buffer.concat([Buffer.from('blob ' + body.length + String.fromCharCode(0)), body])).digest('hex');
+}
+
+export function censusGitSpawns(files, { exemptions = GIT_ENV_EXEMPTIONS, carriers = EXEMPT_CARRIERS } = {}) {
   const findings = [];
   const matched = new Map();
   for (const { rel, text } of files) {
+    if (Object.hasOwn(carriers, rel)) {
+      const id = blobId(text);
+      if (id !== carriers[rel]) findings.push(`${rel} is an exempt byte-equal org carrier but its blob id is ${id}, not the pinned ${carriers[rel]} -- re-derive it from .github/templates/published-code/scripts/ (CWK-174)`);
+      continue;
+    }
     CALL_RE.lastIndex = 0;
     let m;
     while ((m = CALL_RE.exec(text))) {

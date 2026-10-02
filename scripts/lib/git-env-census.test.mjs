@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { censusGitSpawns, collectScriptsMjs } from './git-env-census.mjs';
+import { censusGitSpawns, collectScriptsMjs, blobId, EXEMPT_CARRIERS } from './git-env-census.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -130,4 +130,28 @@ test('censusGitSpawns against THIS ROOM\'s real scripts/ tree: zero findings pos
   const nameRe = new RegExp(`(${SS}|${EF})\\('git'`, 'g');
   const bySimpleCount = files.reduce((n, f) => n + (f.text.match(nameRe) || []).length, 0);
   assert.ok(bySimpleCount >= 14, `expected the census to have real git spawns to judge (independently counted ${bySimpleCount}) -- a count of 0 here would mean this test proves nothing`);
+});
+
+// R14 / CWK-174: the house secret scan arrives as byte-equal copies of the published-code template, whose
+// test files spawn git through their own cleaned environment (a local gitEnv spread) or none at all. A carrier is
+// exempt ONLY while its content is exactly the pinned blob; every other file, and any edit, is judged as before.
+const CARRIER = SS + "('git', ['fetch'], { cwd: dir });\n";
+test('census carriers (CWK-174): a pinned byte-equal carrier is skipped, an edited one is a finding again', () => {
+  const carriers = { 'scripts/carrier.mjs': blobId(CARRIER) };
+  const opts = (c) => ({ exemptions: [], carriers: c });
+  assert.equal(censusGitSpawns([{ rel: 'scripts/carrier.mjs', text: CARRIER }], opts({})).length, 1, 'control: not exempt, the spawn is a finding');
+  assert.deepEqual(censusGitSpawns([{ rel: 'scripts/carrier.mjs', text: CARRIER }], opts(carriers)), [], 'pinned content passes');
+  const edited = censusGitSpawns([{ rel: 'scripts/carrier.mjs', text: CARRIER + '// edited\n' }], opts(carriers));
+  assert.equal(edited.length, 1, 'any edit re-opens it');
+  assert.match(edited[0], /exempt byte-equal org carrier but its blob id is/);
+  assert.equal(censusGitSpawns([{ rel: 'scripts/other.mjs', text: CARRIER }], opts(carriers)).length, 1, 'the exemption is per path, not per content: a new unexempt spawn still turns the census red');
+});
+
+test('census carriers (CWK-174): blobId equals git hash-object for the same bytes, and the live carriers match their pins', () => {
+  assert.equal(blobId(''), 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391', "git's empty-blob id");
+  assert.equal(blobId('hello\n'), 'ce013625030ba8dba906f756967f9e9ca394464a', 'git hash-object of "hello" + LF');
+  assert.deepEqual(Object.keys(EXEMPT_CARRIERS).sort(), ['scripts/secret-gate.test.mjs', 'scripts/secret-scan.test.mjs']);
+  const live = collectScriptsMjs(repo).filter((f) => Object.hasOwn(EXEMPT_CARRIERS, f.rel));
+  assert.equal(live.length, Object.keys(EXEMPT_CARRIERS).length, 'every pinned path exists in the tree (a stale pin is a finding here, never silence)');
+  assert.deepEqual(censusGitSpawns(live, { exemptions: [] }), [], 'and each is byte-equal to its pin');
 });
