@@ -613,3 +613,24 @@ test('classifyCheckIgnoreResult (broken pipe): a REAL git exit 129 with an input
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+// 05a bounce 2 / E1: pin the allowlist from the OTHER side. Only a broken pipe (EPIPE, EOF) beside a non-0/1 status means "the child ran
+// and exited". Any other code beside an integer status stays error-first, so a deny-list rewrite or a widened allowlist is caught here
+// (in Node today ETIMEDOUT and ENOBUFS come with status null; these tests pin the allowlist itself, not the runtime's present behaviour).
+test('classifyCheckIgnoreResult (allowlist): ETIMEDOUT beside status 129 stays error-first, "failed to spawn"', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('ETIMEDOUT', 129));
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (allowlist): ENOBUFS beside status 129 stays error-first, "failed to spawn"', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('ENOBUFS', 129));
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (allowlist): neither non-pipe code is reported as an exit status', () => {
+  for (const code of ['ETIMEDOUT', 'ENOBUFS']) {
+    assert.doesNotMatch(classifyCheckIgnoreResult(brokenPipe(code, 129)).message, /exited 129/, code);
+  }
+});
