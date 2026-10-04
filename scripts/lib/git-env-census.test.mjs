@@ -157,3 +157,22 @@ test('census carriers (CWK-174): blobId equals git hash-object for the same byte
   assert.equal(live.length, Object.keys(EXEMPT_CARRIERS).length, 'every pinned path exists in the tree (a stale pin is a finding here, never silence)');
   assert.deepEqual(censusGitSpawns(live, { exemptions: [] }), [], 'and each is byte-equal to its pin');
 });
+
+// 05a bounce 1 / F1: the remediation hint of a blob mismatch must point at the template that actually carries the file. The
+// carriers come from TWO canon templates (published-code: the secret-scan tests; overlay-coal-skill: release-notes.mjs), and a
+// hint naming only published-code sent a maintainer to a directory that does not hold release-notes.mjs.
+test('census carriers (F1): a mismatch message names BOTH canon templates, so the one carrying the file is always named', () => {
+  const carriers = { 'scripts/carrier.mjs': blobId(CARRIER) };
+  const edited = censusGitSpawns([{ rel: 'scripts/carrier.mjs', text: CARRIER + '// edited\n' }], { exemptions: [], carriers });
+  assert.equal(edited.length, 1);
+  assert.match(edited[0], /templates\/published-code\/scripts\//);
+  assert.match(edited[0], /templates\/overlay-coal-skill\/scripts\//);
+});
+
+test('census carriers (F1): the live release-notes.mjs carrier, edited by one line, is told to re-derive from overlay-coal-skill', () => {
+  const files = collectScriptsMjs(repo).map((f) => (f.rel === 'scripts/release-notes.mjs' ? { ...f, text: f.text + '// edited\n' } : f));
+  const findings = censusGitSpawns(files);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /^scripts\/release-notes\.mjs is an exempt byte-equal org carrier/);
+  assert.match(findings[0], /templates\/overlay-coal-skill\/scripts\//);
+});

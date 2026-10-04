@@ -134,7 +134,9 @@ export const GIT_ENV_EXEMPTIONS = [
 // at all (blob a9cb7145..., the org template's own source). Neither can be edited here without breaking the byte-equal
 // parity, so each is exempt ONLY while its content is exactly the pinned blob: any edit, or a template re-sync that
 // changes it, makes the entry a finding again, so the exemption cannot widen or outlive its reason silently. The pin is a
-// git blob id (git hash-object <file>) against .github/templates/published-code/scripts/. The CoalMine and CoalBoard
+// git blob id (git hash-object <file>) against the .github template that carries the file: templates/published-code/scripts/ for the
+// two secret-scan tests, templates/overlay-coal-skill/scripts/ for release-notes.mjs (05a F1: the mismatch message names both,
+// because a per-carrier map would be a second roster that can drift when a carrier is added). The CoalMine and CoalBoard
 // R13/R14 precedent; a NEW spawn anywhere else is still judged by the two rungs above.
 // 05a (order 05a, canon .github b4cf4ab): three carriers. secret-gate.test.mjs moved to f61a33e7 (the canon test written against
 // the canon secret-gate.mjs 4f008ed4; it passes against this room's older lib e49206b4, ITEM B held, so the lib is NOT adopted);
@@ -164,7 +166,7 @@ export function censusGitSpawns(files, { exemptions = GIT_ENV_EXEMPTIONS, carrie
   for (const { rel, text } of files) {
     if (Object.hasOwn(carriers, rel)) {
       const id = blobId(text);
-      if (id !== carriers[rel]) findings.push(`${rel} is an exempt byte-equal org carrier but its blob id is ${id}, not the pinned ${carriers[rel]} -- re-derive it from .github/templates/published-code/scripts/ (CWK-174)`);
+      if (id !== carriers[rel]) findings.push(`${rel} is an exempt byte-equal org carrier but its blob id is ${id}, not the pinned ${carriers[rel]} -- re-derive it from the .github template that carries it: templates/published-code/scripts/ (the secret-scan tests) or templates/overlay-coal-skill/scripts/ (release-notes.mjs) (CWK-174)`);
       continue;
     }
     CALL_RE.lastIndex = 0;
