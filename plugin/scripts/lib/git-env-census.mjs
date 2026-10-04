@@ -136,9 +136,20 @@ export const GIT_ENV_EXEMPTIONS = [
 // changes it, makes the entry a finding again, so the exemption cannot widen or outlive its reason silently. The pin is a
 // git blob id (git hash-object <file>) against .github/templates/published-code/scripts/. The CoalMine and CoalBoard
 // R13/R14 precedent; a NEW spawn anywhere else is still judged by the two rungs above.
+// 05a (order 05a, canon .github b4cf4ab): three carriers. secret-gate.test.mjs moved to f61a33e7 (the canon test written against
+// the canon secret-gate.mjs 4f008ed4; it passes against this room's older lib e49206b4, ITEM B held, so the lib is NOT adopted);
+// secret-scan.test.mjs stays at a9cb7145 (ITEM B held). The third carrier is the overlay-coal-skill scripts/release-notes.mjs,
+// whose git spawn gives an EXPLICIT allowlist env (no GIT_* inherited): the property this census guards, but not the textual form it
+// accepts (gitEnv(...) alone), so it is blob-pinned instead (RE-PINNED, never dropped: dropping it does not pass).
+// NAMED DIVERGENCE: scripts/release-notes.test.mjs is held one canon step back (d7e299c4), not at canon a8f3ba69, because
+// a8f3ba69's env assertion ("nothing else but what node needs to start") fails on macOS (__CF_USER_TEXT_ENCODING, which the OS
+// injects into every child) and under coverage (NODE_V8_COVERAGE); CoalBoard measured it red (CI run 37224469491) and held the
+// same blob at ddffc82. It carries no pin: d7e299c4 spawns no git and passes this census as is. Re-sync it to the canon when the
+// canon fixes that assertion.
 export const EXEMPT_CARRIERS = {
-  'scripts/secret-gate.test.mjs': '3fcd3f0d020ea3b3f369feca01dc770d102ca5b3',
+  'scripts/secret-gate.test.mjs': 'f61a33e75a3a420e0de0116f45d2b1fd44936a50',
   'scripts/secret-scan.test.mjs': 'a9cb7145e31139ec3c490dd7714df8fa7dc6cf86',
+  'scripts/release-notes.mjs': '674592e0ff25dbdc14a8a4e21e6a598953b90eaa',
 };
 
 // The git blob id of `text`, as `git hash-object` prints it for a file holding exactly these bytes.
