@@ -61,7 +61,7 @@ Cross-agent by design—the canaries are plain SKILL.md contracts and the engine
 
 ## 🚀 Releasing (Maintainers)
 
-Bump version in `.claude-plugin/plugin.json` ➡️ add a `CHANGELOG.md` entry ➡️ ensure `verify.mjs` and `test.mjs` pass ➡️ commit ➡️ create a signed git tag (`vX.Y.Z`) ➡️ push ➡️ create a GitHub Release (stable tags only—with ONE named exception: the repo's FIRST public beta tag ships as a prerelease so the Releases panel is never empty at launch; later beta tags are history-only).
+Bump version in `.claude-plugin/plugin.json` ➡️ add a `CHANGELOG.md` entry with its one-line summary ➡️ run `node scripts/release-notes.mjs --check --repo CoalLedger` on it (the announcement title must fit GitHub's 200-character ceiling) ➡️ ensure `verify.mjs` and `test.mjs` pass ➡️ commit ➡️ create a signed git tag (`vX.Y.Z`) ➡️ push ➡️ create a GitHub Release (stable tags only—with ONE named exception: the repo's FIRST public beta tag ships as a prerelease so the Releases panel is never empty at launch; later beta tags are history-only).
 
 ---
 

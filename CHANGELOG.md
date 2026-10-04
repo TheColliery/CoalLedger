@@ -2,6 +2,19 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.15.0-beta.2] - 2026-10-05
+
+Release tooling adopts the org canon; no change to the canaries
+
+Nothing a canary does changed. The one file in the installed plugin that moved is `scripts/lib/git-env-census.mjs`, a development gate that re-pins three byte-equal carriers; every other change below lives in the repo's own release and CI tooling, which the installed plugin does not carry.
+
+### Changed
+- **The release scripts follow the org canon (`.github` at `b4cf4ab`, adopted by blob id, each proven equal with `git hash-object`).** `scripts/lib/release-shape.mjs` now reads a lead paragraph (the text between the summary line and the first `### ` heading), warns when the title's summary falls outside a 45 to 75 character band (a signal that passes, never a refusal), and holds the mirrored announcement title to GitHub's 200-character ceiling. `scripts/verify-release-shape.mjs` prints the band warning. `scripts/release-notes.mjs` gains `--check`, which reads the top CHANGELOG entry, writes nothing and fails a summary whose announcement title would overflow; run `node scripts/release-notes.mjs --check --repo CoalLedger` before tagging. Its one git spawn now passes an explicit allowlist environment, so a `GIT_DIR` left by a hook cannot aim it at another repository's origin.
+- **`scripts/release-notes.test.mjs` is deliberately held one canon step back (blob `d7e299c4ff76bf163041ac678be317fbc49ce436`, not the canon's `a8f3ba69`).** The newer assertion fails where the operating system or a coverage run injects environment variables into every child (macOS, `NODE_V8_COVERAGE`); the held blob passed 17 of 17 plain and under coverage against the new script. Re-sync when the canon fixes the assertion.
+- **`scripts/secret-gate.test.mjs` is the canon's sandboxed version (blob `f61a33e75a3a420e0de0116f45d2b1fd44936a50`).** It passed 17 of 17 against this room's secret-gate library, so only the test was adopted; the library stays as it was.
+- **`.coderabbit.yaml` carries the canon's one-line change:** the Sandboxed rule gains the exception for a tool's own project-scoped state folder.
+- **The git-spawn census re-pins its carriers (`scripts/lib/git-env-census.mjs`, the one file of the installed plugin that moved).** `secret-gate.test.mjs` is pinned at `f61a33e75a3a420e0de0116f45d2b1fd44936a50`, `secret-scan.test.mjs` stays at `a9cb7145e31139ec3c490dd7714df8fa7dc6cf86`, and `release-notes.mjs` joins at `674592e0ff25dbdc14a8a4e21e6a598953b90eaa`, because an explicit allowlist environment is safe but not the `gitEnv(...)` form the census accepts. A pinned file that changes by one line fails the census again.
+
 ## [0.15.0-beta.1] - 2026-10-02
 
 Doc-quality's language-mechanics layer now checks English, Japanese and Korean punctuation as well as Chinese, the em-dash CLI no longer reports a clean total over a file it could not read, and the claude.ai ZIP now builds with the skill folder at its top level.
