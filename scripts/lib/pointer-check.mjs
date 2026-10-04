@@ -347,7 +347,14 @@ export const PENDING_POINTERS = [
 // OWN suite byte-identically green at 266/266 (recorded before this fix landed), the
 // same fail-open shape CoalMine's own INSPECT found in their inline call site.
 export function classifyCheckIgnoreResult(ci) {
-  if (ci.error) {
+  // 05a CI-red bounce (run 37231230559): git exits 129 on an unknown option BEFORE it reads stdin, while spawnSync is still writing
+  // `input`, so spawnSync returns BOTH a broken-pipe error (EPIPE on POSIX; EOF on Windows, the same pipe, measured on this box) AND
+  // the child's real status. The child DID spawn and exit, so the exit-status branch below names it. Narrow on purpose: only a
+  // broken-pipe code, only beside a non-0/1 integer status. Every other error, and an error beside status 0, 1 or none, stays
+  // error-first and fail-closed (TEN-SHAPE row 9, "error WITH status 0", is the row that ordering protects).
+  const childExited = ci.error && (ci.error.code === 'EPIPE' || ci.error.code === 'EOF')
+    && Number.isInteger(ci.status) && ci.status !== 0 && ci.status !== 1;
+  if (ci.error && !childExited) {
     return { ok: false, message: `git check-ignore --stdin failed to spawn: ${ci.error.message}` };
   }
   if (ci.status !== 0 && ci.status !== 1) {
