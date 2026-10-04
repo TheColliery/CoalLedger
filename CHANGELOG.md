@@ -6,7 +6,7 @@ All notable changes to CoalLedger are documented here. Format: [Keep a Changelog
 
 Release tooling adopts the org canon; no change to the canaries
 
-Nothing a canary does changed. The one file in the installed plugin that moved is `scripts/lib/git-env-census.mjs`, a development gate that re-pins three byte-equal carriers; every other change below lives in the repo's own release and CI tooling, which the installed plugin does not carry.
+Nothing a canary does changed. The one file in the installed plugin that moved is `scripts/lib/git-env-census.mjs`, a development gate that pins three byte-equal carriers; every other change below lives in the repo's own release and CI tooling, which the installed plugin does not carry.
 
 ### Changed
 - **The release scripts follow the org canon (`.github` at `b4cf4ab`, adopted by blob id, each proven equal with `git hash-object`).** `scripts/lib/release-shape.mjs` now reads a lead paragraph (the text between the summary line and the first `### ` heading), warns when the title's summary falls outside a 45 to 75 character band (a signal that passes, never a refusal), and holds the mirrored announcement title to GitHub's 200-character ceiling. `scripts/verify-release-shape.mjs` prints the band warning. `scripts/release-notes.mjs` gains `--check`, which reads the top CHANGELOG entry, writes nothing and fails a summary whose announcement title would overflow; run `node scripts/release-notes.mjs --check --repo CoalLedger` before tagging. Its one git spawn now passes an explicit allowlist environment, so a `GIT_DIR` left by a hook cannot aim it at another repository's origin.
