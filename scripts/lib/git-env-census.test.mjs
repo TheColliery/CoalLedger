@@ -300,3 +300,114 @@ test('allowlist env: a name declared twice, both as safe allowlists, passes; one
   assert.deepEqual(censusOne(two(allowObj(GOOD_PARTS))), []);
   assert.equal(censusOne(two(allowObj([`...${PE}`, NOSYS]))).length, 1);
 });
+
+// ---- 08d: the census WITNESS LIST (the chief's 08d-census-witness-list.md): 34 MUST-FAIL vectors (F1-F34) and the MUST-PASS controls
+// (P1-P6), each a minimal module that spawns git with the vector's env, fed to censusGitSpawns. A vector that declares a `const env`
+// runs in BOTH call forms, the shorthand `{ env }` and `env: env`. X-rows are bypasses found beyond the list (candidate rows).
+const W_HDR = `import { ${SS} } from 'node:child_process';\n`;
+const W_CALL = (o) => `${SS}('git', ['status'], ${o});\n`;
+const W_FORMS = [['shorthand', '{ cwd: d, env }'], ['env: env', '{ cwd: d, env: env }']];
+const W_KEEP = "const keep = ['PATH', 'HOME'];\n";
+const W_PICK = 'Object.fromEntries(keep.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]))';
+const W_PICK_IN = 'Object.fromEntries(keep.filter((k) => k in process.env).map((k) => [k, process.env[k]]))';
+const W_CLEAN = `{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1' }`;
+// a const-env vector: `decl` declares `const env`; run in both call forms
+const cst = (decl) => ({ forms: W_FORMS, src: (o) => W_HDR + decl + W_CALL(o) });
+// an inline vector: `expr` is written as the env value; `pre` precedes the call
+const inl = (expr, pre = '') => ({ forms: [['inline', null]], src: () => W_HDR + pre + W_CALL(`{ cwd: d, env: ${expr} }`) });
+// a custom vector: the whole body, given the options text
+const raw = (fn, forms = W_FORMS) => ({ forms, src: (o) => W_HDR + fn(o) });
+const wverdict = (text) => censusGitSpawns([{ rel: 'scripts/w.mjs', text }], { exemptions: [], carriers: {} });
+
+const MUST_FAIL = {
+  F1: cst(`const base = { ...process.env };\nconst env = { ...base, GIT_CONFIG_NOSYSTEM: '1' };\n`),
+  F1b: cst(`const extra = process.env;\nconst env = { ...extra, GIT_CONFIG_NOSYSTEM: '1' };\n`),
+  F1c: cst(`const e = process.env;\nconst env = { ...Object.fromEntries(Object.entries(e)), GIT_CONFIG_NOSYSTEM: '1' };\n`),
+  F2: inl("{ ...Object.fromEntries(Object.entries(process.env)), GIT_CONFIG_NOSYSTEM: '1' }"),
+  F3: inl("{ ...Object.fromEntries(Object.entries(process.env).filter(() => true)), GIT_CONFIG_NOSYSTEM: '1' }"),
+  F4: inl("{ ...process['env'], GIT_CONFIG_NOSYSTEM: '1' }"),
+  F5: inl("{ ...penv, GIT_CONFIG_NOSYSTEM: '1' }", "import { env as penv } from 'node:process';\n"),
+  F5b: inl("{ ...Object.fromEntries(Object.entries(penv)), GIT_CONFIG_NOSYSTEM: '1' }", "import { env as penv } from 'node:process';\n"),
+  F6: inl('{ ...gitEnv(d), ...process.env }'),
+  F7: inl('{ ...gitEnv(d), ...base }', 'const base = { ...process.env };\n'),
+  F8: inl("{ GIT_CONFIG_NOSYSTEM: '1', extra: { ...process.env } }"),
+  F9: inl("{ ...Object.fromEntries(keep.filter(Boolean).map((k) => [k, process.env[k]]).concat(Object.entries(process.env))), GIT_CONFIG_NOSYSTEM: '1' }", W_KEEP),
+  F10: inl("{ ...Object.fromEntries(keep.filter(Boolean).flatMap(() => Object.entries(process.env))), GIT_CONFIG_NOSYSTEM: '1' }", W_KEEP),
+  F11: inl("{ GIT_CONFIG_NOSYSTEM: '1', all: process.env }"),
+  F12: cst("function all() { return process.env; }\nconst env = { ...Object.fromEntries(Object.entries(all())), GIT_CONFIG_NOSYSTEM: '1' };\n"),
+  F13: inl('mk(d)', "function mk(x) { if (x) return { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1' }; return process.env; }\n"),
+  F14: inl('sandboxEnv(cwd)'),
+  F15: cst(`${W_KEEP}const env = ${W_CLEAN};\nObject.assign(env, process.env);\n`),
+  F16: cst("const env = { GIT_CONFIG_NOSYSTEM: '1' };\nfor (const k of Object.keys(process.env)) env[k] = process.env[k];\n"),
+  F17: cst(`${W_KEEP}const env = ${W_CLEAN};\nenv.GIT_DIR = '/elsewhere/.git';\n`),
+  F18: cst("const KEYS = ['PATH'];\nKEYS.push('GIT_DIR');\nconst env = { ...Object.fromEntries(KEYS.map((k) => [k, process.env[k]])), GIT_CONFIG_NOSYSTEM: '1' };\n"),
+  F19: cst(`const keep = ['PATH', 'GIT_DIR'];\nconst env = ${W_CLEAN};\n`),
+  F20: cst(`const k2 = ['GIT_DIR'];\nconst keep = ['PATH', ...k2];\nconst env = ${W_CLEAN};\n`),
+  F21: cst(`const keep = ['PATH', 'GIT_' + 'DIR'];\nconst env = ${W_CLEAN};\n`),
+  F22: inl("{ GIT_CONFIG_NOSYSTEM: '1', ['GIT' + '_DIR']: process.env['GIT' + '_DIR'] }"),
+  F23: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '0' }`, W_KEEP),
+  F24: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_NOSYSTEM: '0' }`, W_KEEP),
+  F25: inl(`{ GIT_CONFIG_NOSYSTEM: '1', ...${W_PICK}, ...over }`, `${W_KEEP}const over = { GIT_CONFIG_NOSYSTEM: '0' };\n`),
+  F26: inl(`{ ...${W_PICK} }`, W_KEEP),
+  F27: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: flag }`, `${W_KEEP}const flag = '1';\n`),
+  F28: inl(`{\n  // GIT_CONFIG_NOSYSTEM: '1'\n  ...${W_PICK}\n}`, W_KEEP),
+  F28b: inl(`{ /* GIT_CONFIG_NOSYSTEM: '1' */ ...${W_PICK} }`, W_KEEP),
+  F29: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', git_dir: d }`, W_KEEP),
+  F30: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', GIT_DIR: x }`, W_KEEP),
+  F31: raw((o) => `${W_KEEP}function a(d) {\n  const env = ${W_CLEAN};\n  return env;\n}\nfunction b(d) {\n  const env = { ...process.env };\n  ${W_CALL(o)}}\n`),
+  F32: raw((o) => `${W_KEEP}const env = ${W_CLEAN};\nfunction f(d) {\n  let env = { ...process.env };\n  ${W_CALL(o)}}\n`),
+  F33: raw((o) => `${W_KEEP}const env = ${W_CLEAN};\nfunction f(d, env) {\n  ${W_CALL(o)}}\n`),
+  F34: raw((o) => `${W_KEEP}function a() {\n  const e2 = ${W_CLEAN};\n  return e2;\n}\nfunction b(d) {\n  const e2 = { ...process.env };\n  ${W_CALL(o)}}\n`, [['env: e2', '{ cwd: d, env: e2 }']]),
+  // ---- found beyond the list (candidate rows for the chief) ----
+  X1: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', URL: 'a//b', GIT_DIR: '/x' }`, W_KEEP),
+  X2: raw(() => `const u = 'http://x'; ${SS}('git', ['status'], { cwd: d, env: process.env });\n`, [['one line', null]]),
+  X3: raw(() => `${SS}('git', ['status'], { cwd: d, env: gitEnv(d), ...opts });\n`, [['spread after env', null]]),
+  X5: raw((o) => `${W_KEEP}let env = ${W_CLEAN};\nenv = { ...process.env };\n${W_CALL(o)}`),
+  X6: raw((o) => `${W_KEEP}const env = ${W_CLEAN};\naddAll(env);\n${W_CALL(o)}`),
+  X7: raw((o) => `${W_KEEP}const env = ${W_CLEAN};\nconst e2 = env;\nObject.assign(e2, process.env);\n${W_CALL(o)}`),
+  F11b: inl("{ GIT_CONFIG_NOSYSTEM: '1', all: penv }", "import { env as penv } from 'node:process';\n"),
+  X8: cst("const env = gitEnv(d);\nenv.GIT_DIR = '/elsewhere/.git';\n"),
+  X9: inl(`{ ...${W_PICK}, extra: { GIT_CONFIG_NOSYSTEM: '1' } }`, W_KEEP),
+  X10: inl(`{ ...${W_PICK} ?? base, GIT_CONFIG_NOSYSTEM: '1' }`, `${W_KEEP}const base = { ...process.env };\n`),
+  X11: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', PATH: sanitize(process.env.PATH) }`, W_KEEP),
+  X12: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', [k]: 'x' }`, W_KEEP),
+  F28c: inl(`{ /* GIT_CONFIG_NOSYSTEM: '1', */ ...${W_PICK} }`, W_KEEP),
+  X13: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', PATH: 'a' + 'b' }`, W_KEEP),
+  X14: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', PATH: d.toLowerCase() }`, W_KEEP),
+  X15: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', PATH: Object.values }`, W_KEEP),
+};
+
+const MUST_PASS = {
+  P3a: inl('gitEnv(d)'),
+  P3b: cst('const env = gitEnv(d);\n'),
+  P4: inl("{ PATH: process.env.PATH, HOME: process.env.HOME, GIT_CONFIG_NOSYSTEM: '1' }"),
+  P5: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1' }`, W_KEEP),
+  P5c: inl(`{ ...${W_PICK_IN}, GIT_CONFIG_NOSYSTEM: '1' }`, W_KEEP),
+  P5b: cst(`${W_KEEP}const env = ${W_CLEAN};\n`),
+  P6: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_CEILING_DIRECTORIES: d }`, W_KEEP),
+  P6b: cst(`${W_KEEP}const env = { ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_CEILING_DIRECTORIES: d };\n`),
+  P7: raw((o) => `const keep = ['PATH', 'GIT_CEILING_DIRECTORIES'];\nconst env = ${W_CLEAN};\n${W_CALL(o)}`),
+};
+
+for (const [id, v] of Object.entries(MUST_FAIL)) {
+  for (const [label, o] of v.forms) {
+    test(`witness ${id} [${label}]: MUST FAIL (a finding, never a silent pass)`, () => {
+      const findings = wverdict(v.src(o));
+      assert.ok(findings.length >= 1, `${id} [${label}] was wrongly PASSED:\n${v.src(o)}`);
+    });
+  }
+}
+
+for (const [id, v] of Object.entries(MUST_PASS)) {
+  for (const [label, o] of v.forms) {
+    test(`witness ${id} [${label}]: MUST PASS (no finding, no pin)`, () => {
+      assert.deepEqual(wverdict(v.src(o)), [], `${id} [${label}] was wrongly refused:\n${v.src(o)}`);
+    });
+  }
+}
+
+test('witness P1: the canon release-notes.mjs (blob f8d998d8) passes with NO pin', () => {
+  const text = fs.readFileSync(path.join(repo, 'scripts', 'release-notes.mjs'), 'utf8');
+  assert.ok(blobId(text).startsWith('f8d998d8'), 'the file is not the canon blob f8d998d8');
+  assert.deepEqual(censusGitSpawns([{ rel: 'scripts/release-notes.mjs', text }], { exemptions: [], carriers: {} }), []);
+});
