@@ -308,6 +308,7 @@ function allowlistVerdict(objText, code, name) {
   // 08d bounce (INSPECT HIGH-1): a key spelled with an escape hides its name (GIT_DIR is GIT_DIR at run time), and a __proto__ key sets
   // the prototype, which a child process copies as env: either is a FINDING, the way every other unreadable shape is (fail closed).
   if (/__proto__|\bsetPrototypeOf\b/.test(body)) return 'an allowlist env names __proto__ (or setPrototypeOf) -- a prototype can carry the whole environment into the child (CWK-136)';
+  if (splitTop(body).map(entryInfo).some((e) => e.kind === 'other')) return 'an allowlist env has an accessor, a method or a modifier entry (get, set, async, *, name() {}) -- an entry is only name: value, a shorthand name, or the one Object.fromEntries spread; the key such an entry defines can be computed or escaped (CWK-133/136)';
   if (splitTop(body).map(entryInfo).some((e) => e.kind === 'key' && e.escaped)) return 'an allowlist env has a key spelled with an escape (\\u, \\x) -- the census cannot read the name, and a GIT_* name could hide in it (CWK-133/136)';
   // (c) the GIT_* names, any case, in the object and in every list it names
   const gitNames = (body.match(/\bgit_[a-z0-9_]*/gi) || []);
@@ -396,9 +397,12 @@ function entryInfo(raw) {
   }
   const escaped = keyRaw.includes(BS);
   const name = /^['"]/.test(keyRaw) ? keyRaw.slice(1, -1) : keyRaw;
-  if (rest === '') return { kind: 'key', name, escaped, shorthand: true, value: name };
+  // 08d bounce 2 (INSPECT HIGH-2): an entry is ONLY `name: value` or a shorthand `name`. Every other form -- get, set, async, a generator *, a
+  // method `name() {}`, any modifier before the name -- is kind 'other': its key can be computed or escaped behind the modifier
+  // (`get ['GI' + 'T_DIR']() {...}` defines GIT_DIR), so the census does not try to read it.
+  if (rest === '' && /^[A-Za-z_$][\w$]*$/.test(keyRaw)) return { kind: 'key', name, escaped, shorthand: true, value: name };
   if (rest[0] === ':') return { kind: 'key', name, escaped, shorthand: false, value: rest.slice(1).trim() };
-  return { kind: 'key', name: keyRaw, escaped, method: true, value: '' };
+  return { kind: 'other' };
 }
 
 // The options object of a spawn: the LAST top-level argument of the call, when it is one object literal; else null.
@@ -431,6 +435,7 @@ function envInfo(callText) {
   if (!o) return { problem: noEnv };
   if (/__proto__|\bsetPrototypeOf\b/.test(o)) return { problem: 'an options object that names __proto__ can hand the child an env it does not show -- the census cannot read it (CWK-136)' };
   const ents = splitTop(o).map(entryInfo);
+  if (ents.some((e) => e.kind === 'other')) return { problem: 'an options object has an accessor, a method or a modifier entry (get, set, async, *, name() {}) -- the census cannot read the key it defines, and an env could hide in it (CWK-136)' };
   if (ents.some((e) => e.kind === 'computed')) return { problem: 'an options object has a computed key -- the census cannot read the name, and an env could hide in it (CWK-136)' };
   if (ents.some((e) => e.kind === 'key' && e.escaped)) return { problem: 'an options object has a key spelled with an escape -- the census cannot read the name, and an env could hide in it (CWK-136)' };
   const at = [];
@@ -438,7 +443,6 @@ function envInfo(callText) {
   if (at.length === 0) return { problem: noEnv };
   if (at.length > 1) return { problem: 'the options object has more than one env key -- JavaScript keeps the LAST one and the census judges one (CWK-136)' };
   const e = ents[at[0]];
-  if (e.method) return { problem: 'env is declared as a method in the options object -- the census cannot read what it returns (CWK-136)' };
   return { expr: e.value, shorthand: !!e.shorthand, spreadAfter: ents.slice(at[0] + 1).some((x) => x.kind === 'spread') };
 }
 

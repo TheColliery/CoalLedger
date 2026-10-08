@@ -500,3 +500,59 @@ for (const [id, v] of Object.entries(BOUNCE_PASS)) {
     assert.deepEqual(wverdict(v.src(null)), [], `${id} was wrongly refused:\n${v.src(null)}`);
   });
 }
+
+// ---- 08d BOUNCE 2 (INSPECT HIGH-2, r2-08d.md): an accessor or method entry in the allowlist object hides its key name. G1-G3 were wrongly
+// passed (a real child received GIT_DIR through G1 and G2); G4, O1-O4, P1 and P2 were refused already and stay as must-fail rows.
+// The head's ruling: an allowlist entry is ONLY a plain `name: value`, a shorthand `name`, or the one permitted Object.fromEntries spread;
+// get, set, async, a generator * and every other method form is a finding, in the allowlist object and in the options object.
+const G_HDR = W_HDR + "import { gitEnv } from './git-env.mjs';\nconst d = '/tmp';\n";
+const gone = (src) => ({ forms: [['one form', null]], src: () => G_HDR + src });
+const gsp = (env) => bcall(`{ cwd: d, env: ${env} }`);
+
+const BOUNCE2_FAIL = {
+  G1: gone(gsp(`{ GIT_CONFIG_NOSYSTEM: '1', get ${ESC_G}IT_DIR() { return '/x/.git'; } }`)),
+  G2: gone(gsp("{ GIT_CONFIG_NOSYSTEM: '1', get ['GI' + 'T_DIR']() { return '/x/.git'; } }")),
+  G3: gone(gsp(`{ GIT_CONFIG_NOSYSTEM: '1', get ['${ESC_G}IT_DIR']() { return '/x/.git'; } }`)),
+  G4: gone(gsp("{ GIT_CONFIG_NOSYSTEM: '1', get GIT_DIR() { return '/x/.git'; } }")),
+  O1: gone("const opts = { cwd: d, env: process.env };\n" + bcall('opts')),
+  O2: gone("const base = { env: process.env };\n" + bcall('{ cwd: d, env: gitEnv(d), ...base }')),
+  O3: gone(`${SS}('git', { cwd: d, env: process.env });\n`),
+  O4: gone(bcall('{ cwd: d, env: gitEnv(d), [`env`]: process.env }')),
+  P1: gone("const e = { GIT_CONFIG_NOSYSTEM: '1' };\nReflect.setPrototypeOf(e, process.env);\n" + bcall('{ cwd: d, env: e }')),
+  P2: gone("const e = { GIT_CONFIG_NOSYSTEM: '1' };\nObject.assign(e, JSON.parse('{}'));\n" + bcall('{ cwd: d, env: e }')),
+  // ---- the other forms of the same class
+  H1: gone(gsp("{ GIT_CONFIG_NOSYSTEM: '1', set GIT_DIR(v) { } }")),
+  H2: gone(gsp("{ GIT_CONFIG_NOSYSTEM: '1', async GIT_DIR() { return 'x'; } }")),
+  H3: gone(gsp("{ GIT_CONFIG_NOSYSTEM: '1', *GIT_DIR() { yield 'x'; } }")),
+  H4: gone(gsp("{ GIT_CONFIG_NOSYSTEM: '1', GIT_DIR() { return '/x/.git'; } }")),
+  H5: gone(gsp(`{ GIT_CONFIG_NOSYSTEM: '1', ${ESC_G}IT_DIR() { return '/x/.git'; } }`)),
+  H6: gone(gsp("{ GIT_CONFIG_NOSYSTEM: '1', async *['GI' + 'T_DIR']() { } }")),
+  // the compact form with no whitespace inside the entry: the key text reads as one token, and only the shorthand-must-be-an-identifier test refuses it
+  H12: gone(gsp("{ GIT_CONFIG_NOSYSTEM: '1', get['GI'+'T_DIR'](){return'x'} }")),
+  H10: gone(gsp("{ GIT_CONFIG_NOSYSTEM: '1', 'GIT_DIR'() { return '/x/.git'; } }")),
+  H11: gone(gsp("{ GIT_CONFIG_NOSYSTEM: '1', ...{ get ['GI' + 'T_DIR']() { return '/x/.git'; } } }")),
+  // the same accessor in the OPTIONS object: a getter named env wins over a plain env key that came before it
+  H7: gone(bcall('{ cwd: d, env: gitEnv(d), get env() { return process.env; } }')),
+  // an accessor in a helper's object, and in a named env object
+  H8: gone("const mk = (x) => ({ GIT_CONFIG_NOSYSTEM: '1', get ['GI' + 'T_DIR']() { return x; } });\n" + gsp("mk('/x/.git')")),
+  H9: gone("const env = { GIT_CONFIG_NOSYSTEM: '1', get GIT_DIR() { return '/x/.git'; } };\n" + bcall('{ cwd: d, env }')),
+};
+
+const BOUNCE2_PASS = {
+  // a plain key that is only NAMED get / set / async is an ordinary data property
+  P15: gone(gsp("{ PATH: process.env.PATH, get: '1', set: '2', async: '3', GIT_CONFIG_NOSYSTEM: '1' }")),
+  P16: gone("const KEEP = ['PATH'];\n" + gsp(`{ ...${B_PICK}, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', PATH }`)),
+};
+
+for (const [id, v] of Object.entries(BOUNCE2_FAIL)) {
+  test(`witness ${id} [bounce 2]: MUST FAIL (a finding, never a silent pass)`, () => {
+    const findings = wverdict(v.src(null));
+    assert.ok(findings.length >= 1, `${id} was wrongly PASSED:\n${v.src(null)}`);
+  });
+}
+
+for (const [id, v] of Object.entries(BOUNCE2_PASS)) {
+  test(`witness ${id} [bounce 2]: MUST PASS (no finding, no pin)`, () => {
+    assert.deepEqual(wverdict(v.src(null)), [], `${id} was wrongly refused:\n${v.src(null)}`);
+  });
+}
