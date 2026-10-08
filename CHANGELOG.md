@@ -2,6 +2,18 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.15.0-beta.3] - 2026-10-08
+
+Secret scan, release tooling and git-spawn census re-sync
+
+Nothing a canary does changed. The one file in the installed plugin that moved is `scripts/lib/git-env-census.mjs`, a development gate that pins carriers of the git-spawn environment rule; every other change below lives in the repo's own secret scan, release and CI tooling, which the installed plugin does not carry. Each re-synced file is adopted by git blob id and proven equal with `git hash-object`.
+
+### Changed
+- **The secret scan library and its test follow the Bankfire source (`scripts/lib/secret-scan.mjs` blob `270a21a2337c4f8f1d80bd7edcf53f8498c461c2`, `scripts/secret-scan.test.mjs` blob `4433fb56bc97d1facc3fb27804e1934c0577115f`).** The GitHub-token pattern also matches the stateless App installation token (`ghs_` followed by a run of at least 100 characters of letters, digits, `_`, `.` and `-`); an unquoted value that reads as code (`path_key = str(load_state_file_v2(`) is no longer judged as a secret; a closing markup tag ends a value; and a constant that names the environment variable of a secret (`SECRET_ENV = "MY_API_TOKEN"`) holds a name, not a secret. The `.github` template's copy of the test still reads `bd5b156c`, so the source's was taken.
+- **The secret gate and its test follow the org canon (`scripts/secret-gate.mjs` blob `044ec4464e83895f1a988198c93b73300652bdf2`, `scripts/secret-gate.test.mjs` blob `a17ae233275c05c6d030f7aa7f0654002b310356`).** The gate keeps `GIT_CEILING_DIRECTORIES` beside `GIT_INDEX_FILE` when it drops the `GIT_*` family from a git child's environment (it only narrows where git looks for a repository), and its header now states what the scan does not catch.
+- **The release scripts follow the org canon again (`scripts/release-notes.mjs` blob `f8d998d8fe14a5972440043123398115d02fc50e`, `scripts/lib/release-shape.mjs` blob `bfb293322734acca1740f08eb1968236429ed37c`, and their tests `8cf7e5fd58b89d051395efc53cc0a4f6c86848da` and `771a7e609fec3c43694718ef2d3312e3d691e1ba`).** The tag counts as the prefix of a release name only at a word boundary (`v2.7.0` is not the prefix of `v2.7.01`), `--repo` is accepted only with `--check`, and the one git spawn keeps `GIT_CEILING_DIRECTORIES`. The hold on `release-notes.test.mjs` one canon step back is released: the canon fixed the environment assertion that failed on macOS and under coverage, so the room carries the canon blob.
+- **The git-spawn census accepts an allowlist environment (`scripts/lib/git-env-census.mjs`, the one file of the installed plugin that moved).** A spawn whose `env` is built from named keys passes when it reads `process.env` only as an indexed read, spreads nothing but `Object.fromEntries(...)`, carries `GIT_CONFIG_NOSYSTEM: '1'`, names no `GIT_*` key beyond `GIT_CONFIG_NOSYSTEM`, `GIT_TERMINAL_PROMPT` (`'0'`) and `GIT_CEILING_DIRECTORIES`, and is not mutated after its declaration. The canon `scripts/release-notes.mjs` passes on that rule, so its blob pin is removed; the other three carriers stay pinned, re-pinned to the new blobs (`secret-gate.test.mjs` `a17ae233`, `secret-scan.test.mjs` `4433fb56`, `release-notes.test.mjs` `8cf7e5fd`), each for an environment shape the rule does not accept on purpose. A pinned file that changes by one line fails the census again.
+
 ## [0.15.0-beta.2] - 2026-10-05
 
 Release tooling adopts the org canon; no change to the canaries
