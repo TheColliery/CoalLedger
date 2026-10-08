@@ -53,3 +53,11 @@ export function testSpawnPlan(tests, baseEnv) {
     killSignal: RUN_KILL_SIGNAL,
   };
 }
+
+// The runner's exit code from the spawnSync result. A child killed by a signal (V8's heap-limit abort is SIGABRT, an OOM kill is
+// SIGKILL) comes back with status null and NO error, and process.exitCode = null exits 0: a green gate on a crashed suite. Never a pass
+// unless the child reported a clean status (08b INSPECT L-2). A spawn error is handled (and named) by the caller; it is 1 here too.
+export function exitCodeOf(r) {
+  if (r.error) return 1;
+  return r.status ?? 1;
+}

@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { testSpawnPlan, HEAP_FLAG, TEST_TIMEOUT_MS, RUN_TIMEOUT_MS, RUN_KILL_SIGNAL } from './test-spawn.mjs';
+import { testSpawnPlan, HEAP_FLAG, TEST_TIMEOUT_MS, RUN_TIMEOUT_MS, RUN_KILL_SIGNAL, exitCodeOf } from './test-spawn.mjs';
 
 const ROOM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -57,6 +57,16 @@ test('test-spawn: a caller heap flag spelled with underscores is the same flag: 
   }
 });
 
+test('test-spawn: exitCodeOf is never green for a runner that did not report a clean exit (L-2: a signal kill has status null and no error)', () => {
+  assert.equal(exitCodeOf({ status: 0 }), 0);
+  assert.equal(exitCodeOf({ status: 1 }), 1);
+  assert.equal(exitCodeOf({ status: 2 }), 2);
+  assert.equal(exitCodeOf({ status: null, signal: 'SIGKILL' }), 1, 'killed by a signal: not a pass');
+  assert.equal(exitCodeOf({ status: null, signal: 'SIGABRT' }), 1, 'the heap-limit abort: not a pass');
+  assert.equal(exitCodeOf({ status: null }), 1, 'no status at all: not a pass');
+  assert.equal(exitCodeOf({ status: 0, error: Object.assign(new Error('x'), { code: 'ETIMEDOUT' }) }), 1, 'a spawn error beside status 0: not a pass');
+});
+
 test('test-spawn: the base env is not mutated', () => {
   const base = { NODE_OPTIONS: '--no-warnings' };
   testSpawnPlan(['a.test.mjs'], base);
@@ -68,12 +78,17 @@ test('test-spawn: scripts/test.mjs spawns its child with the plan argv, env, dea
   assert.match(src, /testSpawnPlan\(TESTS, process\.env\)/);
   assert.match(src, /spawnSync\(process\.execPath, plan\.args, \{[^}]*env: plan\.env[^}]*timeout: plan\.timeout[^}]*killSignal: plan\.killSignal/);
   assert.match(src, /if \(r\.error\)[\s\S]*?console\.error\(`FAIL test runner:[\s\S]*?process\.exitCode = 1/);
+  assert.match(src, /process\.exitCode = exitCodeOf\(r\)/, 'the exit decision goes through the helper the unit test pins');
 });
 
 // ---- end to end: the REAL test.mjs and plan, copied into a temp tree whose roster is one planted file ----
 // The per-test clock and the whole-run deadline are patched down in the COPY only (3 s and 6 s). Every run is bounded by its own
 // 40 s timer that kills the whole tree, so a regression fails this test instead of hanging the suite.
-function plant(t, probeSource) {
+// clockMs is the planted per-test clock. 3000 lets the clock cut a hung test (R2). A thread-block test plants a clock LARGER than the
+// whole-run deadline (6000), so the deadline always fires first: on Node 22 the clock is per FILE, so a 3000 ms clock cut the blocked
+// file at 3 s, the run ended as a cancelled file, and the named ETIMEDOUT FAIL never printed (CI run 37746193774, three Node 22 legs);
+// on Node 24 the same plant passed. The property under test (the deadline, never a pass) must not depend on that host difference.
+function plant(t, probeSource, clockMs = 3000) {
   const dir = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'cl-testspawn-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
   fs.mkdirSync(path.join(dir, 'scripts', 'lib'), { recursive: true });
@@ -84,7 +99,7 @@ function plant(t, probeSource) {
   assert.notEqual(roster, runner, 'the roster in the copy was replaced');
   fs.writeFileSync(path.join(dir, 'scripts', 'test.mjs'), roster);
   const plan = fs.readFileSync(path.join(ROOM, 'scripts', 'lib', 'test-spawn.mjs'), 'utf8')
-    .replace('TEST_TIMEOUT_MS = 120000', 'TEST_TIMEOUT_MS = 3000').replace('RUN_TIMEOUT_MS = 300000', 'RUN_TIMEOUT_MS = 6000');
+    .replace('TEST_TIMEOUT_MS = 120000', `TEST_TIMEOUT_MS = ${clockMs}`).replace('RUN_TIMEOUT_MS = 300000', 'RUN_TIMEOUT_MS = 6000');
   fs.writeFileSync(path.join(dir, 'scripts', 'lib', 'test-spawn.mjs'), plan);
   fs.writeFileSync(path.join(dir, 'scripts', 'lib', 'probe.test.mjs'), probeSource);
   return dir;
@@ -127,7 +142,7 @@ test('test-spawn (run): a file that leaks a handle at its top level while its on
 });
 
 test('test-spawn (run): a test that blocks its thread past the whole-run deadline is a named FAIL and a non-zero exit, never a pass (08b INSPECT M-1 backstop)', async (t) => {
-  const dir = plant(t, "import test from 'node:test';\nimport fs from 'node:fs';\ntest('blocks the thread', () => { fs.writeFileSync('child.pid', String(process.pid)); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10000); });\n");
+  const dir = plant(t, "import test from 'node:test';\nimport fs from 'node:fs';\ntest('blocks the thread', () => { fs.writeFileSync('child.pid', String(process.pid)); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10000); });\n", 60000);
   const r = await runPlanted(dir);
   try { process.kill(Number(fs.readFileSync(path.join(dir, 'child.pid'), 'utf8')), 'SIGKILL'); } catch { /* gone, or never written */ }
   assert.equal(r.bound, false, 'the run did not end by itself\n' + r.out.slice(-400));

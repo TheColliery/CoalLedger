@@ -70,7 +70,7 @@ if (missing.length) {
     // CWK-199: the child spawn (heap cap in the env, files one at a time, a finite per-test clock, --test-force-exit and a
     // whole-run deadline) is one plan in scripts/lib/test-spawn.mjs, which carries the measurements and the reasons.
     // Dynamic and inside the step that needs it, per node/runtime.md section 1 (a gate entry imports node builtins only at the top).
-    const { testSpawnPlan } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'test-spawn.mjs')).href);
+    const { testSpawnPlan, exitCodeOf } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'test-spawn.mjs')).href);
     const plan = testSpawnPlan(TESTS, process.env);
     const r = spawnSync(process.execPath, plan.args, { cwd: repo, stdio: 'inherit', env: plan.env, timeout: plan.timeout, killSignal: plan.killSignal });
     // A whole-run deadline is a LOUD failure (a named FAIL line, non-zero), never a silent pass or an unbounded wait.
@@ -78,7 +78,7 @@ if (missing.length) {
       console.error(`FAIL test runner: the run did not finish (${r.error.code || r.error.message}); the whole-run deadline is ${plan.timeout} ms (scripts/lib/test-spawn.mjs RUN_TIMEOUT_MS)`);
       process.exitCode = 1;
     } else {
-      process.exitCode = r.status ?? 1;
+      process.exitCode = exitCodeOf(r);
     }
   }
 }
