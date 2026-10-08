@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { censusGitSpawns, collectScriptsMjs, blobId, EXEMPT_CARRIERS } from './git-env-census.mjs';
@@ -150,9 +151,9 @@ test('census carriers (CWK-174): a pinned byte-equal carrier is skipped, an edit
 test('census carriers (CWK-174): blobId equals git hash-object for the same bytes, and the live carriers match their pins', () => {
   assert.equal(blobId(''), 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391', "git's empty-blob id");
   assert.equal(blobId('hello\n'), 'ce013625030ba8dba906f756967f9e9ca394464a', 'git hash-object of "hello" + LF');
-  // 08c: the roster is four (release-notes.test.mjs joined at the canon 8cf7e5fd; 05a: release-notes.mjs joined, re-pinned at the canon's explicit-allowlist-env blob; the roster assertion
+  // 08c: the roster is three (release-notes.mjs left it: rung (3) accepts its allowlist env; release-notes.test.mjs joined at the canon 8cf7e5fd; the 05a roster assertion
   // was proven wrong by the adoption, which is its own named step).
-  assert.deepEqual(Object.keys(EXEMPT_CARRIERS).sort(), ['scripts/release-notes.mjs', 'scripts/release-notes.test.mjs', 'scripts/secret-gate.test.mjs', 'scripts/secret-scan.test.mjs']);
+  assert.deepEqual(Object.keys(EXEMPT_CARRIERS).sort(), ['scripts/release-notes.test.mjs', 'scripts/secret-gate.test.mjs', 'scripts/secret-scan.test.mjs']);
   const live = collectScriptsMjs(repo).filter((f) => Object.hasOwn(EXEMPT_CARRIERS, f.rel));
   assert.equal(live.length, Object.keys(EXEMPT_CARRIERS).length, 'every pinned path exists in the tree (a stale pin is a finding here, never silence)');
   assert.deepEqual(censusGitSpawns(live, { exemptions: [] }), [], 'and each is byte-equal to its pin');
@@ -169,10 +170,133 @@ test('census carriers (F1): a mismatch message names BOTH canon templates, so th
   assert.match(edited[0], /templates\/overlay-coal-skill\/scripts\//);
 });
 
-test('census carriers (F1): the live release-notes.mjs carrier, edited by one line, is told to re-derive from overlay-coal-skill', () => {
-  const files = collectScriptsMjs(repo).map((f) => (f.rel === 'scripts/release-notes.mjs' ? { ...f, text: f.text + '// edited\n' } : f));
+test('census carriers (F1): the live release-notes.test.mjs carrier, edited by one line, is told to re-derive from overlay-coal-skill', () => {
+  const files = collectScriptsMjs(repo).map((f) => (f.rel === 'scripts/release-notes.test.mjs' ? { ...f, text: f.text + '// edited\n' } : f));
   const findings = censusGitSpawns(files);
   assert.equal(findings.length, 1);
-  assert.match(findings[0], /^scripts\/release-notes\.mjs is an exempt byte-equal org carrier/);
+  assert.match(findings[0], /^scripts\/release-notes\.test\.mjs is an exempt byte-equal org carrier/);
   assert.match(findings[0], /templates\/overlay-coal-skill\/scripts\//);
+});
+
+// ---- 08c commit 2 (main's ruling UMB-456 (2)): the ALLOWLIST env shape. An env object built from NAMED keys is as safe as gitEnv() when
+// it (a) reads process.env only one NAMED key at a time (process.env[k]), never a spread, an assign or a pass-through, (b) carries
+// GIT_CONFIG_NOSYSTEM: '1', and (c) sets or passes no GIT_* key beyond the three the canon release-notes.mjs actually uses.
+// The three GIT_* names allowed, measured against that file's own env: GIT_CONFIG_NOSYSTEM (required: it stops the machine's system
+// config from reaching the child), GIT_TERMINAL_PROMPT (set to '0': a prompt can only hang the child, it cannot aim it anywhere) and
+// GIT_CEILING_DIRECTORIES (passed by name: it only NARROWS where git searches for a repository, UMB-456 (1) iii). Every other GIT_* key
+// (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...) is what a hook exports and what retargets a spawn, so naming one is a finding.
+//
+// Fixtures are built from strings (the SS/EF convention above); `process.env[k]` appears here only inside fixture TEXT.
+const PE = ['process', 'env'].join('.');
+const KEEP = "const keep = ['PATH', 'Path', 'HOME', 'GIT_CEILING_DIRECTORIES'];\n";
+const FROM_ENTRIES = `...Object.fromEntries(keep.filter((k) => ${PE}[k] !== undefined).map((k) => [k, ${PE}[k]]))`;
+const NOSYS = "GIT_CONFIG_NOSYSTEM: '1'";
+const allowObj = (parts) => `{ ${parts.join(', ')} }`;
+const GOOD_PARTS = [FROM_ENTRIES, NOSYS, "GIT_TERMINAL_PROMPT: '0'"];
+const censusOne = (text) => censusGitSpawns([{ rel: 'scripts/x.mjs', text }], { exemptions: [], carriers: {} });
+// the same env object in the three spellings a call site can give it: inline, a named variable, and the `env` shorthand
+const asInline = (obj) => KEEP + `${SS}('git', ['status'], { cwd: dir, env: ${obj} });\n`;
+const asNamed = (obj) => KEEP + `const gitEnvAllow = ${obj};\n${SS}('git', ['status'], { cwd: dir, env: gitEnvAllow });\n`;
+const asShorthand = (obj) => KEEP + `const env = ${obj};\n${SS}('git', ['status'], { cwd: dir, env });\n`;
+const SPELLINGS = { inline: asInline, named: asNamed, shorthand: asShorthand };
+
+test('allowlist env (witness 1): the canon release-notes.mjs, read from the tree with NO pin, passes', () => {
+  const text = fs.readFileSync(path.join(repo, 'scripts', 'release-notes.mjs'), 'utf8');
+  assert.ok(text.includes('GIT_CONFIG_NOSYSTEM'), 'control: this is the file that builds the allowlist env');
+  assert.deepEqual(censusGitSpawns([{ rel: 'scripts/release-notes.mjs', text }], { exemptions: [], carriers: {} }), []);
+});
+
+test('allowlist env: a well-formed allowlist passes in all three spellings (inline, named variable, shorthand)', () => {
+  for (const [name, spell] of Object.entries(SPELLINGS)) {
+    assert.deepEqual(censusOne(spell(allowObj(GOOD_PARTS))), [], name);
+  }
+});
+
+test('allowlist env (witness 2): a spread of the whole process env FAILS, inline, as a named variable and as the shorthand, even with GIT_CONFIG_NOSYSTEM', () => {
+  const obj = allowObj([`...${PE}`, NOSYS]);
+  for (const [name, spell] of Object.entries(SPELLINGS)) {
+    const findings = censusOne(spell(obj));
+    assert.equal(findings.length, 1, name);
+    assert.match(findings[0], /process\.env/, name);
+  }
+});
+
+test('allowlist env (witness 3): Object.assign({}, process.env, ...) FAILS, inline and as a named variable', () => {
+  const obj = `Object.assign({}, ${PE}, { ${NOSYS} })`;
+  for (const name of ['inline', 'named', 'shorthand']) {
+    const findings = censusOne(SPELLINGS[name](obj));
+    assert.equal(findings.length, 1, name);
+  }
+});
+
+test('allowlist env (witness 4): an allowlist that adds a GIT_* key beyond the three FAILS, as a property and as a name in the keep list', () => {
+  for (const [name, spell] of Object.entries(SPELLINGS)) {
+    const prop = censusOne(spell(allowObj([...GOOD_PARTS, "GIT_DIR: '/x'"])));
+    assert.equal(prop.length, 1, name + ' (property)');
+    assert.match(prop[0], /GIT_DIR/, name);
+  }
+  const listed = censusOne("const keep = ['PATH', 'GIT_WORK_TREE'];\n" + `const env = ${allowObj(GOOD_PARTS)};\n${SS}('git', ['status'], { cwd: dir, env });\n`);
+  assert.equal(listed.length, 1, 'keep list');
+  assert.match(listed[0], /GIT_WORK_TREE/);
+});
+
+test('allowlist env (witness 5): an allowlist missing GIT_CONFIG_NOSYSTEM, or setting it to anything but 1, FAILS', () => {
+  for (const [name, spell] of Object.entries(SPELLINGS)) {
+    const missing = censusOne(spell(allowObj([FROM_ENTRIES, "GIT_TERMINAL_PROMPT: '0'"])));
+    assert.equal(missing.length, 1, name + ' (missing)');
+    assert.match(missing[0], /GIT_CONFIG_NOSYSTEM/, name);
+    const zero = censusOne(spell(allowObj([FROM_ENTRIES, "GIT_CONFIG_NOSYSTEM: '0'"])));
+    assert.equal(zero.length, 1, name + ' (zero)');
+  }
+});
+
+test('allowlist env: any spread other than Object.fromEntries(...) FAILS, so an unknown object cannot smuggle a GIT_* key in', () => {
+  const findings = censusOne(asInline(allowObj([FROM_ENTRIES, NOSYS, '...extra'])));
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /spread/);
+});
+
+test('allowlist env: an allowlist object mutated after its declaration FAILS (a GIT_DIR assigned later is the same hole)', () => {
+  const text = asNamed(allowObj(GOOD_PARTS)) + "gitEnvAllow.GIT_DIR = process.cwd();\n";
+  const findings = censusOne(text);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /mutated after its declaration/);
+});
+
+test('allowlist env: process.env read through a key variable is allowed only as an indexed read; a bare mention inside the object FAILS', () => {
+  const findings = censusOne(asInline(allowObj([`...Object.fromEntries(Object.entries(${PE}))`, NOSYS])));
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /process\.env/);
+});
+
+test('allowlist env: a comment that names GIT_DIR inside the allowlist (as the canon release-notes.mjs does) is not a GIT_* key', () => {
+  const obj = allowObj([FROM_ENTRIES, NOSYS, '// a GIT_DIR a hook leaves is why this is an allowlist\n GIT_TERMINAL_PROMPT: \'0\'']);
+  assert.deepEqual(censusOne(asInline(obj)), []);
+});
+
+test('allowlist env: the census still runs over every file, and this room\'s real tree is clean with only the pins that still need to exist', () => {
+  const files = collectScriptsMjs(repo);
+  const findings = censusGitSpawns(files);
+  assert.deepEqual(findings, []);
+  assert.ok(files.some((f) => f.rel === 'scripts/release-notes.mjs'), 'the canon file is in the walk, and (no pin) is judged by the rule');
+  assert.ok(!Object.hasOwn(EXEMPT_CARRIERS, 'scripts/release-notes.mjs'), 'its blob pin is gone');
+});
+
+test('allowlist env: GIT_TERMINAL_PROMPT is allowed only as \'0\'; any other value FAILS', () => {
+  const findings = censusOne(asInline(allowObj([FROM_ENTRIES, NOSYS, "GIT_TERMINAL_PROMPT: '1'"])));
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /GIT_TERMINAL_PROMPT/);
+});
+
+test('allowlist env: a name declared as an allowlist in one place and as anything else in another FAILS (the census cannot tell which one a call uses)', () => {
+  const text = KEEP + `const env = ${allowObj(GOOD_PARTS)};\nfunction other() {\n  let env = makeEnv();\n  ${SS}('git', ['status'], { cwd: dir, env });\n}\n`;
+  const findings = censusOne(text);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /not declared/);
+});
+
+test('allowlist env: a name declared twice, both as safe allowlists, passes; one of the two unsafe FAILS', () => {
+  const two = (second) => KEEP + `const env = ${allowObj(GOOD_PARTS)};\nfunction other() {\n  const env = ${second};\n  ${SS}('git', ['status'], { cwd: dir, env });\n}\n`;
+  assert.deepEqual(censusOne(two(allowObj(GOOD_PARTS))), []);
+  assert.equal(censusOne(two(allowObj([`...${PE}`, NOSYS]))).length, 1);
 });

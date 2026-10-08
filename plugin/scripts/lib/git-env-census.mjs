@@ -12,6 +12,15 @@
 //       refuses an `env:` expression that is not EITHER a direct `gitEnv(...)` call OR a
 //       bare identifier this file itself declares as `const NAME = gitEnv(...)`.
 //
+//   (3) ALLOWLIST (08c, main's ruling UMB-456 (2)): an env built from NAMED keys is as safe as gitEnv() when it (a) reads process.env only one
+//       named key at a time (process.env[k]), never a spread, an assign or a pass-through, (b) carries GIT_CONFIG_NOSYSTEM: '1', and (c) names
+//       no GIT_* key beyond GIT_CONFIG_NOSYSTEM, GIT_TERMINAL_PROMPT ('0': a prompt can only hang the child) and GIT_CEILING_DIRECTORIES (it only
+//       NARROWS where git looks for a repository). Measured against the canon scripts/release-notes.mjs, which is the file this rung exists
+//       for: its keep list passes GIT_CEILING_DIRECTORIES by name and its object sets the other two. Every other GIT_* key (GIT_DIR,
+//       GIT_WORK_TREE, GIT_INDEX_FILE) is what a hook exports and what retargets a spawn. The same object may be inline, a named variable, or
+//       the `env` shorthand. Textual, like the rest: a keep list, an object literal and the mutation scan are read as text, so an
+//       allowlist assembled by a helper in ANOTHER file is not seen (it is a finding, never silently safe).
+//
 // Ported from CoalTipple's scripts/lib/git-env-census.mjs (the exemplar named in this
 // room's build order) with the rung-2 check added -- re-derived against THIS room's own
 // call shapes, not copied blind. CoalHearth ships a FAR more general version of the same
@@ -94,15 +103,106 @@ function findEnvKey(callText) {
   return null;
 }
 
+// ---- rung (3), the allowlist shape (08c). The three GIT_* names an allowlist may carry; see the header for why each is safe.
+const ALLOWED_GIT_KEYS = new Set(['GIT_CONFIG_NOSYSTEM', 'GIT_TERMINAL_PROMPT', 'GIT_CEILING_DIRECTORIES']);
+
+// A comment names GIT_DIR to explain the rule (the canon file does); only code is judged.
+const stripComments = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
+
+// The balanced {...} or [...] that opens at openIdx (depth over the three bracket kinds), or null when it never closes.
+function readBalanced(text, openIdx) {
+  let depth = 0;
+  for (let i = openIdx; i < text.length; i++) {
+    const c = text[i];
+    if (c === '(' || c === '{' || c === '[') depth++;
+    else if (c === ')' || c === '}' || c === ']') { depth--; if (depth === 0) return text.slice(openIdx, i + 1); }
+  }
+  return null;
+}
+
+const escapeRe = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Every declaration of NAME in the file, as { kind: 'gitEnv' | 'object' | 'other', text }.
+function declarationsOf(name, fileText) {
+  const re = new RegExp(String.raw`\b(?:const|let|var)\s+${escapeRe(name)}\s*=\s*`, 'g');
+  const out = [];
+  let m;
+  while ((m = re.exec(fileText))) {
+    const at = m.index + m[0].length;
+    if (/^gitEnv\s*\(/.test(fileText.slice(at))) out.push({ kind: 'gitEnv' });
+    else if (fileText[at] === '{') { const text = readBalanced(fileText, at); out.push(text ? { kind: 'object', text } : { kind: 'other' }); }
+    else out.push({ kind: 'other' });
+  }
+  return out;
+}
+
+// The text of every array literal the object names as a bare identifier (its keep list), comments stripped.
+function namedLists(body, fileText) {
+  const seen = new Set();
+  let lists = '';
+  for (const m of body.matchAll(/\b([A-Za-z_$][\w$]*)\b/g)) {
+    const id = m[1];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    for (const d of new RegExp(String.raw`\b(?:const|let|var)\s+${escapeRe(id)}\s*=\s*\[`, 'g')[Symbol.matchAll](fileText)) {
+      const list = readBalanced(fileText, d.index + d[0].length - 1);
+      if (list) lists += '\n' + stripComments(list);
+    }
+  }
+  return lists;
+}
+
+// null when `objText` (an object literal, as written) is a safe allowlist env; else the reason. `name` is the variable it was
+// declared as (for the mutation-after-declaration scan), or null for an inline object.
+function allowlistVerdict(objText, fileText, name) {
+  const body = stripComments(objText);
+  for (const m of body.matchAll(/\bprocess\s*(?:\.\s*env\b|\[\s*['"`]env['"`]\s*\])/g)) {
+    if (!/^\s*\[/.test(body.slice(m.index + m[0].length))) {
+      return 'an allowlist env mentions process.env other than as an indexed read (process.env[k], one named key at a time) -- a git child inherits a hook\'s absolute GIT_DIR that way (CWK-136)';
+    }
+  }
+  for (const m of body.matchAll(/\.\.\./g)) {
+    if (!/^\s*Object\s*\.\s*fromEntries\s*\(/.test(body.slice(m.index + 3))) {
+      return 'an allowlist env spreads something other than Object.fromEntries(<named keys>) -- an unknown object can carry any GIT_* key in';
+    }
+  }
+  const tokens = (body + namedLists(body, fileText)).match(/\bGIT_[A-Z0-9_]+\b/g) || [];
+  const bad = [...new Set(tokens)].filter((t) => !ALLOWED_GIT_KEYS.has(t));
+  if (bad.length) return `an allowlist env names ${bad.join(', ')} -- only ${[...ALLOWED_GIT_KEYS].join(', ')} may appear; any other GIT_* key retargets the spawn (CWK-133/136)`;
+  if (!/\bGIT_CONFIG_NOSYSTEM\s*:\s*['"]1['"]/.test(body)) return "an allowlist env must carry GIT_CONFIG_NOSYSTEM: '1' -- without it the machine's system git config reaches the child";
+  const prompt = /\bGIT_TERMINAL_PROMPT\s*:\s*([^,}\s]+)/.exec(body);
+  if (prompt && !/^['"]0['"]$/.test(prompt[1])) return "an allowlist env sets GIT_TERMINAL_PROMPT to something other than '0'";
+  if (name) {
+    const code = stripComments(fileText);
+    const n = escapeRe(name);
+    if (new RegExp(String.raw`\b${n}\s*(?:\.\s*[A-Za-z_$][\w$]*|\[[^\]]*\])\s*=(?!=)`).test(code) || new RegExp(String.raw`Object\s*\.\s*assign\s*\(\s*${n}\b`).test(code)) {
+      return `an allowlist env (${name}) is mutated after its declaration -- a GIT_* key assigned later is the same hole`;
+    }
+  }
+  return null;
+}
+
 function envVerdict(callText, fileText) {
   const key = findEnvKey(callText);
   if (!key) return "carries no 'env:' -- every git spawn must take env from gitEnv() (CWK-133)";
   const expr = key.kind === 'shorthand' ? 'env' : readExpr(callText, key.index + key.length, callText.length).trim();
+  if (expr.startsWith('{')) {
+    const why = allowlistVerdict(expr, fileText, null);
+    return why ? `env: ${expr.length > 60 ? expr.slice(0, 57) + '...' : expr} ${why}` : null;
+  }
   if (/\bprocess\s*\.\s*env\b/.test(expr) || /\bprocess\s*\[\s*['"`]env['"`]\s*\]/.test(expr)) {
     return `env: ${expr} mentions process.env -- a git child inherits a hook's absolute GIT_DIR that way; take env from gitEnv(...) alone (CWK-136)`;
   }
   if (/^gitEnv\s*\(/.test(expr) && findMatchingClose(expr, expr.indexOf('(')) === expr.length - 1) return null;
   if (/^[A-Za-z_$][\w$]*$/.test(expr)) {
+    const decls = declarationsOf(expr, fileText);
+    if (decls.some((d) => d.kind === 'object') && decls.every((d) => d.kind !== 'other')) {
+      for (const d of decls.filter((x) => x.kind === 'object')) {
+        const why = allowlistVerdict(d.text, fileText, expr);
+        if (why) return `env: ${expr} is not declared \`const ${expr} = gitEnv(...)\` in this file and is not a safe allowlist (${why}) -- take env from gitEnv(...) alone (CWK-136)`;
+      }
+      return null;
+    }
     return isGitEnvIdentifier(expr, fileText) ? null
       : `env: ${expr} is not declared \`const ${expr} = gitEnv(...)\` in this file -- take env from gitEnv(...) alone (CWK-136)`;
   }
@@ -138,18 +238,19 @@ export const GIT_ENV_EXEMPTIONS = [
 // two secret-scan tests, templates/overlay-coal-skill/scripts/ for release-notes.mjs (05a F1: the mismatch message names both,
 // because a per-carrier map would be a second roster that can drift when a carrier is added). The CoalMine and CoalBoard
 // R13/R14 precedent; a NEW spawn anywhere else is still judged by the two rungs above.
-// 08c (order 08c, the re-sync): four carriers, each byte-equal to its committed source blob. secret-scan.test.mjs is the Bankfire
-// SOURCE test (4433fb56; the .github template's copy still reads bd5b156c, a lag the return names); secret-gate.test.mjs is the canon's
-// a17ae233; release-notes.mjs is the overlay's f8d998d8, whose git spawn gives an EXPLICIT allowlist env (no GIT_* inherited: the
-// property this census guards, but not the textual form it accepts, gitEnv(...) alone), so it is blob-pinned instead; and the overlay's
-// release-notes.test.mjs 8cf7e5fd, whose git spawns take their env from the test file's own sandboxEnv() (HOME and the temp variables
-// redirected into a scratch folder), also not the gitEnv(...) form. The 05a HOLD of release-notes.test.mjs at d7e299c4 is RELEASED: the canon
-// fixed the env assertion that failed on macOS and under coverage (8cf7e5fd), so the room carries the canon blob and no named divergence.
-// A pin is RE-PINNED, never dropped, when it still does not pass. Commit 2 of 08c teaches the census the allowlist shape and measures which pins go.
+// 08c (order 08c, the re-sync): three carriers, each byte-equal to its committed source blob. Measured, each with its pin taken out and the
+// real file judged by the rungs above (scratchpad/08c/measure-pins.mjs): scripts/release-notes.mjs (the overlay's f8d998d8, an explicit
+// ALLOWLIST env) PASSES under rung (3), so its pin is gone. The three that remain still need theirs, each for a shape rung (3) does not
+// accept, on purpose: secret-gate.test.mjs (the canon a17ae233) builds its env as { ...gitEnv(), ...extra }, a spread of a caller's
+// object; secret-scan.test.mjs (the Bankfire SOURCE test 4433fb56; the .github template's copy still reads bd5b156c, a lag the return
+// names) filters process.env by DENYING the GIT_* family (cleanEnv), a denylist, not an allowlist; and release-notes.test.mjs (the overlay's
+// 8cf7e5fd) takes its git env from the test file's own sandboxEnv(), HOME and the temp variables redirected into a scratch folder, which
+// carries no GIT_CONFIG_NOSYSTEM. The 05a HOLD of release-notes.test.mjs at d7e299c4 is RELEASED: the canon fixed the env assertion that
+// failed on macOS and under coverage (8cf7e5fd), so the room carries the canon blob and no named divergence.
+// A pin is RE-PINNED, never dropped, when it still does not pass.
 export const EXEMPT_CARRIERS = {
   'scripts/secret-gate.test.mjs': 'a17ae233275c05c6d030f7aa7f0654002b310356',
   'scripts/secret-scan.test.mjs': '4433fb56bc97d1facc3fb27804e1934c0577115f',
-  'scripts/release-notes.mjs': 'f8d998d8fe14a5972440043123398115d02fc50e',
   'scripts/release-notes.test.mjs': '8cf7e5fd58b89d051395efc53cc0a4f6c86848da',
 };
 
