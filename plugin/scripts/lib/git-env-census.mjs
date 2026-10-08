@@ -138,20 +138,19 @@ export const GIT_ENV_EXEMPTIONS = [
 // two secret-scan tests, templates/overlay-coal-skill/scripts/ for release-notes.mjs (05a F1: the mismatch message names both,
 // because a per-carrier map would be a second roster that can drift when a carrier is added). The CoalMine and CoalBoard
 // R13/R14 precedent; a NEW spawn anywhere else is still judged by the two rungs above.
-// 05a (order 05a, canon .github b4cf4ab): three carriers. secret-gate.test.mjs moved to f61a33e7 (the canon test written against
-// the canon secret-gate.mjs 4f008ed4; it passes against this room's older lib e49206b4, ITEM B held, so the lib is NOT adopted);
-// secret-scan.test.mjs stays at a9cb7145 (ITEM B held). The third carrier is the overlay-coal-skill scripts/release-notes.mjs,
-// whose git spawn gives an EXPLICIT allowlist env (no GIT_* inherited): the property this census guards, but not the textual form it
-// accepts (gitEnv(...) alone), so it is blob-pinned instead (RE-PINNED, never dropped: dropping it does not pass).
-// NAMED DIVERGENCE: scripts/release-notes.test.mjs is held one canon step back (d7e299c4), not at canon a8f3ba69, because
-// a8f3ba69's env assertion ("nothing else but what node needs to start") fails on macOS (__CF_USER_TEXT_ENCODING, which the OS
-// injects into every child) and under coverage (NODE_V8_COVERAGE); CoalBoard measured it red (CI run 37224469491) and held the
-// same blob at ddffc82. It carries no pin: d7e299c4 spawns no git and passes this census as is. Re-sync it to the canon when the
-// canon fixes that assertion.
+// 08c (order 08c, the re-sync): four carriers, each byte-equal to its committed source blob. secret-scan.test.mjs is the Bankfire
+// SOURCE test (4433fb56; the .github template's copy still reads bd5b156c, a lag the return names); secret-gate.test.mjs is the canon's
+// a17ae233; release-notes.mjs is the overlay's f8d998d8, whose git spawn gives an EXPLICIT allowlist env (no GIT_* inherited: the
+// property this census guards, but not the textual form it accepts, gitEnv(...) alone), so it is blob-pinned instead; and the overlay's
+// release-notes.test.mjs 8cf7e5fd, whose git spawns take their env from the test file's own sandboxEnv() (HOME and the temp variables
+// redirected into a scratch folder), also not the gitEnv(...) form. The 05a HOLD of release-notes.test.mjs at d7e299c4 is RELEASED: the canon
+// fixed the env assertion that failed on macOS and under coverage (8cf7e5fd), so the room carries the canon blob and no named divergence.
+// A pin is RE-PINNED, never dropped, when it still does not pass. Commit 2 of 08c teaches the census the allowlist shape and measures which pins go.
 export const EXEMPT_CARRIERS = {
-  'scripts/secret-gate.test.mjs': 'f61a33e75a3a420e0de0116f45d2b1fd44936a50',
-  'scripts/secret-scan.test.mjs': 'a9cb7145e31139ec3c490dd7714df8fa7dc6cf86',
-  'scripts/release-notes.mjs': '674592e0ff25dbdc14a8a4e21e6a598953b90eaa',
+  'scripts/secret-gate.test.mjs': 'a17ae233275c05c6d030f7aa7f0654002b310356',
+  'scripts/secret-scan.test.mjs': '4433fb56bc97d1facc3fb27804e1934c0577115f',
+  'scripts/release-notes.mjs': 'f8d998d8fe14a5972440043123398115d02fc50e',
+  'scripts/release-notes.test.mjs': '8cf7e5fd58b89d051395efc53cc0a4f6c86848da',
 };
 
 // The git blob id of `text`, as `git hash-object` prints it for a file holding exactly these bytes.

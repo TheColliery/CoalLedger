@@ -150,9 +150,9 @@ test('census carriers (CWK-174): a pinned byte-equal carrier is skipped, an edit
 test('census carriers (CWK-174): blobId equals git hash-object for the same bytes, and the live carriers match their pins', () => {
   assert.equal(blobId(''), 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391', "git's empty-blob id");
   assert.equal(blobId('hello\n'), 'ce013625030ba8dba906f756967f9e9ca394464a', 'git hash-object of "hello" + LF');
-  // 05a: the roster is three (release-notes.mjs joined, re-pinned at the canon's explicit-allowlist-env blob; the roster assertion
+  // 08c: the roster is four (release-notes.test.mjs joined at the canon 8cf7e5fd; 05a: release-notes.mjs joined, re-pinned at the canon's explicit-allowlist-env blob; the roster assertion
   // was proven wrong by the adoption, which is its own named step).
-  assert.deepEqual(Object.keys(EXEMPT_CARRIERS).sort(), ['scripts/release-notes.mjs', 'scripts/secret-gate.test.mjs', 'scripts/secret-scan.test.mjs']);
+  assert.deepEqual(Object.keys(EXEMPT_CARRIERS).sort(), ['scripts/release-notes.mjs', 'scripts/release-notes.test.mjs', 'scripts/secret-gate.test.mjs', 'scripts/secret-scan.test.mjs']);
   const live = collectScriptsMjs(repo).filter((f) => Object.hasOwn(EXEMPT_CARRIERS, f.rel));
   assert.equal(live.length, Object.keys(EXEMPT_CARRIERS).length, 'every pinned path exists in the tree (a stale pin is a finding here, never silence)');
   assert.deepEqual(censusGitSpawns(live, { exemptions: [] }), [], 'and each is byte-equal to its pin');
