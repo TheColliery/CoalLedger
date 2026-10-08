@@ -151,9 +151,9 @@ test('census carriers (CWK-174): a pinned byte-equal carrier is skipped, an edit
 test('census carriers (CWK-174): blobId equals git hash-object for the same bytes, and the live carriers match their pins', () => {
   assert.equal(blobId(''), 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391', "git's empty-blob id");
   assert.equal(blobId('hello\n'), 'ce013625030ba8dba906f756967f9e9ca394464a', 'git hash-object of "hello" + LF');
-  // 08c: the roster is three (release-notes.mjs left it: rung (3) accepts its allowlist env; release-notes.test.mjs joined at the canon 8cf7e5fd; the 05a roster assertion
-  // was proven wrong by the adoption, which is its own named step).
-  assert.deepEqual(Object.keys(EXEMPT_CARRIERS).sort(), ['scripts/release-notes.test.mjs', 'scripts/secret-gate.test.mjs', 'scripts/secret-scan.test.mjs']);
+  // 08d: the roster is ONE. release-notes.mjs left at 08c (rung 3 accepts its allowlist env); at 08d secret-scan.test.mjs (the Bankfire decoy fix) and
+  // release-notes.test.mjs (sandboxEnv is one returned literal of named keys) left too. Only secret-gate.test.mjs still needs a pin.
+  assert.deepEqual(Object.keys(EXEMPT_CARRIERS).sort(), ['scripts/secret-gate.test.mjs']);
   const live = collectScriptsMjs(repo).filter((f) => Object.hasOwn(EXEMPT_CARRIERS, f.rel));
   assert.equal(live.length, Object.keys(EXEMPT_CARRIERS).length, 'every pinned path exists in the tree (a stale pin is a finding here, never silence)');
   assert.deepEqual(censusGitSpawns(live, { exemptions: [] }), [], 'and each is byte-equal to its pin');
@@ -170,12 +170,12 @@ test('census carriers (F1): a mismatch message names BOTH canon templates, so th
   assert.match(edited[0], /templates\/overlay-coal-skill\/scripts\//);
 });
 
-test('census carriers (F1): the live release-notes.test.mjs carrier, edited by one line, is told to re-derive from overlay-coal-skill', () => {
-  const files = collectScriptsMjs(repo).map((f) => (f.rel === 'scripts/release-notes.test.mjs' ? { ...f, text: f.text + '// edited\n' } : f));
+test('census carriers (F1): the live secret-gate.test.mjs carrier, edited by one line, is told to re-derive from the canon templates', () => {
+  const files = collectScriptsMjs(repo).map((f) => (f.rel === 'scripts/secret-gate.test.mjs' ? { ...f, text: f.text + '// edited\n' } : f));
   const findings = censusGitSpawns(files);
   assert.equal(findings.length, 1);
-  assert.match(findings[0], /^scripts\/release-notes\.test\.mjs is an exempt byte-equal org carrier/);
-  assert.match(findings[0], /templates\/overlay-coal-skill\/scripts\//);
+  assert.match(findings[0], /^scripts\/secret-gate\.test\.mjs is an exempt byte-equal org carrier/);
+  assert.match(findings[0], /templates\/published-code\/scripts\//);
 });
 
 // ---- 08c commit 2 (main's ruling UMB-456 (2)): the ALLOWLIST env shape. An env object built from NAMED keys is as safe as gitEnv() when
@@ -280,6 +280,10 @@ test('allowlist env: the census still runs over every file, and this room\'s rea
   assert.deepEqual(findings, []);
   assert.ok(files.some((f) => f.rel === 'scripts/release-notes.mjs'), 'the canon file is in the walk, and (no pin) is judged by the rule');
   assert.ok(!Object.hasOwn(EXEMPT_CARRIERS, 'scripts/release-notes.mjs'), 'its blob pin is gone');
+  for (const rel of ['scripts/release-notes.test.mjs', 'scripts/secret-scan.test.mjs', 'scripts/secret-gate.mjs']) {
+    assert.ok(files.some((f) => f.rel === rel), rel + ' is in the walk');
+    assert.ok(!Object.hasOwn(EXEMPT_CARRIERS, rel), rel + ' is judged by the rule, with no pin');
+  }
 });
 
 test('allowlist env: GIT_TERMINAL_PROMPT is allowed only as \'0\'; any other value FAILS', () => {
@@ -369,16 +373,24 @@ const MUST_FAIL = {
   X8: cst("const env = gitEnv(d);\nenv.GIT_DIR = '/elsewhere/.git';\n"),
   X9: inl(`{ ...${W_PICK}, extra: { GIT_CONFIG_NOSYSTEM: '1' } }`, W_KEEP),
   X10: inl(`{ ...${W_PICK} ?? base, GIT_CONFIG_NOSYSTEM: '1' }`, `${W_KEEP}const base = { ...process.env };\n`),
-  X11: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', PATH: sanitize(process.env.PATH) }`, W_KEEP),
+  X11: inl("{ ...Object.fromEntries(keep.map((k) => [pickName(k), process.env[k]])), GIT_CONFIG_NOSYSTEM: '1' }", W_KEEP),
   X12: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', [k]: 'x' }`, W_KEEP),
   F28c: inl(`{ /* GIT_CONFIG_NOSYSTEM: '1', */ ...${W_PICK} }`, W_KEEP),
-  X13: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', PATH: 'a' + 'b' }`, W_KEEP),
-  X14: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', PATH: d.toLowerCase() }`, W_KEEP),
-  X15: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1', PATH: Object.values }`, W_KEEP),
+  X13: inl("{ ...Object.fromEntries(keep.map((k) => [k + 'x', process.env[k]])), GIT_CONFIG_NOSYSTEM: '1' }", W_KEEP),
+  X14: inl("{ ...Object.fromEntries(keep.map((k) => [k.toLowerCase(), process.env[k]])), GIT_CONFIG_NOSYSTEM: '1' }", W_KEEP),
+  X15: inl("{ ...Object.fromEntries(keep.map((k) => [Object.values, process.env[k]])), GIT_CONFIG_NOSYSTEM: '1' }", W_KEEP),
+  F36: inl('mk(d)', "function mk(x) { foo(); return { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1' }; }\n"),
+  F37: inl('mk(d)', "const mk = (x) => ({ ...process.env, GIT_CONFIG_NOSYSTEM: '1' });\n"),
+  F38: inl('mk(d)', "function mk(x) { return { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1' }; }\nconst mk = (x) => process.env;\n"),
+  F40: inl('mk(d)', "const mk = (x) => ({ PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1' });\nfunction mk(x) { foo(); return process.env; }\n"),
+  F39: inl('mk(d)', "function mk(x) { return { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1' }; }\nmk = () => process.env;\n"),
 };
 
 const MUST_PASS = {
   P3a: inl('gitEnv(d)'),
+  P8: inl('mk(d)', "const mk = (x) => ({ PATH: process.env.PATH, HOME: x, GIT_CONFIG_NOSYSTEM: '1' });\n"),
+  P9: inl('mk(d)', "function mk(x) { return { PATH: process.env.PATH, HOME: x, GIT_CONFIG_NOSYSTEM: '1' }; }\n"),
+  P10: inl("{ PATH: sanitize(process.env.PATH), HOME: path.dirname(d), TMP: 'a' + 'b', GIT_CONFIG_NOSYSTEM: '1' }"),
   P3b: cst('const env = gitEnv(d);\n'),
   P4: inl("{ PATH: process.env.PATH, HOME: process.env.HOME, GIT_CONFIG_NOSYSTEM: '1' }"),
   P5: inl(`{ ...${W_PICK}, GIT_CONFIG_NOSYSTEM: '1' }`, W_KEEP),
@@ -405,6 +417,12 @@ for (const [id, v] of Object.entries(MUST_PASS)) {
     });
   }
 }
+
+test('witness P2: the canon release-notes.test.mjs (blob 7e779ef8), whose sandboxEnv is one returned literal of named keys, passes with NO pin', () => {
+  const text = fs.readFileSync(path.join(repo, 'scripts', 'release-notes.test.mjs'), 'utf8');
+  assert.ok(blobId(text).startsWith('7e779ef8'), 'the file is not the canon blob 7e779ef8');
+  assert.deepEqual(censusGitSpawns([{ rel: 'scripts/release-notes.test.mjs', text }], { exemptions: [], carriers: {} }), []);
+});
 
 test('witness P1: the canon release-notes.mjs (blob f8d998d8) passes with NO pin', () => {
   const text = fs.readFileSync(path.join(repo, 'scripts', 'release-notes.mjs'), 'utf8');

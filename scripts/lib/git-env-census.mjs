@@ -287,7 +287,7 @@ function allowlistVerdict(objText, code, name) {
     if (!ok) return 'an allowlist env mentions process.env other than as an indexed read (process.env[k], process.env.NAME or `k in process.env`, one named key at a time) -- a git child inherits a hook\'s absolute GIT_DIR that way (CWK-136)';
   }
   // (b) the only spread is Object.fromEntries(<named list>.filter/.map ...), nothing chained after it
-  const lists = [];
+  const spreadCalls = [];
   for (const m of bare.matchAll(/\.\.\./g)) {
     const rest = body.slice(m.index + 3);
     if (!/^\s*Object\s*\.\s*fromEntries\s*\(/.test(rest)) {
@@ -297,18 +297,23 @@ function allowlistVerdict(objText, code, name) {
     const call = readBalanced(body, open);
     if (!call) return 'an allowlist env has an Object.fromEntries( the census cannot read to its close';
     if (!/^\s*(?:[,}]|$)/.test(body.slice(open + call.length))) return 'an allowlist env chains something after Object.fromEntries(...) -- the census cannot read what it does';
+    spreadCalls.push(call);
     const arg = call.slice(1, -1).trim();
     const lead = /^([A-Za-z_$][\w$]*)\s*\./.exec(arg);
-    if (lead) { const why = namedListReason(lead[1], code); if (why) return why; lists.push(lead[1]); }
+    if (lead) { const why = namedListReason(lead[1], code); if (why) return why; }
     else if (arg.startsWith('[')) { const lit = readBalanced(arg, 0); const why = lit ? listReason(lit, code) : 'an inline key list never closes'; if (why) return why; }
     else return 'an allowlist env builds its pairs from something other than a named key list or an array literal';
   }
-  // (d) nothing the census cannot read whole
-  if (/\+|`/.test(bare)) return 'an allowlist env uses string concatenation, arithmetic or a template literal -- a computed name could be GIT_DIR';
-  if (/\bnew\b|\bfunction\b|=>\s*\{/.test(bare)) return 'an allowlist env holds a constructor call or a function body the census cannot read whole';
-  if (/\bObject\s*\.\s*(?!fromEntries\b)/.test(bare)) return 'an allowlist env calls an Object method other than fromEntries (Object.entries/keys/values/assign copy the whole environment)';
-  if (/\.\s*(?!(?:filter|map|fromEntries)\b)[A-Za-z_$][\w$]*\s*\(/.test(bare)) return 'an allowlist env calls a method other than filter/map/fromEntries -- the census cannot read what it does';
-  if (/(?<![\w$.])(?!(?:if|for|while|switch|catch|return|typeof|void|in|of)\b)[A-Za-z_$][\w$]*\s*\(/.test(bare)) return 'an allowlist env calls a function -- the census cannot read what it returns (a helper that returns process.env looks the same)';
+  // (d) nothing the census cannot read whole INSIDE THE SPREAD, where the KEYS come from. A property VALUE may be any expression (a call, a
+  // ternary, a concatenation): a value cannot add a key, and the keys are closed by the rules above and below.
+  for (const sc of spreadCalls) {
+    const sb = blankStrings(sc);
+    if (/\+|`/.test(sb)) return 'an allowlist env builds its pairs with string concatenation, arithmetic or a template literal -- a computed name could be GIT_DIR';
+    if (/\bnew\b|\bfunction\b|=>\s*\{/.test(sb)) return 'an allowlist env builds its pairs with a constructor call or a function body the census cannot read whole';
+    if (/\bObject\s*\.\s*(?!fromEntries\b)/.test(sb)) return 'an allowlist env builds its pairs with an Object method other than fromEntries (Object.entries/keys/values/assign copy the whole environment)';
+    if (/\.\s*(?!(?:filter|map|fromEntries)\b)[A-Za-z_$][\w$]*\s*\(/.test(sb)) return 'an allowlist env builds its pairs with a method other than filter/map/fromEntries -- the census cannot read what it does';
+    if (/(?<![\w$.])(?!(?:if|for|while|switch|catch|return|typeof|void|in|of)\b)[A-Za-z_$][\w$]*\s*\(/.test(sb)) return 'an allowlist env builds its pairs with a function call -- the census cannot read what names it returns';
+  }
   const top = topLevel(body);
   if (/(?:^|,)\s*\[/.test(top)) return 'an allowlist env has a computed property key -- the census cannot read the name';
   // (c) the GIT_* names, any case, in the object and in every list it names
@@ -360,6 +365,33 @@ function findEnvKey(callText) {
   return null;
 }
 
+// A same-file helper that is nothing but ONE returned object literal: `const NAME = (params) => ({ ... })` or
+// `function NAME(params) { return { ... }; }`. Returns those object texts, or null when ANY declaration of NAME is anything else
+// (a second statement, a second return, a conditional return, a declaration the shapes below do not match): such a helper cannot be
+// read whole, and a helper whose second path returns process.env looks exactly like one whose first path is clean (08d F13).
+function helperObjects(name, code) {
+  const n = escapeRe(name);
+  const bc = blankStrings(code);
+  const all = [...bc.matchAll(new RegExp(String.raw`\b(?:(?:const|let|var)\s+${n}\b|function\s+${n}\b)`, 'g'))].length;
+  const out = [];
+  for (const m of bc.matchAll(new RegExp(String.raw`\b(?:const|let|var)\s+${n}\s*=\s*`, 'g'))) {
+    const at = m.index + m[0].length;
+    const head = /^(?:\([^()]*\)|[\w$]+)\s*=>\s*\(\s*(?=\{)/.exec(bc.slice(at));
+    if (!head) return null;
+    const objAt = at + head[0].length;
+    const obj = readBalanced(code, objAt);
+    if (!obj || !/^\s*\)/.test(code.slice(objAt + obj.length))) return null;
+    out.push(obj);
+  }
+  for (const m of bc.matchAll(new RegExp(String.raw`\bfunction\s+${n}\s*\([^()]*\)\s*\{\s*return\s*(?=\{)`, 'g'))) {
+    const objAt = m.index + m[0].length;
+    const obj = readBalanced(code, objAt);
+    if (!obj || !/^\s*;?\s*\}/.test(code.slice(objAt + obj.length))) return null;
+    out.push(obj);
+  }
+  return out.length && out.length === all ? out : null;
+}
+
 function envVerdict(callText, code) {
   const key = findEnvKey(callText);
   if (!key) return "carries no 'env:' -- every git spawn must take env from gitEnv() (CWK-133)";
@@ -376,6 +408,17 @@ function envVerdict(callText, code) {
   }
   if (/^gitEnv\s*\(/.test(expr) && findMatchingClose(expr, expr.indexOf('(')) === expr.length - 1) {
     return null;
+  }
+  const helper = /^([A-Za-z_$][\w$]*)\s*\(/.exec(expr);
+  if (helper && helper[1] !== 'gitEnv' && findMatchingClose(expr, expr.indexOf('(')) === expr.length - 1) {
+    const objs = boundOtherwise(helper[1], code) ? null : helperObjects(helper[1], code);
+    if (objs) {
+      for (const o of objs) {
+        const why = allowlistVerdict(o, code, null);
+        if (why) return `env: ${helper[1]}(...) returns an object that is not a safe allowlist (${why}) -- take env from gitEnv(...) alone (CWK-136)`;
+      }
+      return null;
+    }
   }
   if (/^[A-Za-z_$][\w$]*$/.test(expr)) {
     const decls = declarationsOf(expr, code);
@@ -413,29 +456,20 @@ export const GIT_ENV_EXEMPTIONS = [
 ];
 
 // R14 / CWK-174: the house secret scan arrives as byte-equal copies of the published-code template
-// (SERIES-CANON "Secret scan"). Two of its files are TEST files that spawn git by their own shapes: secret-gate.test.mjs
-// spreads a LOCAL gitEnv() that strips the GIT_* family (blob 3fcd3f0d...), secret-scan.test.mjs spawns with no env
-// at all (blob a9cb7145..., the org template's own source). Neither can be edited here without breaking the byte-equal
-// parity, so each is exempt ONLY while its content is exactly the pinned blob: any edit, or a template re-sync that
-// changes it, makes the entry a finding again, so the exemption cannot widen or outlive its reason silently. The pin is a
-// git blob id (git hash-object <file>) against the .github template that carries the file: templates/published-code/scripts/ for the
-// two secret-scan tests, templates/overlay-coal-skill/scripts/ for release-notes.mjs (05a F1: the mismatch message names both,
-// because a per-carrier map would be a second roster that can drift when a carrier is added). The CoalMine and CoalBoard
-// R13/R14 precedent; a NEW spawn anywhere else is still judged by the two rungs above.
-// 08c (order 08c, the re-sync): three carriers, each byte-equal to its committed source blob. Measured, each with its pin taken out and the
-// real file judged by the rungs above (scratchpad/08c/measure-pins.mjs): scripts/release-notes.mjs (the overlay's f8d998d8, an explicit
-// ALLOWLIST env) PASSES under rung (3), so its pin is gone. The three that remain still need theirs, each for a shape rung (3) does not
-// accept, on purpose: secret-gate.test.mjs (the canon a17ae233) builds its env as { ...gitEnv(), ...extra }, a spread of a caller's
-// object; secret-scan.test.mjs (the Bankfire SOURCE test 4433fb56; the .github template's copy still reads bd5b156c, a lag the return
-// names) filters process.env by DENYING the GIT_* family (cleanEnv), a denylist, not an allowlist; and release-notes.test.mjs (the overlay's
-// 8cf7e5fd) takes its git env from the test file's own sandboxEnv(), HOME and the temp variables redirected into a scratch folder, which
-// carries no GIT_CONFIG_NOSYSTEM. The 05a HOLD of release-notes.test.mjs at d7e299c4 is RELEASED: the canon fixed the env assertion that
-// failed on macOS and under coverage (8cf7e5fd), so the room carries the canon blob and no named divergence.
-// A pin is RE-PINNED, never dropped, when it still does not pass.
+// (SERIES-CANON "Secret scan"). A carrier is a TEST file that spawns git by its own shapes and cannot be edited here without breaking the
+// byte-equal parity, so it is exempt ONLY while its content is exactly the pinned blob: any edit, or a template re-sync that changes it,
+// makes the entry a finding again, so the exemption cannot widen or outlive its reason silently. The pin is a git blob id (git hash-object
+// <file>) against the .github template that carries the file: templates/published-code/scripts/ for the secret-scan files,
+// templates/overlay-coal-skill/scripts/ for the release-notes files (05a F1: the mismatch message names both, because a per-carrier map
+// would be a second roster that can drift when a carrier is added). A NEW spawn anywhere else is still judged by the three rungs above.
+// 08d (order 08d, the re-copy and the hardened rules): every pin was measured again, one at a time, with the pin taken out and the NEW real
+// file judged by the rungs above (scratchpad/08d/measure-pins.mjs). TWO LEFT: scripts/secret-scan.test.mjs (the Bankfire source d0db994d:
+// its decoy call now takes the sandbox env) and scripts/release-notes.test.mjs (the overlay's 7e779ef8: its sandboxEnv is one returned
+// object literal of named keys carrying GIT_CONFIG_NOSYSTEM, declared in the same file, which the census follows). ONE STAYS, re-pinned to
+// its new blob: scripts/secret-gate.test.mjs (.github 71452210) builds its env as { ...gitEnv(), ...extra }, a spread of a caller's
+// object the allowlist grammar refuses on purpose. A pin is RE-PINNED, never dropped, when it still does not pass.
 export const EXEMPT_CARRIERS = {
-  'scripts/secret-gate.test.mjs': 'a17ae233275c05c6d030f7aa7f0654002b310356',
-  'scripts/secret-scan.test.mjs': '4433fb56bc97d1facc3fb27804e1934c0577115f',
-  'scripts/release-notes.test.mjs': '8cf7e5fd58b89d051395efc53cc0a4f6c86848da',
+  'scripts/secret-gate.test.mjs': '71452210d6a6f793895bc502557fce7e1f3e890c',
 };
 
 // The git blob id of `text`, as `git hash-object` prints it for a file holding exactly these bytes.
