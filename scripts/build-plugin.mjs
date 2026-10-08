@@ -106,7 +106,7 @@ const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 // read by a hook or a skill, so the wholesale scripts/lib copy must not ship them.
 // secret-scan.mjs (R14, CWK-174) is the house secret scan's library: the repo's own git gate calls it, no installed
 // plugin does, so it stays out of plugin/ for the same reason.
-const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs', 'release-shape.mjs', 'asset-upload-mode.mjs', 'release-prune.mjs', 'secret-scan.mjs']);
+const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs', 'release-shape.mjs', 'asset-upload-mode.mjs', 'release-prune.mjs', 'secret-scan.mjs', 'test-spawn.mjs']);
 const isBuildOnlyLib = (p) => BUILD_ONLY_LIB_NAMES.has(path.basename(p));
 const isDistExcluded = (p) => isTest(p) || isBuildOnlyLib(p);
 

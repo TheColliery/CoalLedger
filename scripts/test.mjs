@@ -7,12 +7,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const TESTS = [
   'scripts/lib/jsonc.test.mjs',
+  'scripts/lib/test-spawn.test.mjs',
   'scripts/lib/config-schema.test.mjs',
   'scripts/lib/config-load.test.mjs',
   'scripts/lib/md-ast.test.mjs',
@@ -66,13 +67,18 @@ if (missing.length) {
     console.error(`test runner: ${orphans.length} on-disk test(s) NOT in the suite — ${orphans.join(', ')}. Add to scripts/test.mjs.`);
     process.exitCode = 1;
   } else {
-    // R12 bounce 1 F7: testing.md's finite-clock MUST -- a node:test test has NO timeout
-    // by default, so a single hung child (a `git` spawn blocked on a credential prompt, a
-    // stale index.lock) hangs the whole suite with nothing to report it as a failure. 60s
-    // per test is ~2x this room's measured full-suite wall time (duration_ms ~27000 at
-    // this writing, re-derive rather than trust this comment) -- generous for one test,
-    // still far short of ci.yml's 10-minute job bound (CWK-154 (2)).
-    const r = spawnSync(process.execPath, ['--test', '--test-timeout=60000', ...TESTS], { cwd: repo, stdio: 'inherit' });
-    process.exitCode = r.status ?? 1;
+    // CWK-199: the child spawn (heap cap in the env, files one at a time, a finite per-test clock, --test-force-exit and a
+    // whole-run deadline) is one plan in scripts/lib/test-spawn.mjs, which carries the measurements and the reasons.
+    // Dynamic and inside the step that needs it, per node/runtime.md section 1 (a gate entry imports node builtins only at the top).
+    const { testSpawnPlan } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'test-spawn.mjs')).href);
+    const plan = testSpawnPlan(TESTS, process.env);
+    const r = spawnSync(process.execPath, plan.args, { cwd: repo, stdio: 'inherit', env: plan.env, timeout: plan.timeout, killSignal: plan.killSignal });
+    // A whole-run deadline is a LOUD failure (a named FAIL line, non-zero), never a silent pass or an unbounded wait.
+    if (r.error) {
+      console.error(`FAIL test runner: the run did not finish (${r.error.code || r.error.message}); the whole-run deadline is ${plan.timeout} ms (scripts/lib/test-spawn.mjs RUN_TIMEOUT_MS)`);
+      process.exitCode = 1;
+    } else {
+      process.exitCode = r.status ?? 1;
+    }
   }
 }
