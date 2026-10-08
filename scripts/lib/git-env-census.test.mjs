@@ -429,3 +429,74 @@ test('witness P1: the canon release-notes.mjs (blob f8d998d8) passes with NO pin
   assert.ok(blobId(text).startsWith('f8d998d8'), 'the file is not the canon blob f8d998d8');
   assert.deepEqual(censusGitSpawns([{ rel: 'scripts/release-notes.mjs', text }], { exemptions: [], carriers: {} }), []);
 });
+
+// ---- 08d BOUNCE (INSPECT HIGH-1, r-08d.md): eight spawns the census wrongly passed, in three classes, plus the other spellings of each class.
+// (a) a duplicate or decoy `env` key in the options object (JavaScript keeps the LAST); (b) a GIT_* name spelled with an escape; (c) a __proto__ key.
+// Every backslash is built from a code point (an escape can land as the real character in transit).
+const BS = String.fromCharCode(92);
+const ESC_G = BS + 'u0047'; // the six characters that spell G in source text
+const B_PICK = 'Object.fromEntries(KEEP.filter((k) => k in process.env).map((k) => [k, process.env[k]]))';
+const B_KEEP = "const KEEP = ['PATH', 'HOME'];\n";
+const B_CLEAN = `{ ...${B_PICK}, GIT_CONFIG_NOSYSTEM: '1' }`;
+const bcall = (opts) => `${SS}('git', ['status'], ${opts});\n`;
+const bone = (src) => ({ forms: [['one form', null]], src: () => W_HDR + src });
+
+const BOUNCE_FAIL = {
+  B1: bone(bcall('{ cwd: d, env: gitEnv(d), env: process.env }')),
+  B1b: bone(bcall("{ cwd: d, env: gitEnv(d), 'env': process.env }")),
+  B1c: bone(`${SS}('git', ['log', String({ env: gitEnv(d) })], { cwd: d, env: process.env });\n`),
+  B2: bone(`const KEEP = ['PATH', '${ESC_G}IT_DIR'];\n` + bcall(`{ cwd: d, env: ${B_CLEAN} }`)),
+  B3: bone(bcall(`{ cwd: d, env: { GIT_CONFIG_NOSYSTEM: '1', ${ESC_G}IT_DIR: '/x/.git' } }`)),
+  B3b: bone(bcall(`{ cwd: d, env: { GIT_CONFIG_NOSYSTEM: '1', '${ESC_G}IT_DIR': process.env.HOME } }`)),
+  B4: bone(bcall("{ cwd: d, env: { GIT_CONFIG_NOSYSTEM: '1', __proto__: globalThis['process']['env'] } }")),
+  B5: bone(`const mk = (x) => ({ GIT_CONFIG_NOSYSTEM: '1', ${ESC_G}IT_DIR: x });\n` + bcall("{ cwd: d, env: mk('/x/.git') }")),
+  // ---- the other spellings of each class
+  // (a) duplicate / decoy env
+  C1: bone(bcall("{ cwd: d, env: gitEnv(d), ['env']: process.env }")),
+  C2: bone(bcall('{ cwd: d, env: gitEnv(d), env }') + 'const env = process.env;\n'),
+  C3: bone(bcall("{ cwd: d, env: gitEnv(d), env: gitEnv(d) }")),
+  C4: bone(bcall('{ cwd: d, env: gitEnv(d), __proto__: { env: process.env } }')),
+  C5: bone(bcall(`{ cwd: d, ${BS}u0065nv: process.env }`)),
+  // (b) escapes in names
+  C6: bone(`const KEEP = ['PATH', '${BS}x47IT_DIR'];\n` + bcall(`{ cwd: d, env: ${B_CLEAN} }`)),
+  C7: bone(bcall(`{ cwd: d, env: { GIT_CONFIG_NOSYSTEM: '1', ${BS}u{47}IT_DIR: '/x/.git' } }`)),
+  C8: bone(bcall(`{ cwd: d, env: { GIT_CONFIG_NOSYSTEM: '1', '${BS}x47IT_DIR': '/x/.git' } }`)),
+  C9: bone(bcall(`{ cwd: d, env: { GIT_CONFIG_NOSYSTEM: '1', __pr${BS}u006fto__: process.env } }`)),
+  // (c) __proto__ and other prototype paths
+  C10: bone(bcall("{ cwd: d, env: { GIT_CONFIG_NOSYSTEM: '1', '__proto__': process.env } }")),
+  C11: bone(bcall("{ cwd: d, env: { GIT_CONFIG_NOSYSTEM: '1', ['__proto__']: process.env } }")),
+  C12: bone(`const env = { GIT_CONFIG_NOSYSTEM: '1' };\nObject.setPrototypeOf(env, process.env);\n` + bcall('{ cwd: d, env }')),
+  C13: bone(`const env = { GIT_CONFIG_NOSYSTEM: '1' };\nenv['__proto__'] = process.env;\n` + bcall('{ cwd: d, env: env }')),
+  C14: bone(`const mk = (x) => ({ GIT_CONFIG_NOSYSTEM: '1', __proto__: x });\n` + bcall('{ cwd: d, env: mk(process.env) }')),
+  // an allowlist object followed by more text (a member read, a call on the literal)
+  C16: bone(bcall(`{ cwd: d, env: ${B_CLEAN}.valueOf() }`)),
+  // `{ ... } && allEnv` evaluates to allEnv: the whole environment, behind an allowlist-looking literal (allEnv is not an alias the census knows)
+  C16b: bone("const allEnv = globalThis['process']['env'];\n" + bcall("{ cwd: d, env: { GIT_CONFIG_NOSYSTEM: '1' } && allEnv }")),
+  // each guard needs a vector only IT refuses: an escaped options key beside a plain clean env (the escaped one spells env and wins), and a
+  // __proto__ in a NAMED env object whose options text shows no __proto__
+  C5b: bone(bcall(`{ cwd: d, env: gitEnv(d), ${BS}u0065nv: process.env }`)),
+  C14b: bone("const allEnv = globalThis['process']['env'];\nconst env = { GIT_CONFIG_NOSYSTEM: '1', __proto__: allEnv };\n" + bcall('{ cwd: d, env }')),
+  // an escape inside the pairs a spread builds, where key names are made
+  C15: bone(`const KEEP = ['PATH'];\n` + bcall(`{ cwd: d, env: { ...Object.fromEntries(KEEP.map((k) => [k, proc${BS}u0065ss.env[k]])), GIT_CONFIG_NOSYSTEM: '1' } }`)),
+};
+
+const BOUNCE_PASS = {
+  // a backslash in a property VALUE is fine (a Windows path); only KEYS and name lists are judged for escapes
+  P11: bone(bcall(`{ cwd: 'C:${BS}${BS}work', env: { PATH: process.env.PATH, HOME: 'C:${BS}${BS}home', GIT_CONFIG_NOSYSTEM: '1' } }`)),
+  P12: bone(B_KEEP + bcall(`{ cwd: d, encoding: 'utf8', env: ${B_CLEAN} }`)),
+  P13: bone(bcall("{ cwd: d, env: gitEnv(d), encoding: 'utf8', timeout: 30000 }")),
+  P14: bone(bcall("{ ...base, cwd: d, env: gitEnv(d) }")),
+};
+
+for (const [id, v] of Object.entries(BOUNCE_FAIL)) {
+  test(`witness ${id} [bounce]: MUST FAIL (a finding, never a silent pass)`, () => {
+    const findings = wverdict(v.src(null));
+    assert.ok(findings.length >= 1, `${id} was wrongly PASSED:\n${v.src(null)}`);
+  });
+}
+
+for (const [id, v] of Object.entries(BOUNCE_PASS)) {
+  test(`witness ${id} [bounce]: MUST PASS (no finding, no pin)`, () => {
+    assert.deepEqual(wverdict(v.src(null)), [], `${id} was wrongly refused:\n${v.src(null)}`);
+  });
+}

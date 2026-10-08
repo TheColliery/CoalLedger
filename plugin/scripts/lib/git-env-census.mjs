@@ -68,20 +68,6 @@ function findMatchingClose(text, openIdx) {
   return -1;
 }
 
-// The text of one object-value expression starting at `from`: up to the first top-level
-// `,` or the object's own close, depth-aware over (), {}, [] so `gitEnv(path.dirname(x))`
-// (a comma-free call) and a hypothetical `gitEnv(a, b)` are both read whole.
-function readExpr(text, from, limit) {
-  let depth = 0;
-  for (let i = from; i < limit; i++) {
-    const c = text[i];
-    if (c === '(' || c === '{' || c === '[') depth++;
-    else if (c === ')' || c === '}' || c === ']') { if (depth === 0) return text.slice(from, i); depth--; }
-    else if (c === ',' && depth === 0) return text.slice(from, i);
-  }
-  return text.slice(from, limit);
-}
-
 const lineOf = (text, idx) => text.slice(0, idx).split('\n').length;
 const escapeRe = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -229,6 +215,7 @@ function listReason(listText, code, depth = 0) {
   }
   for (const s of listText.matchAll(/'([^'\n]*)'|"([^"\n]*)"/g)) {
     const word = s[1] ?? s[2];
+    if (word.includes(BS)) return 'a key list holds a name spelled with an escape (\\u, \\x) -- the census cannot read it, and a GIT_* name could hide in it (CWK-133/136)';
     if (/git/i.test(word) && !ALLOWED_LIST_KEYS.has(word)) return `a key list names ${word} -- only ${[...ALLOWED_LIST_KEYS].join(', ')} may be passed by name; any other GIT_* key retargets the spawn (CWK-133/136)`;
   }
   for (const s of listText.matchAll(/\.\.\.\s*([A-Za-z_$][\w$]*)/g)) {
@@ -271,6 +258,7 @@ function mutationReason(name, code, what) {
 // declared as (for the mutation scan), or null for an inline object.
 function allowlistVerdict(objText, code, name) {
   const body = objText;
+  if (!body.startsWith('{') || readBalanced(body, 0)?.length !== body.length) return 'an allowlist env is not one whole object literal -- the census cannot read what follows it';
   const bare = blankStrings(body);
   const aliases = envAliases(code);
   // (a) process.env, or an alias of it, only ever read one key at a time
@@ -307,6 +295,7 @@ function allowlistVerdict(objText, code, name) {
   // (d) nothing the census cannot read whole INSIDE THE SPREAD, where the KEYS come from. A property VALUE may be any expression (a call, a
   // ternary, a concatenation): a value cannot add a key, and the keys are closed by the rules above and below.
   for (const sc of spreadCalls) {
+    if (sc.includes(BS)) return 'an allowlist env builds its pairs with an escape (\\u, \\x) in a name or a string -- the census cannot read what it spells';
     const sb = blankStrings(sc);
     if (/\+|`/.test(sb)) return 'an allowlist env builds its pairs with string concatenation, arithmetic or a template literal -- a computed name could be GIT_DIR';
     if (/\bnew\b|\bfunction\b|=>\s*\{/.test(sb)) return 'an allowlist env builds its pairs with a constructor call or a function body the census cannot read whole';
@@ -316,6 +305,10 @@ function allowlistVerdict(objText, code, name) {
   }
   const top = topLevel(body);
   if (/(?:^|,)\s*\[/.test(top)) return 'an allowlist env has a computed property key -- the census cannot read the name';
+  // 08d bounce (INSPECT HIGH-1): a key spelled with an escape hides its name (GIT_DIR is GIT_DIR at run time), and a __proto__ key sets
+  // the prototype, which a child process copies as env: either is a FINDING, the way every other unreadable shape is (fail closed).
+  if (/__proto__|\bsetPrototypeOf\b/.test(body)) return 'an allowlist env names __proto__ (or setPrototypeOf) -- a prototype can carry the whole environment into the child (CWK-136)';
+  if (splitTop(body).map(entryInfo).some((e) => e.kind === 'key' && e.escaped)) return 'an allowlist env has a key spelled with an escape (\\u, \\x) -- the census cannot read the name, and a GIT_* name could hide in it (CWK-133/136)';
   // (c) the GIT_* names, any case, in the object and in every list it names
   const gitNames = (body.match(/\bgit_[a-z0-9_]*/gi) || []);
   const bad = [...new Set(gitNames)].filter((t) => !ALLOWED_GIT_KEYS.has(t));
@@ -357,12 +350,96 @@ function namedListsIn(body, code) {
 // `{ ..., env, ... }` (a property named exactly `env`, value = the identifier `env`) --
 // several real call sites in this room's own test files use the shorthand, and a census
 // that only recognises `env:` silently reads them as having NO env at all.
-function findEnvKey(callText) {
-  const colon = /\benv\s*:/.exec(callText);
-  if (colon) return { kind: 'colon', index: colon.index, length: colon[0].length };
-  const shorthand = /[{,]\s*(env)\s*(?=[,}])/.exec(callText);
-  if (shorthand) return { kind: 'shorthand', index: shorthand.index + shorthand[0].indexOf('env') };
-  return null;
+// 08d bounce (INSPECT HIGH-1): the env key is read from the OPTIONS object's own top-level entries, never by searching the call text. The
+// first `env:` found in the text could be a decoy (inside the argv, or an earlier duplicate), while JavaScript keeps the LAST duplicate.
+const BS = String.fromCharCode(92);
+
+// The entries of an object literal `{ ... }`, split at its own top-level commas (string- and bracket-aware).
+function splitTop(obj) {
+  const inner = obj.slice(1, -1);
+  const parts = [];
+  let depth = 0;
+  let q = null;
+  let start = 0;
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i];
+    if (q) {
+      if (c === BS) i++;
+      else if (c === q || (c === '\n' && q !== '`')) q = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') q = c;
+    else if (c === '(' || c === '{' || c === '[') depth++;
+    else if (c === ')' || c === '}' || c === ']') depth--;
+    else if (c === ',' && depth === 0) { parts.push(inner.slice(start, i)); start = i + 1; }
+  }
+  parts.push(inner.slice(start));
+  return parts.filter((p) => p.trim());
+}
+
+// One entry of an object literal: a spread, a computed key, or a key (bare or quoted) with a value, the shorthand, or a method form.
+// `escaped` is true when the key is spelled with a backslash escape (\u, \x, \u{...}): the census cannot read such a name.
+function entryInfo(raw) {
+  const t = raw.trim();
+  if (t.startsWith('...')) return { kind: 'spread' };
+  if (t.startsWith('[')) return { kind: 'computed' };
+  let keyRaw;
+  let rest;
+  if (t[0] === "'" || t[0] === '"') {
+    let i = 1;
+    while (i < t.length && t[i] !== t[0]) { if (t[i] === BS) i++; i++; }
+    keyRaw = t.slice(0, i + 1);
+    rest = t.slice(i + 1).trim();
+  } else {
+    keyRaw = /^[^:\s]*/.exec(t)[0];
+    rest = t.slice(keyRaw.length).trim();
+  }
+  const escaped = keyRaw.includes(BS);
+  const name = /^['"]/.test(keyRaw) ? keyRaw.slice(1, -1) : keyRaw;
+  if (rest === '') return { kind: 'key', name, escaped, shorthand: true, value: name };
+  if (rest[0] === ':') return { kind: 'key', name, escaped, shorthand: false, value: rest.slice(1).trim() };
+  return { kind: 'key', name: keyRaw, escaped, method: true, value: '' };
+}
+
+// The options object of a spawn: the LAST top-level argument of the call, when it is one object literal; else null.
+function optionsOf(callText) {
+  let depth = 0;
+  let q = null;
+  let lastStart = 1;
+  for (let i = 1; i < callText.length - 1; i++) {
+    const c = callText[i];
+    if (q) {
+      if (c === BS) i++;
+      else if (c === q || (c === '\n' && q !== '`')) q = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') q = c;
+    else if (c === '(' || c === '{' || c === '[') depth++;
+    else if (c === ')' || c === '}' || c === ']') depth--;
+    else if (c === ',' && depth === 0) lastStart = i + 1;
+  }
+  const arg = callText.slice(lastStart, callText.length - 1).trim();
+  if (!arg.startsWith('{')) return null;
+  const obj = readBalanced(arg, 0);
+  return obj && obj.length === arg.length ? obj : null;
+}
+
+// What the options object says about env: { expr, shorthand, spreadAfter } for exactly one plain env key, else { problem }.
+function envInfo(callText) {
+  const noEnv = "carries no 'env:' -- every git spawn must take env from gitEnv() (CWK-133)";
+  const o = optionsOf(callText);
+  if (!o) return { problem: noEnv };
+  if (/__proto__|\bsetPrototypeOf\b/.test(o)) return { problem: 'an options object that names __proto__ can hand the child an env it does not show -- the census cannot read it (CWK-136)' };
+  const ents = splitTop(o).map(entryInfo);
+  if (ents.some((e) => e.kind === 'computed')) return { problem: 'an options object has a computed key -- the census cannot read the name, and an env could hide in it (CWK-136)' };
+  if (ents.some((e) => e.kind === 'key' && e.escaped)) return { problem: 'an options object has a key spelled with an escape -- the census cannot read the name, and an env could hide in it (CWK-136)' };
+  const at = [];
+  ents.forEach((e, i) => { if (e.kind === 'key' && e.name === 'env') at.push(i); });
+  if (at.length === 0) return { problem: noEnv };
+  if (at.length > 1) return { problem: 'the options object has more than one env key -- JavaScript keeps the LAST one and the census judges one (CWK-136)' };
+  const e = ents[at[0]];
+  if (e.method) return { problem: 'env is declared as a method in the options object -- the census cannot read what it returns (CWK-136)' };
+  return { expr: e.value, shorthand: !!e.shorthand, spreadAfter: ents.slice(at[0] + 1).some((x) => x.kind === 'spread') };
 }
 
 // A same-file helper that is nothing but ONE returned object literal: `const NAME = (params) => ({ ... })` or
@@ -393,12 +470,10 @@ function helperObjects(name, code) {
 }
 
 function envVerdict(callText, code) {
-  const key = findEnvKey(callText);
-  if (!key) return "carries no 'env:' -- every git spawn must take env from gitEnv() (CWK-133)";
-  const raw = key.kind === 'shorthand' ? 'env' : readExpr(callText, key.index + key.length, callText.length);
-  const expr = raw.trim();
-  const exprEnd = key.kind === 'shorthand' ? key.index + 3 : key.index + key.length + raw.length;
-  if (/\.\.\./.test(callText.slice(exprEnd))) return `env: ${expr.length > 60 ? expr.slice(0, 57) + '...' : expr} is followed by a spread in the options object -- the spread may carry its own env and override it; put env last (CWK-136)`;
+  const info = envInfo(callText);
+  if (info.problem) return info.problem;
+  const expr = info.expr;
+  if (info.spreadAfter) return `env: ${expr.length > 60 ? expr.slice(0, 57) + '...' : expr} is followed by a spread in the options object -- the spread may carry its own env and override it; put env last (CWK-136)`;
   if (expr.startsWith('{')) {
     const why = allowlistVerdict(expr, code, null);
     return why ? `env: ${expr.length > 60 ? expr.slice(0, 57) + '...' : expr} ${why}` : null;
@@ -503,8 +578,8 @@ export function censusGitSpawns(files, { exemptions = GIT_ENV_EXEMPTIONS, carrie
       const callText = code.slice(openIdx, closeIdx + 1);
       const why = envVerdict(callText, code);
       if (!why) continue;
-      const key = findEnvKey(callText);
-      const expr = key && key.kind !== 'shorthand' ? readExpr(callText, key.index + key.length, callText.length).trim() : null;
+      const info = envInfo(callText);
+      const expr = info.expr && !info.shorthand ? info.expr : null;
       const ex = exemptions.find((e) => e.rel === rel && expr !== null && expr === e.expr);
       if (ex) {
         const n = (matched.get(ex) || 0) + 1;
