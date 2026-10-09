@@ -1,0 +1,55 @@
+// Skill-listing description-length gate — shared parser + cap check for
+// skills/*/SKILL.md and commands/*.md frontmatter. verify.mjs fails the gate on
+// an oversized description instead of shipping a value a listing UI would
+// truncate or reject.
+//
+// Skill-listing description cap: gate at 1024 = cross-platform-safe (agentskills.io / agnix);
+// CC's own listing truncation is 1536 chars combined description+when_to_use
+// (code.claude.com/docs/en/skills, verified 2026-07-16). USER standard 2026-07-16: never exceed.
+//
+// Extracted from verify.mjs's own former inline copy (board #40 — the ZIP-packaging
+// port needed the same parser and this room had never had a shared lib/desc-cap.mjs;
+// CoalMine's own verify.mjs already imports from this file rather than duplicating it,
+// so this extraction matches the exemplar's actual current shape, not just its ZIP-specific
+// parts). Behavior-preserving: byte-identical logic to the inline copy it replaces.
+export const DESC_CAP = 1024;
+
+// Extract a YAML frontmatter field: bare/quoted single-line, or a block scalar
+// (>-, |-, >, |) whose indented continuation lines are joined with single spaces.
+// Returns null if the frontmatter block or the key is absent.
+export function frontmatterField(text, key) {
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return null;
+  const lines = m[1].split(/\r?\n/);
+  const i = lines.findIndex((l) => l.startsWith(key + ':'));
+  if (i === -1) return null;
+  let v = lines[i].slice(key.length + 1).trim();
+  if (/^[>|][-+]?$/.test(v)) {
+    // CWK-120 row 3 of the CodeRabbit set (`desc-cap.mjs:29`): the loop used to
+    // stop at the FIRST line that was not indented-and-non-empty, so a BLANK
+    // line INSIDE the block scalar — legal YAML, and a paragraph break in a `>-`
+    // value — truncated the parse. The consequence is not cosmetic: the cap
+    // check then measured only the head of the description and an OVER-CAP value
+    // passed the gate, which is the one thing this file exists to prevent.
+    // A blank line is now carried THROUGH; the scan still ends at the next
+    // top-level field (a non-indented, non-empty line — the YAML rule), so it
+    // cannot over-reach past the scalar. Trailing blanks contribute nothing.
+    const parts = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      if (/^\s*$/.test(lines[j])) continue; // blank: inside the scalar, not its end
+      if (!/^\s/.test(lines[j])) break; // the next top-level field ends the scalar
+      parts.push(lines[j].trim());
+    }
+    return parts.join(' ');
+  }
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+  return v;
+}
+
+// description + when_to_use combined length vs the cap (a listing UI truncates the pair together).
+export function descriptionCapCheck(text, cap = DESC_CAP) {
+  const description = frontmatterField(text, 'description') || '';
+  const whenToUse = frontmatterField(text, 'when_to_use') || '';
+  const len = description.length + whenToUse.length;
+  return { description, whenToUse, len, over: len > cap };
+}
