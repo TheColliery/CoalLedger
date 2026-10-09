@@ -19,7 +19,7 @@ CoalLedger is **zero-dependency** (Node.js built-ins only, Node 22+). No `npm in
 ```bash
 node scripts/build-plugin.mjs   # regenerate plugin/ from source
 node scripts/verify.mjs         # gate: manifests, factory config vs schema, skills, version pins, fixtures, dist-sync, git-spawn env census
-node scripts/test.mjs           # zero-dependency test suite (node --test, explicit file list)
+node scripts/test.mjs           # zero-dependency test suite (explicit file list, one node --test child per file, judged by its TAP)
 ```
 
 ### Development Rules
