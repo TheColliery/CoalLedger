@@ -18,7 +18,7 @@ test('test-plan: the numbers are finite, ordered per test < per file < the waves
   assert.ok(TEST_TIMEOUT_MS > 54600, 'above the slowest file measured (54.6 s, 2026-10-09)');
   assert.ok(TEST_TIMEOUT_MS < FILE_CLOCK_MS && FILE_CLOCK_MS < RUN_TIMEOUT_MS, 'per test < per file < the waves');
   assert.ok(RUN_TIMEOUT_MS < GATE_JOB_TIMEOUT_MS, 'the waves end before the gate job clock does: a stuck run ends in the runner, loudly');
-  assert.ok(RUN_TIMEOUT_MS > 176000, 'above the longest whole run measured (176 s, 2026-10-09, n = 3)');
+  assert.ok(RUN_TIMEOUT_MS >= Math.round(1.7 * 264000 / 10000) * 10000, 'at least 1.7 times the longest whole run measured (264 s, 2026-10-09, n = 3, 34 files in waves)');
 });
 
 test('declaredTopLevelTests: counts the test() calls that start a line, test.skip and test.todo included, and nothing indented', () => {

@@ -41,7 +41,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]  # supported LTS only (24 Active, 22 Maintenance); 18/20 are EOL — bump as the Node LTS schedule moves
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10 # testing.md: every run has a finite clock; CWK-154 (2) — sized from this room's own measured suite time under the wave runner (2026-10-09, n = 3 on a shared box: median 173 s, max 176 s; the runner ends a stuck run itself, 300 s for the waves plus 240 s for its one direct file, scripts/lib/test-plan.mjs), zero-dependency, no install step, not the template's generic placeholder
+    timeout-minutes: 10 # testing.md: every run has a finite clock; CWK-154 (2) — sized from this room's own measured suite time under the wave runner (2026-10-09, n = 3 on a shared box, 34 files in waves: median 231 s, max 264 s; the runner ends a stuck run itself, 450 s for the waves, scripts/lib/test-plan.mjs, which leaves 150 s of this 600 s for checkout, setup-node and verify), zero-dependency, no install step, not the template's generic placeholder
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
