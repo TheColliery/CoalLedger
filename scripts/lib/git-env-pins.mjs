@@ -2,7 +2,7 @@
 // A pin is { rel, blob, why }: it hides ONE file from the census while the file's git blob id (line endings read as LF) equals `blob`, so the first edited byte re-arms
 // the census on that file. Each row below was MEASURED one at a time against the real file (scratchpad/09a/pins-measure.mjs): with the pin out, the census refuses
 // exactly that file, and the findings quoted in `why` are the reason it stays. A file this room can fix is fixed, never pinned (verify.mjs and verify.test.mjs were
-// fixed in the same commit; secret-gate.test.mjs came out of the list when the canon rewrote it to named keys).
+// fixed in the same commit; secret-gate.test.mjs came out of the list when the canon rewrote it to named keys, and secret-scan.test.mjs came out when the room took Bankfire's source copy a0319dcd, 09b).
 // Dev-only: nothing in the shipped plugin imports this file, so it is a BUILD_ONLY lib.
 export const ROOM_GIT_ENV_PINS = [
   {
@@ -14,10 +14,5 @@ export const ROOM_GIT_ENV_PINS = [
     rel: 'scripts/secret-gate.mjs',
     blob: '856956a1cca6f716e5507f6c23ac90ed34cbbe5f',
     why: 'the canon secret gate, byte equal to the .github canon: it keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design (commit mode reads the commit\'s own index, which a hook names through that variable), so its gitEnv() copies process.env minus the other GIT_ names; the census refuses its two spawns (lines 57 and 60) and the canon pins the same blob',
-  },
-  {
-    rel: 'scripts/secret-scan.test.mjs',
-    blob: 'd0db994df855ccd647f3ded878a6867bb198e196',
-    why: 'Bankfire\'s secret-scan test, held at d0db994d (the canon\'s cc3939db is held, pending decision D1): its gitEnv() records the last environment in a witness variable the tests read, a shape the canon census does not read, so it refuses five spawns (lines 547, 548, 715, 820, 825: "gitEnv() returns an env the census refuses"); the pin leaves when the source drops the witness form',
   },
 ];
