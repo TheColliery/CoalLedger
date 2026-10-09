@@ -13,9 +13,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CONFIG_SCHEMA, validateConfig } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 import { DESC_CAP, frontmatterField } from './lib/desc-cap.mjs';
-import { checkPointers, pointerCandidates, looksPathShaped, DEFAULT_SURFACE_PLAN, collectSurfaces, applyCheckIgnoreProbe } from './lib/pointer-check.mjs';
+import { checkPointers, pointerCandidates, looksPathShaped, DEFAULT_SURFACE_PLAN, PENDING_POINTERS, collectSurfaces, applyCheckIgnoreProbe } from './lib/pointer-check.mjs';
 import { checkConfigKeys, checkConfigReadPath } from './lib/config-keys.mjs';
 import { projectConfigCandidates, physicalDir } from './lib/config-load.mjs';
+import { gitEnv } from './lib/git-env.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -23,9 +24,8 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // process.env: this gate is wired into a git pre-commit/pre-push hook, so an inherited
 // GIT_DIR/GIT_WORK_TREE (the shape a LINKED WORKTREE's own hook exports) would otherwise
 // silently redirect these spawns onto whatever repo GIT_DIR points at instead of `repo`.
-// Dynamic per node/runtime.md §1 (a GATE's local lib imports resolve inside the check that
-// consumes them); computed once here because both git-spawning checks below need it.
-const { gitEnv } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env.mjs')).href);
+// Imported by its own name from the room's own scripts/lib/git-env.mjs, the one form the canon git-spawn census trusts (09a: it reads a destructured dynamic import() with a
+// computed specifier as a source it cannot read); computed once here because both git-spawning checks below need it.
 const REPO_GIT_ENV = gitEnv(path.dirname(repo));
 
 let fails = 0;
@@ -571,7 +571,15 @@ try {
     // claude.ai staging dir this room already depends on catching).
     console.log(`  --   gitignored-root citations: ${candidateRoots.size} distinct first segment(s) shape-qualified and cited, ${toProbe.length} probed through one git check-ignore call (${homesPresent} of ${agentHomes.size} agent-home roots held out) — ${ignoredRoots.size} gitignored`);
 
+    // A path the room's OWN text points at is held to this gate; a path inside a file adopted BY BLOB ID from the .github canon is the canon's wording, which this room does not
+    // edit. The one such token is the placeholder `scripts/lib/...` in git-env-census.mjs's comment above collectScriptsMjs (09a). It rides the same event-expiry as
+    // PENDING_POINTERS (the entry FAILs once the canon reword drops the token, or once the path resolves), so it cannot outlive its cause; the shipped PENDING_POINTERS list
+    // itself stays empty (pointer-check.test.mjs pins that).
+    const CANON_TEXT_POINTERS = [
+      { path: 'scripts/lib/...', reason: 'an elided-path placeholder in the comment of the adopted canon git-env-census.mjs (blob 28f153a8); delete this entry when the canon rewords it' },
+    ];
     const findings = checkPointers({
+      pending: [...PENDING_POINTERS, ...CANON_TEXT_POINTERS],
       surfaces,
       ourRoots,
       ignoredRoots,
@@ -626,8 +634,9 @@ try {
 console.log('git spawn census (CWK-133/C-4 + CWK-136 -- every git spawn under scripts/ must take its env from gitEnv() alone, never bare or process.env):');
 try {
   const { censusGitSpawns, collectScriptsMjs } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env-census.mjs')).href);
-  const gitSpawnFindings = censusGitSpawns(collectScriptsMjs(repo));
-  if (!gitSpawnFindings.length) ok('every git spawn under scripts/ takes its env from gitEnv() alone, or a declared exemption');
+  const { ROOM_GIT_ENV_PINS } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env-pins.mjs')).href);
+  const gitSpawnFindings = censusGitSpawns(collectScriptsMjs(repo), ROOM_GIT_ENV_PINS);
+  if (!gitSpawnFindings.length) ok('every git spawn under scripts/ takes its env from gitEnv() or an allowlist env, or is a blob-pinned carrier (scripts/lib/git-env-pins.mjs)');
   else for (const f of gitSpawnFindings) fail(f);
 } catch (e) { fail(`git spawn census: ${e.message}`); }
 

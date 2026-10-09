@@ -548,3 +548,89 @@ test('applyCheckIgnoreProbe: an empty toProbe list never spawns, never fails, re
   assert.equal(spawned, false);
   assert.equal(ignored.size, 0);
 });
+
+// 05a bounce (CI red, run 37231230559, job 111521097672): git exits 129 on an unknown option BEFORE it reads stdin, while spawnSync is
+// still writing `input`, so spawnSync returns BOTH an error (EPIPE on POSIX; EOF on Windows, the same broken pipe, measured on this
+// box) AND the child's real status. The child DID spawn and exit, so the verdict names the exit status. Every other error shape,
+// and an error beside status 0 or 1, stays error-first and fail-closed (the TEN-SHAPE table above pins that).
+const brokenPipe = (code, status, stderr = '') => ({ error: Object.assign(new Error('spawnSync git ' + code), { code }), status, stdout: '', stderr });
+
+test('classifyCheckIgnoreResult (broken pipe): EPIPE beside status 129 names the exit status, not "failed to spawn"', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('EPIPE', 129));
+  assert.equal(v.ok, false);
+  assert.match(v.message, /exited 129/);
+});
+
+test('classifyCheckIgnoreResult (broken pipe): the message does not claim a spawn failure', () => {
+  assert.doesNotMatch(classifyCheckIgnoreResult(brokenPipe('EPIPE', 129)).message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (broken pipe): the Windows spelling of the same broken pipe (EOF) beside 129 names the exit status', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('EOF', 129));
+  assert.equal(v.ok, false);
+  assert.match(v.message, /exited 129/);
+});
+
+test('classifyCheckIgnoreResult (broken pipe): the first stderr line rides along, as it does without the error', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('EPIPE', 129, "error: unknown option `bogus-flag-xyz'\nusage: git check-ignore"));
+  assert.match(v.message, /exited 129 -- error: unknown option/);
+});
+
+test('classifyCheckIgnoreResult (broken pipe): EPIPE beside status 0 stays error-first and fail-closed', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('EPIPE', 0));
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (broken pipe): EPIPE beside status 1 stays error-first and fail-closed', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('EPIPE', 1));
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (broken pipe): EPIPE with NO status (the child never reported one) stays error-first', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('EPIPE', null));
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (broken pipe): a NON-pipe error beside status 129 (ENOENT) stays error-first', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('ENOENT', 129));
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (broken pipe): a REAL git exit 129 with an input too large to be written before git exits is classified by status on every host', () => {
+  const tmp = mkGitRepoForIgnoreProbe();
+  try {
+    const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'],
+      { cwd: tmp, encoding: 'utf8', input: 'ignored-dir/' + 'x'.repeat(4_000_000) + '\n', maxBuffer: 64 << 20, timeout: 60000, env: gitEnv(path.dirname(tmp)) });
+    assert.equal(ci.status, 129, 'git must have exited on the unknown option');
+    const verdict = classifyCheckIgnoreResult(ci);
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.message, /exited 129/, 'whether or not this host reports the broken pipe as an error beside the status');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// 05a bounce 2 / E1: pin the allowlist from the OTHER side. Only a broken pipe (EPIPE, EOF) beside a non-0/1 status means "the child ran
+// and exited". Any other code beside an integer status stays error-first, so a deny-list rewrite or a widened allowlist is caught here
+// (in Node today ETIMEDOUT and ENOBUFS come with status null; these tests pin the allowlist itself, not the runtime's present behaviour).
+test('classifyCheckIgnoreResult (allowlist): ETIMEDOUT beside status 129 stays error-first, "failed to spawn"', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('ETIMEDOUT', 129));
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (allowlist): ENOBUFS beside status 129 stays error-first, "failed to spawn"', () => {
+  const v = classifyCheckIgnoreResult(brokenPipe('ENOBUFS', 129));
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (allowlist): neither non-pipe code is reported as an exit status', () => {
+  for (const code of ['ETIMEDOUT', 'ENOBUFS']) {
+    assert.doesNotMatch(classifyCheckIgnoreResult(brokenPipe(code, 129)).message, /exited 129/, code);
+  }
+});

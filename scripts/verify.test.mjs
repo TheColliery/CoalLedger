@@ -82,9 +82,9 @@ const POINTER_ROOT_DOCS = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'PRIVA
 function pointerScratchRepo() {
   const dir = scratchRepo();
   for (const f of POINTER_ROOT_DOCS) fs.cpSync(path.join(repo, f), path.join(dir, f));
-  const env = gitEnv(path.dirname(dir)); // CWK-133/C-4 -- never inherit an ambient GIT_DIR
-  spawnSync('git', ['init', '-q'], { cwd: dir, env });
-  spawnSync('git', ['add', '-A'], { cwd: dir, env });
+  const pointerEnv = gitEnv(path.dirname(dir)); // CWK-133/C-4 -- never inherit an ambient GIT_DIR
+  spawnSync('git', ['init', '-q'], { cwd: dir, env: pointerEnv });
+  spawnSync('git', ['add', '-A'], { cwd: dir, env: pointerEnv });
   return dir;
 }
 
@@ -200,21 +200,21 @@ function loneCrFixture() {
 // This is the file's ONE skippable leg.
 test('verify.mjs 2.12 pointers: CWK-090 fix 2 -- CHARACTERIZATION: a lone-CR .gitignore line false-matches an absent root under the bare feed (skipped where the host git does not reproduce it)', (t) => {
   const dir = loneCrFixture();
-  const env = gitEnv(path.dirname(dir)); // CWK-133/C-4 -- never inherit an ambient GIT_DIR
+  const probeEnv = gitEnv(path.dirname(dir)); // CWK-133/C-4 -- never inherit an ambient GIT_DIR
   try {
     // THE DISCRIMINATING PAIR, at the git level, on the SAME real fixture -- no source
     // substitution needed, since the bare feed and the probe feed are both real,
     // independent git invocations.
-    const bare = spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'totally-fake-root/\n', env });
+    const bare = spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'totally-fake-root/\n', env: probeEnv });
     if (bare.status !== 0) {
       t.skip('the lone-CR .gitignore line did not false-match an absent root under the bare feed on this box (git ' +
-        spawnSync('git', ['--version'], { encoding: 'utf8', env }).stdout.trim() +
+        spawnSync('git', ['--version'], { encoding: 'utf8', env: probeEnv }).stdout.trim() +
         ', bare.status=' + bare.status + ') -- the characterization is NOT EXERCISED here, and the gate-side proof lives in its own test below');
       return;
     }
-    const probed = spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'totally-fake-root/.pointer-check-probe\n', env });
+    const probed = spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'totally-fake-root/.pointer-check-probe\n', env: probeEnv });
     assert.equal(probed.status, 1, 'the injection-site feed correctly reports the SAME root as NOT ignored');
-    const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'totally-fake-root/\n', env });
+    const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'totally-fake-root/\n', env: probeEnv });
     assert.match(verbose.stdout, /\.gitignore:2:/,
       'the matching pattern must be the lone-CR line (line 2), naming the source unambiguously');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -224,12 +224,12 @@ test('verify.mjs 2.12 pointers: CWK-090 fix 2 -- CHARACTERIZATION: a lone-CR .gi
 // git's quirk, so they are unconditional on every box and every git version.
 test('verify.mjs 2.12 pointers: CWK-090 fix 2 -- the injection-site probe loses no true positive and the real gate is immune to the lone-CR fixture', () => {
   const dir = loneCrFixture();
-  const env = gitEnv(path.dirname(dir)); // CWK-133/C-4 -- never inherit an ambient GIT_DIR
+  const ignoreEnv = gitEnv(path.dirname(dir)); // CWK-133/C-4 -- never inherit an ambient GIT_DIR
   try {
     // CONTROL: a genuinely-ignored root still matches under BOTH feeds -- the probe loses
     // no true positive.
-    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'dist-claude-ai/\n', env }).status, 0);
-    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'dist-claude-ai/.pointer-check-probe\n', env }).status, 0);
+    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'dist-claude-ai/\n', env: ignoreEnv }).status, 0);
+    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'dist-claude-ai/.pointer-check-probe\n', env: ignoreEnv }).status, 0);
 
     // END-TO-END: the real gate, as fixed, must not be fooled by this fixture -- the
     // absent-root citation is silently out of scope (never even resolves), never the

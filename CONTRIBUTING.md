@@ -19,7 +19,7 @@ CoalLedger is **zero-dependency** (Node.js built-ins only, Node 22+). No `npm in
 ```bash
 node scripts/build-plugin.mjs   # regenerate plugin/ from source
 node scripts/verify.mjs         # gate: manifests, factory config vs schema, skills, version pins, fixtures, dist-sync, git-spawn env census
-node scripts/test.mjs           # zero-dependency test suite (node --test, explicit file list)
+node scripts/test.mjs           # zero-dependency test suite (explicit file list, one node --test child per file, judged by its TAP)
 ```
 
 ### Development Rules
@@ -61,7 +61,7 @@ Cross-agent by design—the canaries are plain SKILL.md contracts and the engine
 
 ## 🚀 Releasing (Maintainers)
 
-Bump version in `.claude-plugin/plugin.json` ➡️ add a `CHANGELOG.md` entry ➡️ ensure `verify.mjs` and `test.mjs` pass ➡️ commit ➡️ create a signed git tag (`vX.Y.Z`) ➡️ push ➡️ create a GitHub Release (stable tags only—with ONE named exception: the repo's FIRST public beta tag ships as a prerelease so the Releases panel is never empty at launch; later beta tags are history-only).
+Bump version in `.claude-plugin/plugin.json` ➡️ add a `CHANGELOG.md` entry with its one-line summary ➡️ run `node scripts/release-notes.mjs --check --repo CoalLedger` on it (the announcement title must fit GitHub's 200-character ceiling) ➡️ ensure `verify.mjs` and `test.mjs` pass ➡️ commit ➡️ create a signed git tag (`vX.Y.Z`) ➡️ push ➡️ create a GitHub Release (stable tags only—with ONE named exception: the repo's FIRST public beta tag ships as a prerelease so the Releases panel is never empty at launch; a later beta tag adds no second Release, but while no stable Release exists a dispatch of `claude-ai-zips.yml` with `launch_form=true` and the newer tag re-points that one Release to it, so it carries that tag's ZIPs).
 
 ---
 
