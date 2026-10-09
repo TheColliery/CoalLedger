@@ -106,7 +106,10 @@ const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 // read by a hook or a skill, so the wholesale scripts/lib copy must not ship them.
 // secret-scan.mjs (R14, CWK-174) is the house secret scan's library: the repo's own git gate calls it, no installed
 // plugin does, so it stays out of plugin/ for the same reason.
-const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs', 'release-shape.mjs', 'asset-upload-mode.mjs', 'release-prune.mjs', 'secret-scan.mjs', 'test-spawn.mjs']);
+// The git-spawn census (git-env-census.mjs, its vectors file and this room's git-env-pins.mjs; 09a, adopted from the .github canon) is a development gate: verify.mjs and
+// the tests call it, no hook, skill or command does, so it stays out of plugin/ like the other CI-time libraries (it shipped by accident through beta.3). git-env.mjs, the helper
+// every git spawn imports, is a different matter and still ships.
+const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs', 'release-shape.mjs', 'asset-upload-mode.mjs', 'release-prune.mjs', 'secret-scan.mjs', 'test-spawn.mjs', 'git-env-census.mjs', 'git-env-census.vectors.mjs', 'git-env-pins.mjs']);
 const isBuildOnlyLib = (p) => BUILD_ONLY_LIB_NAMES.has(path.basename(p));
 const isDistExcluded = (p) => isTest(p) || isBuildOnlyLib(p);
 
