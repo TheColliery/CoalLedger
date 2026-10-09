@@ -12,12 +12,12 @@ import { HEAP_MB, TEST_TIMEOUT_MS, FILE_CLOCK_MS, RUN_TIMEOUT_MS, declaredTopLev
 const ROOM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const GATE_JOB_TIMEOUT_MS = 10 * 60 * 1000; // ci.yml: timeout-minutes 10 on the gate job
 
-test('test-plan: the numbers are finite, ordered per test < per file < the waves, the waves plus the direct file end inside the gate job clock, and the heap cap is the room\'s 2048 MB', () => {
+test('test-plan: the numbers are finite, ordered per test < per file < the waves, the waves end inside the gate job clock, and the heap cap is the room\'s 2048 MB', () => {
   for (const [k, v] of Object.entries({ HEAP_MB, TEST_TIMEOUT_MS, FILE_CLOCK_MS, RUN_TIMEOUT_MS })) assert.ok(Number.isInteger(v) && v > 0, `${k} is a positive integer`);
   assert.equal(HEAP_MB, 2048);
   assert.ok(TEST_TIMEOUT_MS > 54600, 'above the slowest file measured (54.6 s, 2026-10-09)');
   assert.ok(TEST_TIMEOUT_MS < FILE_CLOCK_MS && FILE_CLOCK_MS < RUN_TIMEOUT_MS, 'per test < per file < the waves');
-  assert.ok(RUN_TIMEOUT_MS + FILE_CLOCK_MS < GATE_JOB_TIMEOUT_MS, 'the waves, then the one direct file under its own clock, end before the gate job clock does: a stuck run ends in the runner, loudly');
+  assert.ok(RUN_TIMEOUT_MS < GATE_JOB_TIMEOUT_MS, 'the waves end before the gate job clock does: a stuck run ends in the runner, loudly');
   assert.ok(RUN_TIMEOUT_MS > 176000, 'above the longest whole run measured (176 s, 2026-10-09, n = 3)');
 });
 
@@ -46,9 +46,10 @@ test('expectationFindings: a PASS file that reported fewer tests than it declare
 
 test('test.mjs: the wiring is the canon runner with the room\'s numbers, a failed start and a short report are named FAILs, and nothing else spawns the tests', () => {
   const src = fs.readFileSync(path.join(ROOM, 'scripts', 'test.mjs'), 'utf8');
-  assert.match(src, /runWaves\(\{ files: TESTS\.filter\(\(f\) => !plan\.DIRECT_FILES\.includes\(f\)\), cwd: repo, env: process\.env, heapMb: plan\.HEAP_MB, fileTimeoutMs: plan\.TEST_TIMEOUT_MS, fileClockMs: plan\.FILE_CLOCK_MS, deadlineMs: plan\.RUN_TIMEOUT_MS \}\)/);
+  assert.match(src, /runWaves\(\{ files: TESTS, cwd: repo, env: process\.env, heapMb: plan\.HEAP_MB, fileTimeoutMs: plan\.TEST_TIMEOUT_MS, fileClockMs: plan\.FILE_CLOCK_MS, deadlineMs: plan\.RUN_TIMEOUT_MS \}\)/);
   assert.match(src, /FAIL test runner: the run did not start/);
-  assert.match(src, /plan\.runDirect\(f, \{ cwd: repo, env: process\.env \}\)/);
+  assert.doesNotMatch(src, /runDirect|DIRECT_FILES/, 'every roster file, the canon runner test included, runs in a wave (09b: the canon test 30 no longer loses to the preload)');
+  assert.doesNotMatch(fs.readFileSync(path.join(ROOM, 'scripts', 'lib', 'test-plan.mjs'), 'utf8'), /runDirect|DIRECT_FILES/);
   assert.match(src, /expectationFindings\(run\.results/);
   assert.match(src, /process\.exitCode = run\.exitCode !== 0 \|\| short\.length \? 1 : 0/);
 });
@@ -153,23 +154,11 @@ test('plant: LOW-1 (re-targeted) a plant whose per-test clock is not above its d
   assert.throws(() => plant(t, { 'x.test.mjs': HDR }, { fileClock: 20000, deadline: 20000 }), /per-test > deadline > per-file/);
 });
 
-test('test.mjs (run): a run that cannot start (an empty wave list) is a named FAIL and a non-zero exit, never a silent pass', async (t) => {
-  // the roster holds only the direct file, so there is nothing to put in a wave: the canon runner refuses an empty list
-  const dir = plant(t, { 'wave-run.test.mjs': HDR + "test('direct and fine', () => assert.ok(true));\n" });
+test('test.mjs (run): a run that cannot start (an empty roster) is a named FAIL and a non-zero exit, never a silent pass', async (t) => {
+  // nothing to put in a wave: the canon runner refuses an empty list
+  const dir = plant(t, {});
   const r = await runPlanted(dir);
   assert.equal(r.bound, false, r.out.slice(-400));
   assert.notEqual(r.code, 0, r.out.slice(-600));
   assert.match(r.out, /FAIL test runner: the run did not start \(no test files were given\)/);
-});
-
-test('test.mjs (run): the direct file is judged by the same TAP reading, and a direct file that hangs is ended by the file clock as a FAIL naming it', async (t) => {
-  const dir = plant(t, {
-    'wave-run.test.mjs': HDR + "import fs from 'node:fs';\ntest('hangs the thread', () => { fs.writeFileSync('child.pid', String(process.pid)); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15000); });\n",
-    'fine.test.mjs': HDR + "test('fine', () => assert.ok(true));\n",
-  });
-  const r = await runPlanted(dir);
-  try { process.kill(Number(fs.readFileSync(path.join(dir, 'child.pid'), 'utf8')), 'SIGKILL'); } catch { /* gone, or never written */ }
-  assert.equal(r.bound, false, 'the run did not end by itself\n' + r.out.slice(-400));
-  assert.notEqual(r.code, 0);
-  assert.match(r.out, /^FAIL scripts\/lib\/wave-run\.test\.mjs: killed at the file clock \(3000 ms\)/m);
 });
