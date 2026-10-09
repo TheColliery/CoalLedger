@@ -54,6 +54,27 @@ test('test.mjs: the wiring is the canon runner with the room\'s numbers, a faile
   assert.match(src, /process\.exitCode = run\.exitCode !== 0 \|\| short\.length \? 1 : 0/);
 });
 
+test('expectationFindings: a PASS or SKIP file that declares NO test the lower bound can count is named, whatever form its tests take (R2: alias, it(), await test(), indented), and a file with one countable test is not', () => {
+  const forms = {
+    'alias.test.mjs': "import { test as t } from 'node:test';\nt('x', () => {});\nt('y', () => {});\n",
+    'it.test.mjs': "import { it } from 'node:test';\nit('x', () => {});\n",
+    'await.test.mjs': "import test from 'node:test';\nawait test('x', () => {});\n",
+    'indented.test.mjs': "import test from 'node:test';\n{\n  test('x', () => {});\n}\n",
+    'ok.test.mjs': "import test from 'node:test';\ntest('x', () => {});\nit('also invisible', () => {});\n",
+    'red.test.mjs': "import { it } from 'node:test';\nit('x', () => {});\n",
+    'zero.test.mjs': '// no test of any form\n',
+    'skipalias.test.mjs': "import { it } from 'node:test';\nit.skip('x', () => {});\n",
+  };
+  const read = (f) => (f in forms ? forms[f] : null);
+  const results = Object.keys(forms).map((file) => ({ file, name: file, status: file === 'red.test.mjs' ? 'FAIL' : file === 'skipalias.test.mjs' ? 'SKIP' : 'PASS', counts: { tests: file === 'zero.test.mjs' ? 0 : 2 } }));
+  const f = expectationFindings(results, read);
+  assert.equal(f.length, 6, f.join('\n'));
+  for (const name of ['alias', 'it', 'await', 'indented']) assert.ok(f.some((x) => x.startsWith(`${name}.test.mjs: declares 0 top-level test(s) the lower bound can count but the run reported 2`)), `${name} is named`);
+  assert.ok(f.some((x) => x.startsWith('zero.test.mjs: declares 0 top-level test(s) the lower bound can count but the run reported 0')), 'a PASS file with no countable test is named even when it reported none');
+  assert.ok(f.some((x) => x.startsWith('skipalias.test.mjs: declares 0')), 'an all-skipped file written through it.skip is named too');
+  assert.ok(f.every((x) => /alias, it\(\), await test\(\) or an indented call/.test(x)), 'the finding names the forms the bound cannot see');
+});
+
 // ---- end to end: the REAL scripts/test.mjs and the REAL runner files, copied into a temp tree whose roster is the planted files ----
 // The numbers are patched down in the COPY of test-plan.mjs only. Every run is bounded by its own timer that kills the whole tree, so a regression fails the test instead of hanging the suite.
 // LOW-1 (08b, re-targeted at 09a): the old plant could put a per-test clock BELOW the whole-run deadline, and on Node 22 (a per-FILE clock) that changed which line the run printed, so
@@ -133,6 +154,15 @@ test('test.mjs (run): a file whose second test exits 0 after the first passed is
   assert.notEqual(r.code, 0, r.out.slice(-600));
   assert.match(r.out, /test runner: RED -- 1 file/);
   assert.match(r.out, /^SHORT scripts\/lib\/half\.test\.mjs: declares 3 top-level test\(s\) but the run reported/m);
+});
+
+test('test.mjs (run): a file whose tests are registered through an alias the lower bound cannot see is named and the gate FAILS (R2; GREEN before 09b)', async (t) => {
+  const dir = plant(t, { 'alias.test.mjs': "import { test as t } from 'node:test';\nimport assert from 'node:assert/strict';\nt('real check', () => assert.equal(1, 1));\nt('second check', () => assert.ok(true));\n" });
+  const r = await runPlanted(dir);
+  assert.equal(r.bound, false, r.out.slice(-400));
+  assert.notEqual(r.code, 0, 'a file the bound cannot count must not read as a clean pass\n' + r.out.slice(-600));
+  assert.match(r.out, /test runner: RED -- 1 file/);
+  assert.match(r.out, /^SHORT scripts\/lib\/alias\.test\.mjs: declares 0 top-level test\(s\) the lower bound can count but the run reported 2/m);
 });
 
 test('test.mjs (run): a test that blocks its thread is ended by the file clock as a named FAIL and a non-zero exit, never a pass, and the other file still runs', async (t) => {

@@ -25,6 +25,12 @@ export const RUN_TIMEOUT_MS = 450000; // the waves: 1.7 times the longest whole 
 // test calls process.exit(0) AFTER another test already passed reports only the tests that finished, and reads as a PASS. This room closes that gap with a lower bound it can
 // read from the file: every `test(` call that starts a line in column 0 is a top-level registration that runs unconditionally, so the TAP summary cannot report fewer tests
 // than that count unless the file stopped before registering them. Generated tests (a loop, a helper) only add to the count, never subtract.
+// The bound is a TEXT read of column-0 `test(` calls, so it has named limits (09b R2, the reviewer's 09a LOW-1):
+// shortcut: a test registered through an alias (`t(...)`), `it(...)`, `await test(...)` or an indented `test(` inside a block counts as 0, so a file that mixes those with column-0 calls
+//   is held only to the column-0 ones, and a file that uses ONLY those forms is caught by the "declares 0" guard in expectationFindings, not by the count; upgrade to a real
+//   registration count (a TAP plan, or a parser) when a roster file legitimately mixes the forms and loses tests after an early exit.
+// shortcut: a column-0 `test(` inside a block comment or a template string still counts, which can only over-count (a false SHORT, the safe direction: the gate goes red and a person
+//   looks); upgrade if a roster file keeps commented-out column-0 `test(` examples.
 export function declaredTopLevelTests(text) {
   const own = String(text).replace(/\r\n/g, '\n');
   const m = own.match(/^test(?:\.(?:skip|todo|only))?\(/gm);
@@ -40,6 +46,11 @@ export function expectationFindings(results, read) {
     if (typeof text !== 'string') continue;
     const declared = declaredTopLevelTests(text);
     const reported = r.counts ? r.counts.tests : 0;
+    // R2: a file the bound counts as 0 is a file it holds to nothing, so a whole file switched to an alias, it() or await test() would read GREEN by accident. Every roster file
+    // that passed must declare at least one test the bound can see; a file that cannot is named, never trusted.
+    if (declared === 0) {
+      out.push(`${r.name || r.file}: declares 0 top-level test(s) the lower bound can count but the run reported ${reported} (its tests are registered through a form the bound cannot see: an alias, it(), await test() or an indented call)`);
+    }
     if (declared > reported) out.push(`${r.name || r.file}: declares ${declared} top-level test(s) but the run reported ${reported} (it stopped before registering the rest: an exit, a throw swallowed by the runner, or a hang the force-exit ended)`);
   }
   return out;
