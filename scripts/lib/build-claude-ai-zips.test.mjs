@@ -80,6 +80,8 @@ test('build-claude-ai-zips: fails loud when plugin/skills exists but holds NO sk
     fs.mkdirSync(path.join(tmp, 'plugin', 'skills'), { recursive: true }); // present, but EMPTY
     const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8' });
     assert.notEqual(r.status, 0, `exits non-zero when there is nothing to stage; stdout: ${r.stdout}`);
+    // CWK2-032 (CodeRabbit, PR #20): a non-zero exit alone also passes on a crash (a module-load error in the scratch copy), so the guard's OWN message is asserted.
+    assert.match(r.stderr, /holds no skill directories/, 'names the empty dist as the reason, so a crash cannot pass for the guard');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
