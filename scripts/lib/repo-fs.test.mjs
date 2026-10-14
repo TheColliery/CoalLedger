@@ -550,3 +550,82 @@ test('MUTATION M6 (direct, platform-independent): the directory refusal fires BE
     assert.equal(renameCalled, false, 'the refusal must fire before any rename is attempted -- proves THIS check caught it, not a platform-specific fallback side effect that happens to also refuse');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// ---- 14a (E2-4 class): containment is checked for EVERY entry when a root is set, against the FOLDER ITSELF ----
+function canLinkDirKind(type) {
+  const d = scratch('cl-linkdir-probe-');
+  try {
+    fs.mkdirSync(path.join(d, 'a'));
+    fs.symlinkSync(path.join(d, 'a'), path.join(d, 'b'), type);
+    return true;
+  } catch { return false; } finally { fs.rmSync(d, { recursive: true, force: true }); }
+}
+for (const [type, label] of [['junction', 'junction'], ['dir', 'directory symlink']]) {
+  const ok = canLinkDirKind(type);
+  test(`repoEntryKind 14a: a regular file under a PARENT ${label} that points outside root is "other" -- the file itself lstats as a plain file (capability-gated)`, (t) => {
+    if (!ok) { t.skip(`this seat cannot create a ${label} on this box`); return; }
+    const root = scratch('cl-parent-root-');
+    const outside = scratch('cl-parent-outside-');
+    try {
+      fs.mkdirSync(path.join(outside, 'coal'));
+      fs.writeFileSync(path.join(outside, 'coal', 'c.json'), 'VICTIM');
+      fs.symlinkSync(outside, path.join(root, '.claude'), type);
+      const file = path.join(root, '.claude', 'coal', 'c.json');
+      assert.equal(repoEntryKind(file, root), 'other');
+      assert.equal(readRepoFileBounded(file, root, MAX_CONFIG_BYTES), null, 'the victim bytes are never read back');
+      assert.equal(readRepoFileBounded(file, null, MAX_CONFIG_BYTES), 'VICTIM', 'control: root = null (a home file) is unchanged and still reads');
+    } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+  });
+}
+
+test('repoEntryKind 14a: a path that climbs out with .. is "other", and a plain file directly in the root (the legacy dotfile) is still "file"', () => {
+  const root = scratch('cl-dotdot-root-');
+  const outside = scratch('cl-dotdot-outside-');
+  try {
+    fs.writeFileSync(path.join(outside, 'x.json'), 'VICTIM');
+    fs.writeFileSync(path.join(root, '.legacy.json'), 'ok');
+    fs.mkdirSync(path.join(root, 'sub'));
+    const climbing = path.join(root, 'sub', '..', '..', path.basename(outside), 'x.json');
+    assert.equal(repoEntryKind(climbing, root), 'other');
+    assert.equal(repoEntryKind(path.join(root, '.legacy.json'), root), 'file');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
+test('repoEntryKind 14a: a missing parent folder is "missing", never a throw', () => {
+  const root = scratch('cl-noparent-root-');
+  try { assert.equal(repoEntryKind(path.join(root, '.claude', 'coal', 'c.json'), root), 'missing'); }
+  finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('repoEntryKind 14a: a root that cannot be resolved fails CLOSED ("other"), never open', () => {
+  const dir = scratch('cl-noroot-');
+  try {
+    const file = path.join(dir, 'c.json');
+    fs.writeFileSync(file, 'ok');
+    assert.equal(repoEntryKind(file, path.join(dir, 'does-not-exist')), 'other');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('repoEntryKind 14a: a root reached THROUGH a link (the project opened by a linked path) still reads its own files (capability-gated)', (t) => {
+  if (!canLinkDirKind('junction')) { t.skip('this seat cannot create a junction on this box'); return; }
+  const real = scratch('cl-viaroot-real-');
+  const holder = scratch('cl-viaroot-holder-');
+  try {
+    fs.writeFileSync(path.join(real, 'c.json'), 'ok');
+    const linked = path.join(holder, 'proj');
+    fs.symlinkSync(real, linked, 'junction');
+    assert.equal(repoEntryKind(path.join(linked, 'c.json'), linked), 'file', 'both sides resolve to the same physical project');
+  } finally { fs.rmSync(real, { recursive: true, force: true }); fs.rmSync(holder, { recursive: true, force: true }); }
+});
+
+test('repoEntryKind 14a: a FILE symlink that stays inside root but leaves its own folder is "other" (capability-gated: file-symlink privilege; runs on the POSIX CI legs)', (t) => {
+  if (!SYMLINK_OK) { t.skip('this seat cannot create a file symlink without elevation on this box'); return; }
+  const root = scratch('cl-sibling-root-');
+  try {
+    fs.mkdirSync(path.join(root, 'coal'));
+    fs.mkdirSync(path.join(root, 'elsewhere'));
+    fs.writeFileSync(path.join(root, 'elsewhere', 'real.json'), 'VICTIM');
+    fs.symlinkSync(path.join(root, 'elsewhere', 'real.json'), path.join(root, 'coal', 'c.json'), 'file');
+    assert.equal(repoEntryKind(path.join(root, 'coal', 'c.json'), root), 'other');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

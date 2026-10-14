@@ -53,9 +53,33 @@ export function isContained(child, root) {
 // dangling symlink, or anything realpath/stat cannot resolve -- refuse, never open).
 // A symlink proceeds only if its realpath lies inside root's realpath (or root is
 // null) AND resolves to a regular file.
+// 14a (the E2-4 class, hooks-safety.md section 6 row 10): when `root` is set, containment is
+// checked for EVERY entry, not only for a symlinked file. A junction (Windows) or symlink (POSIX)
+// planted at a PARENT folder (`.claude`, `.claude/coal`) leaves the file itself lstat-ing as a plain
+// file, so the symlink-only check below never ran and the read followed the link out of the
+// project. Both sides go through fs.realpathSync.native: the folder ITSELF (the entry's own
+// directory) must resolve inside the project root (or BE the root: the legacy root dotfile), and
+// the entry must resolve strictly inside that folder. Anything unresolvable is 'other': fail
+// closed, the caller's existing absent / 'unreadable' paths apply, never a throw. A link whose
+// target stays inside the project is still honoured (a tool state folder may be linked inside
+// the project); only an escape is refused. Residual, named: the realpath check and the later
+// open are two steps, so a link swapped in between is not caught here (the fd re-check in
+// readRepoFileBounded only re-checks kind and size).
+function entryInsideItsFolder(p, root) {
+  let realRoot, realFolder, real;
+  try {
+    realRoot = fs.realpathSync.native(root);
+    realFolder = fs.realpathSync.native(path.dirname(p));
+    real = fs.realpathSync.native(p);
+  } catch { return false; }
+  if (realFolder !== realRoot && !isContained(realFolder, realRoot)) return false; // the folder escapes the project
+  return isContained(real, realFolder); // the entry stays inside the folder itself
+}
+
 export function repoEntryKind(p, root) {
   let st;
   try { st = fs.lstatSync(p); } catch { return 'missing'; }
+  if (root != null && !entryInsideItsFolder(p, root)) return 'other';
   if (st.isSymbolicLink()) {
     let real;
     try { real = fs.realpathSync.native(p); } catch { return 'other'; } // dangling link

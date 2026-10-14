@@ -960,3 +960,75 @@ test('CWK-137: the GLOBAL config (root = null, a home file) still kind-gates and
     assert.strictEqual(loadMergedConfig({ cwd: proj, home }).updateCheckDays, 5, 'root=null means a dotfile-manager symlink for the GLOBAL config is honoured, matching CoalMine Step 3 ruling 1, re-decided for this room\'s one home-file read');
   } finally { clean(home, proj); fs.rmSync(outside, { recursive: true, force: true }); }
 });
+
+// ---- 14a (E2-4 class): a link planted at a PARENT folder of the project config must never be followed out of the project ----
+// repoEntryKind used to check containment ONLY when the file itself was a symlink; a junction or symlink at
+// `.claude` or `.claude/coal` makes the file lstat as a regular file, so the read followed the link outside.
+// The witness is a marker value in an OUTSIDE config: the merged config must never carry it.
+const OUTSIDE_MARKER = 'OUTSIDE-MARKER-14a';
+// A 'junction' needs no privilege on Windows; on POSIX the type is ignored and a plain directory symlink is made.
+function canLinkDir(type) {
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-linkprobe-')));
+  try {
+    fs.mkdirSync(path.join(d, 'a'));
+    fs.symlinkSync(path.join(d, 'a'), path.join(d, 'b'), type);
+    return true;
+  } catch { return false; } finally { fs.rmSync(d, { recursive: true, force: true }); }
+}
+const JUNCTION_OK = canLinkDir('junction');
+const DIRLINK_OK = canLinkDir('dir');
+function outsideDir(rel) {
+  // an outside folder (not under the sandbox home) holding a config that carries the marker
+  const out = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-outside-')));
+  const file = path.join(out, rel);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ language: OUTSIDE_MARKER }));
+  return out;
+}
+function linkCase(t, type, plant, outsideRel) {
+  const { home, proj } = sandbox();
+  fs.mkdirSync(path.join(proj, '.git'));
+  const out = outsideDir(outsideRel);
+  t.after(() => clean(home, out));
+  plant(proj, out);
+  return { home, proj, out };
+}
+const linkLegs = [
+  ['at .claude', 'coal/coalledger.json', (proj, out, type) => fs.symlinkSync(out, path.join(proj, '.claude'), type)],
+  ['at .claude/coal', 'coalledger.json', (proj, out, type) => { fs.mkdirSync(path.join(proj, '.claude')); fs.symlinkSync(out, path.join(proj, '.claude', 'coal'), type); }],
+  ['at .claude (the nested legacy name)', '.coalledger.json', (proj, out, type) => fs.symlinkSync(out, path.join(proj, '.claude'), type)],
+  ['at .agents', 'coal/coalledger.json', (proj, out, type) => fs.symlinkSync(out, path.join(proj, '.agents'), type)],
+];
+for (const [type, ok, label] of [['junction', () => JUNCTION_OK, 'junction'], ['dir', () => DIRLINK_OK, 'directory symlink']]) {
+  for (const [where, rel, plant] of linkLegs) {
+    test(`14a: a ${label} planted ${where} never lets the project config read outside the project (capability-gated)`, (t) => {
+      if (!ok()) { t.skip(`this seat cannot create a ${label} on this box`); return; }
+      const { home, proj } = linkCase(t, type, (pr, out) => plant(pr, out, type), rel);
+      const cfg = loadMergedConfig({ cwd: proj, home });
+      assert.notStrictEqual(cfg.language, OUTSIDE_MARKER, 'the outside file was read through the planted link');
+      let notices;
+      assert.doesNotThrow(() => { notices = configNotices(proj, home); }, 'a refused read is absent, never a throw');
+      assert.ok(notices.some((n) => n.includes('UNREADABLE')), 'the notice classifier refuses the escaping entry too (never reads it as a clean config): ' + JSON.stringify(notices));
+    });
+  }
+}
+
+test('14a control: the same config in a REAL .claude/coal folder inside the project is read (the witnesses above are not vacuous)', (t) => {
+  const { home, proj } = sandbox();
+  t.after(() => clean(home));
+  fs.mkdirSync(path.join(proj, '.git'));
+  fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+  fs.writeFileSync(path.join(proj, '.claude', 'coal', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER }));
+  assert.strictEqual(loadMergedConfig({ cwd: proj, home }).language, OUTSIDE_MARKER);
+});
+
+test('14a control: a link whose target stays INSIDE the project folder is still read (a tool state folder may be a link inside the project)', (t) => {
+  if (!JUNCTION_OK) { t.skip('this seat cannot create a junction on this box'); return; }
+  const { home, proj } = sandbox();
+  t.after(() => clean(home));
+  fs.mkdirSync(path.join(proj, '.git'));
+  fs.mkdirSync(path.join(proj, 'shared', 'coal'), { recursive: true });
+  fs.writeFileSync(path.join(proj, 'shared', 'coal', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER }));
+  fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude'), 'junction');
+  assert.strictEqual(loadMergedConfig({ cwd: proj, home }).language, OUTSIDE_MARKER);
+});
