@@ -94,7 +94,7 @@ ${r.stdout ?? ''}${r.stderr ?? ''}`);
       const short = plan.expectationFindings(run.results, (f) => { try { return fs.readFileSync(path.join(repo, f), 'utf8'); } catch { return null; } });
       for (const s of short) console.log(`SHORT ${s}`);
       console.log(run.summary.line);
-      if (short.length) console.log(`test runner: RED -- ${short.length} file(s) reported fewer tests than they declare (SHORT lines above)`);
+      if (short.length) console.log(`test runner: RED -- ${short.length} file(s) failed the declared-test lower bound (SHORT lines above)`);
       process.exitCode = run.exitCode !== 0 || short.length ? 1 : 0;
     }
   }
