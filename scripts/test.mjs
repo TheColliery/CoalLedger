@@ -38,6 +38,7 @@ const TESTS = [
   'scripts/configure.test.mjs',
   'scripts/build-plugin.test.mjs',
   'scripts/verify.test.mjs',
+  'scripts/hooks-exec-form.test.mjs',
   'scripts/cli-guard.test.mjs',
   'scripts/secret-scan.test.mjs',
   'scripts/secret-gate.test.mjs',
