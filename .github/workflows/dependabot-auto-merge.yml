@@ -14,12 +14,11 @@ on: pull_request
 permissions:
   contents: read
 
-# GROUPED PER-PR, never per-ref or per-workflow (CWK-058, canon:
-# .github/SKILL-REPO-PATTERN.md) -- two different Dependabot PRs must not serialise
-# behind each other, so a shared or per-workflow key is the wrong discriminator
-# regardless of the flag below it. WITHIN one PR's own group, cancel-in-progress TRUE
-# is correct: enabling auto-merge is IDEMPOTENT, so a cancelled run corrupts nothing --
-# the next push to that same PR simply re-enables it.
+# cancel-in-progress: TRUE -- the test is ATOMICITY, not read-vs-write. Enabling auto-merge
+# (`gh pr merge --auto`) is IDEMPOTENT within one PR's own group, so a cancelled run corrupts
+# nothing: the next push to that same PR simply re-enables it. Per-PR grouping, never per-ref:
+# two different Dependabot PRs must not serialise behind each other (the ruling lives in
+# TheColliery/.github SKILL-REPO-PATTERN.md's `concurrency:` bullet).
 concurrency:
   group: dependabot-auto-merge-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -28,7 +27,7 @@ jobs:
   auto-merge:
     if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # testing.md: every run has a finite clock; CWK-154 (2), sized from the .github template -- this job does one gh call and waits on nothing of this room's own
+    timeout-minutes: 10 # testing.md: every run has a finite clock; a room re-sizes this from its own measured suite time
     permissions:
       contents: write
       pull-requests: write
@@ -38,13 +37,12 @@ jobs:
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      # Patch + minor auto-merge; a major bump waits for a human.
+      # Patch + minor auto-merge, an ALLOWLIST (an empty or new update-type waits for a human too, like a major bump).
       - name: Enable auto-merge (patch/minor)
-        if: ${{ steps.meta.outputs.update-type != 'version-update:semver-major' }}
+        if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' }}
         run: gh pr merge --squash --auto "$PR_URL"
         env:
-          # CWK-154 (1): the URL goes through an env variable, never interpolated into
-          # the script directly (GitHub's hardening guide: script injection). html_url
-          # is GitHub-generated, so this closes a SHAPE, not a live hole on this trigger.
+          # The URL goes through an env variable, never interpolated into the script (GitHub's hardening
+          # guide: script injection). html_url is GitHub-generated, so this closes a shape, not a live hole.
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
