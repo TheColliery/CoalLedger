@@ -1022,13 +1022,24 @@ test('14a control: the same config in a REAL .claude/coal folder inside the proj
   assert.strictEqual(loadMergedConfig({ cwd: proj, home }).language, OUTSIDE_MARKER);
 });
 
-test('14a control: a link whose target stays INSIDE the project folder is still read (a tool state folder may be a link inside the project)', (t) => {
-  if (!JUNCTION_OK) { t.skip('this seat cannot create a junction on this box'); return; }
-  const { home, proj } = sandbox();
-  t.after(() => clean(home));
-  fs.mkdirSync(path.join(proj, '.git'));
-  fs.mkdirSync(path.join(proj, 'shared', 'coal'), { recursive: true });
-  fs.writeFileSync(path.join(proj, 'shared', 'coal', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER }));
-  fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude'), 'junction');
-  assert.strictEqual(loadMergedConfig({ cwd: proj, home }).language, OUTSIDE_MARKER);
-});
+// 15b bounce 1 (the head's ruling): the expected folders are LITERAL (`<root>/.claude/coal` and its siblings), so a link at
+// ANY component between the project root and the config is refused, wherever it points, a target inside the project included.
+// The witness is the same marker; the control above (a real folder) proves the marker is readable when nothing is linked.
+for (const [type, ok, label] of [['junction', () => JUNCTION_OK, 'junction'], ['dir', () => DIRLINK_OK, 'directory symlink']]) {
+  for (const [where, rel, plant] of [
+    ['at .claude (target inside the project)', 'coal/coalledger.json', (proj, type2) => { fs.mkdirSync(path.join(proj, 'shared', 'coal'), { recursive: true }); fs.writeFileSync(path.join(proj, 'shared', 'coal', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER })); fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude'), type2); }],
+    ['at .claude/coal (target inside the project)', 'coalledger.json', (proj, type2) => { fs.mkdirSync(path.join(proj, '.claude')); fs.mkdirSync(path.join(proj, 'shared')); fs.writeFileSync(path.join(proj, 'shared', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER })); fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude', 'coal'), type2); }],
+  ]) {
+    test(`15b: a ${label} planted ${where} is refused too, the folder pin is literal (capability-gated)`, (t) => {
+      if (!ok()) { t.skip(`this seat cannot create a ${label} on this box`); return; }
+      const { home, proj } = sandbox();
+      t.after(() => clean(home));
+      fs.mkdirSync(path.join(proj, '.git'));
+      plant(proj, type);
+      assert.notStrictEqual(loadMergedConfig({ cwd: proj, home }).language, OUTSIDE_MARKER, 'the config behind a link inside the project was read');
+      let notices;
+      assert.doesNotThrow(() => { notices = configNotices(proj, home); }, 'a refused read is absent, never a throw');
+      assert.ok(notices.some((n) => n.includes('UNREADABLE')), 'the notice classifier refuses it too: ' + JSON.stringify(notices));
+    });
+  }
+}

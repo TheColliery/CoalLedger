@@ -578,6 +578,34 @@ for (const [type, label] of [['junction', 'junction'], ['dir', 'directory symlin
   });
 }
 
+// 15b bounce 1: the pin is literal. A link at ANY component between root and the file is refused, its target inside root included.
+for (const [type, label] of [['junction', 'junction'], ['dir', 'directory symlink']]) {
+  const ok = canLinkDirKind(type);
+  test(`repoEntryKind 15b: a ${label} at a PARENT folder whose target stays INSIDE root is "other" too (capability-gated)`, (t) => {
+    if (!ok) { t.skip(`this seat cannot create a ${label} on this box`); return; }
+    const root = scratch('cl-inlink-root-');
+    try {
+      fs.mkdirSync(path.join(root, 'shared', 'coal'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'shared', 'coal', 'c.json'), 'INSIDE');
+      fs.symlinkSync(path.join(root, 'shared'), path.join(root, '.claude'), type);
+      assert.equal(repoEntryKind(path.join(root, '.claude', 'coal', 'c.json'), root), 'other', 'link at the first component');
+      assert.equal(readRepoFileBounded(path.join(root, '.claude', 'coal', 'c.json'), root, MAX_CONFIG_BYTES), null);
+      assert.equal(repoEntryKind(path.join(root, 'shared', 'coal', 'c.json'), root), 'file', 'control: the real path of the same file reads');
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+  test(`repoEntryKind 15b: a ${label} at the SECOND component (.claude/coal) whose target stays inside root is "other" (capability-gated)`, (t) => {
+    if (!ok) { t.skip(`this seat cannot create a ${label} on this box`); return; }
+    const root = scratch('cl-inlink2-root-');
+    try {
+      fs.mkdirSync(path.join(root, '.claude'));
+      fs.mkdirSync(path.join(root, 'shared'));
+      fs.writeFileSync(path.join(root, 'shared', 'c.json'), 'INSIDE');
+      fs.symlinkSync(path.join(root, 'shared'), path.join(root, '.claude', 'coal'), type);
+      assert.equal(repoEntryKind(path.join(root, '.claude', 'coal', 'c.json'), root), 'other');
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
 test('repoEntryKind 14a: a path that climbs out with .. is "other", and a plain file directly in the root (the legacy dotfile) is still "file"', () => {
   const root = scratch('cl-dotdot-root-');
   const outside = scratch('cl-dotdot-outside-');
@@ -589,6 +617,12 @@ test('repoEntryKind 14a: a path that climbs out with .. is "other", and a plain 
     assert.equal(repoEntryKind(climbing, root), 'other');
     assert.equal(repoEntryKind(path.join(root, '.legacy.json'), root), 'file');
   } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
+test('repoEntryKind 15b: the root itself is never an entry of the project (it is "other", not "dir")', () => {
+  const root = scratch('cl-isroot-');
+  try { assert.equal(repoEntryKind(root, root), 'other'); }
+  finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
 test('repoEntryKind 14a: a missing parent folder is "missing", never a throw', () => {
