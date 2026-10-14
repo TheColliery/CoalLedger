@@ -28,12 +28,11 @@ import path from 'node:path';
 
 // Step 2 of the mirror sheet, re-measured HERE: the largest JSONC config this room
 // ships or documents is its own `.coalledger.json` template (a few KB); 1 MiB gives
-// three orders of magnitude of headroom for a hand-edited config. The largest shipped
-// doc this room has is this very MEMORY.md file (its own DECLARED CAP is 107,000
-// characters, well under 1 MiB) -- 4 MiB gives similar headroom over any doc a user
-// would plausibly hand this room to scan (re-derive: `node -e "console.log(Math.max(...
-// require('fs').readdirSync('.').filter(f=>f.endsWith('.md')).map(f=>require('fs').statSync(f).size)))"`
-// from the repo root, or just: this room's biggest tracked .md file is well under 1 MB).
+// three orders of magnitude of headroom for a hand-edited config. The largest
+// TRACKED doc this room has is its CHANGELOG.md (about 100 KB on 2026-10-15; MEMORY.md is machine-local and untracked,
+// so it is not the reference) -- 4 MiB gives similar headroom over any doc a user would plausibly hand this
+// room to scan. Re-derive the largest TRACKED .md, never read a number off this comment:
+// `git ls-files '*.md' | xargs wc -c | sort -rn | head -3` from the repo root (the first row is the total).
 export const MAX_CONFIG_BYTES = 1024 * 1024; // 1 MiB
 export const MAX_DOC_BYTES = 4 * 1024 * 1024; // 4 MiB
 
