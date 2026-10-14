@@ -29,6 +29,12 @@ jobs:
     name: Scorecard analysis
     runs-on: ubuntu-latest
     permissions:
+      # CWK2-031 (CodeRabbit, PR #20): a job-level `permissions:` block REPLACES the workflow-level one, it
+      # does not merge (the reason codeql.yml's job block states), so the top-level `contents: read` does not
+      # reach this job and every scope omitted here is `none`. `actions/checkout` below therefore ran with no
+      # contents read granted; it resolves today because the repo is PUBLIC. The grant keeps the job from
+      # silently breaking the day the repo, the token defaults or the checkout action change.
+      contents: read
       security-events: write
       id-token: write
     timeout-minutes: 15 # testing.md: every run has a finite clock; CWK-154 (2) — the scorecard-action's own run time across many checks is not under this room's control
