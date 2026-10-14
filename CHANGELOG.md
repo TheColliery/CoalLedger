@@ -2,6 +2,22 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.15.0-beta.5] - 2026-10-15
+
+Refuse config reads through a linked folder; hooks in exec form
+
+A cloned repo could plant a link at the project's config folder and make the plugin read a config from outside the project; that read is now refused. The hooks also run in exec form, so they no longer depend on a shell. The installed plugin moved in four files: `scripts/lib/repo-fs.mjs` (three byte-equal copies) and `hooks/hooks.json`; every other change below is repo tooling the installed plugin does not carry.
+
+### Security
+- **A link planted at a parent folder of the project config no longer carries the read out of the project.** Before, the read refused a link only when the config FILE was one, so a Windows junction or a POSIX symlink at `.claude` or `.claude/coal` (or the same under `.agents` or `.gemini`) left the file looking plain and the merged config could come from outside the project. `repoEntryKind` now walks every folder between the project root and the entry with `lstat`, refuses any link wherever it points (a target inside the project included), and requires the entry to resolve strictly inside its own folder; a refused read is treated as absent. Commits `a6324fb5106f67320e7a044a633247fb9ad7907c` (the first fix) and `9f486349a000ff014eb3c9298efa9c606248b8ae` (the literal folder pin); the source `scripts/lib/repo-fs.mjs` and its three generated copies are blob `3daf0c6fd2d395e6519c77bcfbd32f77a691fa6c`. The Windows junction cases ran red on the old code and green after; the POSIX symlink cases are capability-probed and run on the CI legs. Not covered: a link swapped between the check and the open.
+
+### Fixed
+- **The hooks run in exec form (CWK2-027, `bfc74a21b629ff68b502c8222b615308da3c82ec`).** `hooks/hooks.json` (blob `c8927803732ea41f87686804cbfcdc1a1686597d`, the same in `plugin/`) now sets `command` to `node` and puts `${CLAUDE_PLUGIN_ROOT}/hooks/<script>.js` in `args`, with no `shell` and no `onFailure`. Claude Code's hooks reference prefers the exec form for any hook that references a path placeholder. The measured failure: handed to PowerShell, the old string `node "${CLAUDE_PLUGIN_ROOT}/hooks/..."` expanded the placeholder to nothing and node exited 1, while the exec form exited 0 (CoalWash's measurement, `14a-coalwash` Item 2). The check for this room ran on Claude Code 2.1.299 with Git for Windows present, so Claude Code's own no-Git fallback was not run. `verify.mjs` now parses the manifest and fails a shell-form or non-`node` entry, and `scripts/hooks-exec-form.test.mjs` (blob `b9c84e33572f9b633fc97a8aaa9a4beeb587fbf5`) spawns the SessionStart entry without a shell. The Antigravity template `platform-configs/hooks.json` is unchanged: no measurement shows that engine honours `args`.
+- **`skills/doc-quality/SKILL.md` step 2c states the real output.** It said "never the exit code" and described the shared exit contract in a garbled sentence; `lang-mechanics.mjs` prints `N finding(s) across M file(s)`, never 2b's `TOTAL:` line. The sentence now says so (the mirror under `plugin/` is rebuilt, and the skill text is part of the shipped plugin).
+
+### Changed
+- **Repo tooling, not in the installed plugin.** `.github/workflows/dependabot-auto-merge.yml` is the org canon's bytes (blob `50c6f8bc2f4f87f3359a731605d92404dcf77524`, `81b7f16e3a46cb8b4d4e7a2a5b0b54d56c74ea89`); `.github/workflows/scorecard.yml` gains `contents: read` on its job (`91c5ea64eac26369fcf59dfb54e68b53ba4aa32b`); the empty-dist test of `build-claude-ai-zips` also asserts the guard's own message (`a738d8b92052d43a7a3d74e6b44173ff9962a1ef`); the `MAX_DOC_BYTES` comment names the largest tracked Markdown file (`caa250d355bddd545e115d296bfbd9a91b8dc2c9`, comment only); the test runner's summary line names the declared-test lower bound failure (`e1ced9c13857497e6da43658aa08e224ba69d687`).
+
 ## [0.15.0-beta.4] - 2026-10-09
 
 Org-canon census and test runner; census leaves plugin
