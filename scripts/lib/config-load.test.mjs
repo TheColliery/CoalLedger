@@ -1026,9 +1026,9 @@ test('14a control: the same config in a REAL .claude/coal folder inside the proj
 // ANY component between the project root and the config is refused, wherever it points, a target inside the project included.
 // The witness is the same marker; the control above (a real folder) proves the marker is readable when nothing is linked.
 for (const [type, ok, label] of [['junction', () => JUNCTION_OK, 'junction'], ['dir', () => DIRLINK_OK, 'directory symlink']]) {
-  for (const [where, rel, plant] of [
-    ['at .claude (target inside the project)', 'coal/coalledger.json', (proj, type2) => { fs.mkdirSync(path.join(proj, 'shared', 'coal'), { recursive: true }); fs.writeFileSync(path.join(proj, 'shared', 'coal', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER })); fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude'), type2); }],
-    ['at .claude/coal (target inside the project)', 'coalledger.json', (proj, type2) => { fs.mkdirSync(path.join(proj, '.claude')); fs.mkdirSync(path.join(proj, 'shared')); fs.writeFileSync(path.join(proj, 'shared', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER })); fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude', 'coal'), type2); }],
+  for (const [where, plant] of [
+    ['at .claude (target inside the project)', (proj, type2) => { fs.mkdirSync(path.join(proj, 'shared', 'coal'), { recursive: true }); fs.writeFileSync(path.join(proj, 'shared', 'coal', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER })); fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude'), type2); }],
+    ['at .claude/coal (target inside the project)', (proj, type2) => { fs.mkdirSync(path.join(proj, '.claude')); fs.mkdirSync(path.join(proj, 'shared')); fs.writeFileSync(path.join(proj, 'shared', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER })); fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude', 'coal'), type2); }],
   ]) {
     test(`15b: a ${label} planted ${where} is refused too, the folder pin is literal (capability-gated)`, (t) => {
       if (!ok()) { t.skip(`this seat cannot create a ${label} on this box`); return; }
