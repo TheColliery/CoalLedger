@@ -1,0 +1,52 @@
+name: Scorecard
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: '0 6 * * 2'
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+
+permissions:
+  contents: read
+
+# cancel-in-progress: FALSE (CWK-058, canon: .github/SKILL-REPO-PATTERN.md) -- this
+# DISAGREES with codeql.yml, which cancels, and that is deliberate: both upload a
+# SARIF, so the SARIF is not the discriminator. CodeQL publishes ONLY to GitHub code
+# scanning, where a missed upload leaves the prior analysis standing; this workflow
+# ALSO posts to the OpenSSF API, a third-party endpoint we do not control, where a
+# cancelled publish can be left partially applied. It is also schedule-driven, so
+# overlap is rare and queueing costs nothing.
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # CWK2-031 (CodeRabbit, PR #20): a job-level `permissions:` block REPLACES the workflow-level one, it
+      # does not merge (the reason codeql.yml's job block states), so the top-level `contents: read` does not
+      # reach this job and every scope omitted here is `none`. `actions/checkout` below therefore ran with no
+      # contents read granted; it resolves today because the repo is PUBLIC. The grant keeps the job from
+      # silently breaking the day the repo, the token defaults or the checkout action change.
+      contents: read
+      security-events: write
+      id-token: write
+    timeout-minutes: 15 # testing.md: every run has a finite clock; CWK-154 (2) — the scorecard-action's own run time across many checks is not under this room's control
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+        with:
+          sarif_file: results.sarif

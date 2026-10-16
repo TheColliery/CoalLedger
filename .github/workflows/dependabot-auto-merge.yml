@@ -1,0 +1,48 @@
+name: Dependabot auto-merge
+
+# Auto-merge Dependabot PATCH/MINOR bumps AFTER the required checks pass, for the
+# maintainer's bot ONLY. A ruleset on `main` (require all-green + analyze, bypass
+# the owner) makes `--auto` WAIT for CI+CodeQL — without it `--auto` would merge
+# immediately, so the ruleset is load-bearing, not optional. A red check leaves the
+# PR open (the dependabot.yml `assignees` then notifies the maintainer). MAJOR bumps
+# are never auto-merged (a human reviews the breaking change). Only `dependabot[bot]`
+# reaches the merge step, so a human-opened PR never auto-merges.
+on: pull_request
+
+# Minimal top-level token (Scorecard Token-Permissions best practice); only the
+# merge job escalates to the write scopes `gh pr merge` needs.
+permissions:
+  contents: read
+
+# cancel-in-progress: TRUE -- the test is ATOMICITY, not read-vs-write. Enabling auto-merge
+# (`gh pr merge --auto`) is IDEMPOTENT within one PR's own group, so a cancelled run corrupts
+# nothing: the next push to that same PR simply re-enables it. Per-PR grouping, never per-ref:
+# two different Dependabot PRs must not serialise behind each other (the ruling lives in
+# TheColliery/.github SKILL-REPO-PATTERN.md's `concurrency:` bullet).
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # testing.md: every run has a finite clock; a room re-sizes this from its own measured suite time
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      # Patch + minor auto-merge, an ALLOWLIST (an empty or new update-type waits for a human too, like a major bump).
+      - name: Enable auto-merge (patch/minor)
+        if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' }}
+        run: gh pr merge --squash --auto "$PR_URL"
+        env:
+          # The URL goes through an env variable, never interpolated into the script (GitHub's hardening
+          # guide: script injection). html_url is GitHub-generated, so this closes a shape, not a live hole.
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
