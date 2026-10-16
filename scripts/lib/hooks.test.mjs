@@ -253,7 +253,7 @@ test('Stop emits via systemMessage, never hookSpecificOutput.additionalContext (
   } finally { clean(home, tmp, proj); }
 });
 
-test('Stop drift note ROUTES the action (board #25): still names the fact, no longer commands a forbidden write', () => {
+test('Stop drift note is addressed to the USER (the model never reads a systemMessage): names the fact and the action, no agent-addressed clauses', () => {
   const { home, tmp, proj } = sandbox();
   try {
     withMemory(proj);
@@ -263,7 +263,9 @@ test('Stop drift note ROUTES the action (board #25): still names the fact, no lo
     assert.ok(driftEmitted(r.stdout), `expected the quiet systemMessage note, got: ${r.stdout}`);
     const out = JSON.parse(r.stdout);
     const line = out.systemMessage;
-    assert.ok(line.includes('report the drift'), `expected the station-worker routing clause, got: ${line}`);
+    assert.ok(line.includes('MEMORY.md was not updated') && line.includes('shown to you only'), `expected the user-addressed fact and action, got: ${line}`);
+    assert.ok(!line.includes('station worker') && !line.includes("session's record") && !line.includes('report the drift'), `the agent-addressed clauses must be GONE, got: ${line}`);
+    assert.ok(line.startsWith('[CoalLedger]') && line.includes('docsDriftNudge=false'), `prefix and off-switch kept, got: ${line}`);
     assert.ok(!line.includes('if this doc work is worth keeping, update the project MEMORY/status line before ending'), `the old unconditional imperative must be GONE, not just supplemented, got: ${line}`);
   } finally { clean(home, tmp, proj); }
 });

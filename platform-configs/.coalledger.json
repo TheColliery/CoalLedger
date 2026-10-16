@@ -48,7 +48,8 @@
   // Docs memory-drift advisory (the DOCS mirror of CoalMine's memoryDriftNudge,
   // which covers CODE). When the agent finishes responding, if documentation
   // files were edited but MEMORY.md has not been updated this session, one QUIET
-  // model-context note is emitted — no report, no fix menu, never blocks. Once
+  // line is shown to you in the transcript and the interactive UI (the model does
+  // not read it) — no report, no fix menu, never blocks. Once
   // you update MEMORY.md it stays quiet for the rest of the session. Default on;
   // set false to silence.
   "docsDriftNudge": true,

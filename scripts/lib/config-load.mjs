@@ -400,7 +400,7 @@ function readJsonc(file, root) {
 //                    because the day such a reader lands, the guard must
 //                    already be correct and the direction already argued.
 // NOT clamped, and each for its OWN reason — the classifier is BLAST, not type:
-//   docsDriftNudge   also a boolean, but it suppresses ONE quiet model-only
+//   docsDriftNudge   also a boolean, but it suppresses ONE quiet user-only
 //                    line: no offer, no scan, no spend. Re-enabling that in a
 //                    single project is a legitimate use, so it stays plain.
 //                    (docLeak vs docsDriftNudge is why two booleans must never

@@ -2,6 +2,24 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.15.0-beta.6] - 2026-10-16
+
+A cloned config cannot re-enable canaries; linked files no longer hang
+
+Two security fixes in the installed plugin: a cloned repo's invalid `disabledCanaries` value could re-enable a canary you had disabled, and a linked Markdown file nested deeper than the container cap could hang the doc-structure scan. The installed plugin moved in seven files: `scripts/lib/config-load.mjs`, `scripts/lib/config-schema.mjs`, `scripts/lib/md-checks.mjs` (two copies), `skills/doc-quality/lib/emdash.mjs`, `skills/doc-quality/lib/lang-mechanics.mjs` and `hooks/coalledger-drift-stop.js`; every other change below is repo tooling the installed plugin does not carry.
+
+### Security
+- **An invalid `disabledCanaries` in a project config no longer re-enables a canary (commit `8f4014bd467eec3aa927753d52cc11984e8996ad`).** The clamp unioned the project and global lists only when both were arrays; a project value that was not an array (a string, a number, `null`, an object) skipped the union and left the junk in the merged config, so the global list was lost and a canary you had disabled came back. Each side is now read as itself when it is an array and as the empty default otherwise, then unioned: an invalid project value keeps your global list, and a project may add canaries to the list, never remove them. The other clamped keys were checked in the same loop family and already handle an invalid value on either side. The Windows cases ran red on the old code and green after; the capability-probed link cases run on the CI legs.
+- **A linked Markdown file nested past the container-depth cap could hang the scan (commit `5c759390c036fbb5b948e178f24f286865b5dca1`).** The cross-file anchor check parsed a link's target under the size cap only, so a small target nested thousands of blockquote or list levels deep took seconds (5.9 s for a 32 KB file in the room's measurement) and could report a false `anchor-missing`. The target now gets the same depth guard as the doc you name and is left unchecked past the cap, as an oversized target already was.
+
+### Fixed
+- **`emdash` and `lang-mechanics` read four Markdown constructs correctly (commit `5917c4267f66affcf33299ee29b35f2541724626`).** A fence opener indented by a tab, a link destination holding a balanced parenthesis, a fence closer followed by more text, and a backtick run inside a longer one are read as CommonMark reads them, so a hit inside real code is no longer reported and a hit outside it is no longer hidden. Two residues are named in the engines' headers: a backtick fence whose info string holds a backtick, and a destination nested two parentheses deep.
+- **The docs memory-drift reminder speaks to you.** It is a Stop `systemMessage`, which the transcript and the interactive UI show and the model never reads (measured 2026-10-15), but its text addressed the agent. It now says what happened and what to do for the person reading it, with the `[CoalLedger]` prefix and the `docsDriftNudge=false` off-switch kept; the `docsDriftNudge` help text, the config template and the README say the same.
+- **README `## Permissions` names all three bundled engines.** It named only `md-checks`; the doc-quality skill also runs `emdash` and `lang-mechanics`, all read-only. The README `Docs` link points at the live page, `https://docs.thecolliery.org/tools/coalledger`.
+
+### Changed
+- **Repo tooling, not in the installed plugin.** `scripts/lib/wave-run.test.mjs` (blob `2a6863199804ab9dcb6393f83c4daca3150d93b7`), `scripts/lib/git-env-census.mjs` (`82f20dac00575ae6d30ad78c2c63dfecd81dfef9`) and `scripts/lib/machine-reading.mjs` (`5f861a3427e0c06ee677e0e3fe59c912237a86ab`) are the org canon's bytes (commit `03408e8b52acec0ee55950f0548552ddd90fcba2`); `.github/workflows/claude-ai-zips.yml` (blob `8d194d755fbc4274d31c59ba9b50d0785bc7960e`, commit `e720a2a8c75a90a66c4ec270f92768475a8226c0`) follows the canon except one line, the `actions/setup-node` pin, which stays at the newer version Dependabot landed here. The canon's workflow step that writes `SHA256SUMS.txt` runs on a stable tag or a launch-form dispatch, so it is cleared by a run on the CI legs, not by a read.
+
 ## [0.15.0-beta.5] - 2026-10-15
 
 Refuse config reads through a linked folder; hooks in exec form

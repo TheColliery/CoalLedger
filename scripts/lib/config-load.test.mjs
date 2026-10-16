@@ -395,7 +395,7 @@ test('clamp: scanEverything — an INVALID project value gets no say and the CAN
 test('clamp: docsDriftNudge stays UNCLAMPED — deliberate, by BLAST not type (§9)', () => {
   const { home, proj } = sandbox();
   try {
-    // Same TYPE as docLeak, different BLAST: it suppresses one quiet model-only
+    // Same TYPE as docLeak, different BLAST: it suppresses one quiet user-only
     // line — no offer, no scan, no spend. Re-enabling it in a single project is
     // a legitimate use. This test exists so the asymmetry is deliberate and
     // locked, not an oversight someone "fixes" later.
