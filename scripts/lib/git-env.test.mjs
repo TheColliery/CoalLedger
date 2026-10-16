@@ -184,3 +184,36 @@ test('THE CURE: the identical poisoned GIT_DIR, with the fixture spawn wrapped i
     fs.rmSync(fixture, { recursive: true, force: true });
   }
 });
+
+// ---- 16f unit B (CWK2-043): the GIT_* strip is CASE-INSENSITIVE ----
+// `key.startsWith('GIT_')` missed `git_dir`, which Windows treats as the SAME variable as GIT_DIR (environment names there are case-insensitive, and the copy of
+// process.env keeps the spelling it was set with). A lower-case or mixed-case ambient GIT_* therefore reached every git child that took its env from gitEnv().
+// The fix is one line: `/^GIT_/i.test(key)`, the very shape the sibling CoalFace git-test-env.mjs line 29 already carries.
+function withEnv(vars, fn) {
+  const saved = {};
+  for (const k of Object.keys(vars)) { saved[k] = Object.prototype.hasOwnProperty.call(process.env, k) ? process.env[k] : undefined; process.env[k] = vars[k]; }
+  try { return fn(); } finally { for (const k of Object.keys(vars)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } }
+}
+const gitLike = (env) => Object.keys(env).filter((k) => /^git_/i.test(k) && k !== 'GIT_CEILING_DIRECTORIES');
+for (const name of ['git_dir', 'Git_Dir', 'git_index_file', 'GIT_dir']) {
+  test(`gitEnv 16f B: an ambient ${name} is stripped from the env a git child gets`, () => {
+    withEnv({ [name]: path.join(os.tmpdir(), 'poisoned-git-dir') }, () => {
+      assert.deepStrictEqual(gitLike(gitEnv(os.tmpdir())), [], `${name} survived the strip`);
+    });
+  });
+}
+test('gitEnv 16f B: the poisoned lower-case name reaches a REAL child process on the old strip (the witness), and does not now', () => {
+  withEnv({ git_dir: path.join(os.tmpdir(), 'poisoned-git-dir') }, () => {
+    const r = spawnSync(process.execPath, ['-e', 'console.log(JSON.stringify(Object.keys(process.env).filter((k) => /^git_/i.test(k) && k !== "GIT_CEILING_DIRECTORIES")))'],
+      { env: gitEnv(os.tmpdir()), encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.deepStrictEqual(JSON.parse(r.stdout), [], 'a lower-case git_dir must not reach the child');
+  });
+});
+test('gitEnv 16f B: the ceiling is still set and ordinary variables survive (the strip is the GIT_ family only)', () => {
+  withEnv({ coalledger_keep_me: 'yes' }, () => {
+    const env = gitEnv(os.tmpdir());
+    assert.strictEqual(env.GIT_CEILING_DIRECTORIES, os.tmpdir());
+    assert.strictEqual(env.coalledger_keep_me, 'yes');
+  });
+});

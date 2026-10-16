@@ -17,12 +17,15 @@
 // GIT_COMMON_DIR, GIT_OBJECT_DIRECTORY, and anything else a future git version adds under
 // the same prefix).
 //
+// The prefix test is CASE-INSENSITIVE (CWK2-043): Windows reads environment names without regard to case, so a
+// spawned `git` honours a lower-case `git_dir` exactly like GIT_DIR, and the copy of process.env keeps the spelling it was set with.
+//
 // `ceilingDir` is the one directory a spawn is never allowed to walk up past (ordinarily
 // its own parent) -- belt-and-suspenders on top of the GIT_* strip.
 export function gitEnv(ceilingDir) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
-    if (key.startsWith('GIT_')) delete env[key];
+    if (/^GIT_/i.test(key)) delete env[key];
   }
   env.GIT_CEILING_DIRECTORIES = ceilingDir;
   return env;

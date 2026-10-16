@@ -7,7 +7,7 @@
 export const ROOM_GIT_ENV_PINS = [
   {
     rel: 'scripts/lib/git-env.test.mjs',
-    blob: '1deb23098a7905c64451c4bcb9c909b2c321742f',
+    blob: '4aede6cb91de2ba264252645f1cfa2048135c5fc',
     why: 'the hazard proof: three spawns (the fixture half, the bare-flip capability probe and the victim half) feed a deliberately poisoned, unguarded GIT_DIR to reproduce the real incident (CWK-133); the census refuses all three (lines 99, 120, 144), which is the point of the test',
   },
   {
