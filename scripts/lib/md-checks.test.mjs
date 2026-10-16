@@ -404,10 +404,11 @@ test('16e E: a target exactly AT the depth cap is still parsed (the guard is the
   const f = checkDocument('# Main\n\n[d](./edge.md#nope)\n', { filePath: path.join(dir, 'main.md') }).filter((x) => x.check === 'anchor-missing');
   assert.strictEqual(f.length, 1, 'depth 200 is not over the cap of 200');
 });
-test('16e E: a hostile linked target returns in bounded time (the second leg; the quadratic parse took 5.6 s at this size)', (t) => {
+// 16e bounce 2 (CodeRabbit t127, the house rule testing.md Determinism: no real clock in a unit test): the timing leg that stood here asserted a wall-clock bound and
+// would fail a correct build on a loaded runner. The deterministic leg above already proves the guard (red first); this one keeps the HOSTILE size (the 16000-marker target
+// that took 5.6 s to parse) as a second fixture and asserts the same clockless outcome: the target is left unchecked, so nothing is reported against it.
+test('16e E: a hostile 16000-marker linked target is left unchecked, so nothing is reported against it (no clock)', (t) => {
   const dir = linkFixture(t, { 'hostile.md': '# Hostile\n\n' + NEST(16000) + 'x\n' });
-  const t0 = process.hrtime.bigint();
-  checkDocument('# Main\n\n[d](./hostile.md#nope)\n', { filePath: path.join(dir, 'main.md') });
-  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-  assert.ok(ms < 1000, 'the cross-file parse must be guarded, took ' + ms.toFixed(0) + 'ms');
+  const f = checkDocument('# Main\n\n[d](./hostile.md#nope)\n', { filePath: path.join(dir, 'main.md') }).filter((x) => x.check === 'anchor-missing');
+  assert.strictEqual(f.length, 0, 'a target nested past the cap is not parsed, so no anchor-missing is reported against it');
 });
