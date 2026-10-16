@@ -14,8 +14,10 @@
 // to do. `skip` stays for a rebuild that genuinely is byte-identical (reproducible zips would make
 // it reachable; that cure is a pending decision tied to the prune step, AR-62). A run that died
 // BEFORE SHA256SUMS.txt was uploaded (it uploads last) finds no prior file and uploads normally.
+// 09g (CoalMine issue 42, M1): the staged files now carry the tag commit's time and the zip step zips a sorted list with -X -D under TZ=UTC, so a rebuild on the same zip program IS
+// byte-identical and `skip` is reachable; a runner image with a different zip program can still differ, and then `fail` stays the safe outcome described above.
 export function decideUpload(existingSums, freshSums) {
   if (existingSums === null) return { action: 'upload-clobber', reason: 'no prior SHA256SUMS.txt on this Release -- nothing to clobber, this is the first run for the tag' };
   if (existingSums === freshSums) return { action: 'skip', reason: 'a fresh rebuild matches what is already published byte-for-byte, nothing to upload' };
-  return { action: 'fail', reason: 'a fresh rebuild of this tag differs from what is already published, and nothing was overwritten. Expected on a re-run of an already-published tag: zip stores file mtimes, so a rebuild never matches. A published version must never change after the fact; if this was not a re-run, investigate before forcing an overwrite' };
+  return { action: 'fail', reason: 'a fresh rebuild of this tag differs from what is already published, and nothing was overwritten. Since 09g a rebuild on the same runner image reproduces the published bytes (file times from the tag commit, a fixed file order), so a difference means a different zip program or a changed tree. A published version must never change after the fact; investigate before forcing an overwrite' };
 }
