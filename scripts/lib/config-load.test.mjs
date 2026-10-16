@@ -11,7 +11,7 @@ import { globalConfigPath, findProjectRoot, projectConfigCandidates, projectConf
 // function exists, rather than failing the whole file at link time and taking
 // every pre-existing test with it.
 const configNotices = (...a) => configLoad.configNotices(...a);
-import { clampedRead } from './config-schema.mjs'; // CWK-057: the clamp and the schema validator compose; one test asserts the composed result
+import { clampedRead, CONFIG_SCHEMA } from './config-schema.mjs'; // CWK-057: the clamp and the schema validator compose; one test asserts the composed result
 
 // realpath'd sandboxes: on macOS os.tmpdir() is a symlink (/var -> /private/var);
 // resolving here keeps assertions in the same physical form the walk sees.
@@ -302,6 +302,76 @@ test('clamp: disabledCanaries with an invalid project value and NO global file r
   } finally { clean(home, proj); }
 });
 
+// 16e bounce 1 (INSPECT F1 HIGH, F2 MEDIUM on unit D): the clamp decided a value's SHAPE (`Array.isArray`, a lowercase string match) instead of its VALIDITY
+// (`validateValue`, the rule `clampedRead` applies on read). A value the schema rejects is read as the factory default, so a shape-valid but schema-invalid
+// project value reached `out`, `clampedRead` threw the WHOLE key to the default, and the user's own global setting was lost to a cloned repo. The rule now:
+// a value the schema does not accept is INVALID on either side, never coerced toward the less safe side; an invalid side takes the other valid side or the default.
+// F1: an array holding a non-string element is invalid as a whole (the schema's `strArr`).
+for (const [label, g, p, want] of [
+  ['a number element', ['doc-leak'], [7], ['doc-leak']],
+  ['a null beside a valid name', ['all'], ['doc-rot', null], ['all']],
+  ['an object element', ['doc-leak'], [{}], ['doc-leak']],
+  ['a nested array element', ['doc-leak'], [['doc-rot']], ['doc-leak']],
+  ['a boolean element', ['doc-leak'], [true], ['doc-leak']],
+  ['a non-string element in the GLOBAL list (the global is the invalid side, the project stands)', [7], ['doc-rot'], ['doc-rot']],
+  ['an all-valid mixed-case project list still unions and folds on read', ['doc-leak'], ['Doc-Rot'], ['doc-leak', 'doc-rot']],
+]) {
+  test(`clamp 16e F1: disabledCanaries with ${label} keeps the valid side`, () => {
+    const { home, proj } = sandbox();
+    try {
+      const merged = cascade(home, proj, { disabledCanaries: g }, { disabledCanaries: p });
+      assert.deepStrictEqual([...clampedRead(merged, 'disabledCanaries')].sort(), [...want].sort());
+    } finally { clean(home, proj); }
+  });
+}
+// F2: a bool key is valid only as a JSON boolean; the STRING "false" is not one (the schema rejects it, clampedRead reads it as the default `true`).
+for (const [key, g, p, want] of [
+  ['docLeak', false, 'false', false],
+  ['docLeak', false, 'FALSE', false],
+  ['docLeak', false, 'true', false],
+  ['docLeak', false, 0, false],
+  ['docLeak', false, null, false],
+  ['docLeak', false, [], false],
+  ['docLeak', false, {}, false],
+  ['docLeak', false, true, false], // control: a valid escalation loses to the global
+  ['docLeak', true, false, false], // control: a valid quieter value wins
+  ['scanEverything', false, 'true', false],
+  ['scanEverything', false, 1, false],
+  ['scanEverything', true, 'false', true], // an invalid project value never quietens a valid global
+]) {
+  test(`clamp 16e F2: ${key} global ${JSON.stringify(g)} with project ${JSON.stringify(p)} reads ${JSON.stringify(want)}`, () => {
+    const { home, proj } = sandbox();
+    try {
+      assert.strictEqual(clampedRead(cascade(home, proj, { [key]: g }, { [key]: p }), key), want);
+    } finally { clean(home, proj); }
+  });
+}
+// The sweep over the enum keys: every type the schema rejects must lose to the user's global, never escalate it.
+for (const [key, g] of [['coalledgerMode', 'off'], ['updateMode', 'off']]) {
+  for (const p of [7, null, true, [], {}, 'bogus', '', ' off', 'auto ']) {
+    test(`clamp 16e F2 sweep: ${key} global ${JSON.stringify(g)} with an invalid project ${JSON.stringify(p)} stays ${JSON.stringify(g)}`, () => {
+      const { home, proj } = sandbox();
+      try {
+        assert.strictEqual(clampedRead(cascade(home, proj, { [key]: g }, { [key]: p }), key), g);
+      } finally { clean(home, proj); }
+    });
+  }
+}
+// An invalid GLOBAL value reads as the schema default on the ceiling side too (no raw junk rides into `out`).
+for (const [key, g, p] of [['docLeak', 'false', true], ['scanEverything', 'true', true], ['updateMode', 7, 'auto']]) {
+  test(`clamp 16e F2: an invalid global ${key} ${JSON.stringify(g)} is the schema default for the ceiling, so a project value cannot ride past it`, () => {
+    const { home, proj } = sandbox();
+    try {
+      const merged = cascade(home, proj, { [key]: g }, { [key]: p });
+      const def = CONFIG_SCHEMA.find((s) => s.key === key).def;
+      const read = clampedRead(merged, key);
+      // never LOUDER than the default: for the boolean gates the safe index is `false`, for updateMode the ceiling is the default 'ask'
+      if (typeof def === 'boolean') assert.ok(read === false || read === def, `read ${read}`);
+      else assert.ok(['off', 'remind', 'ask'].includes(read), `read ${read}`);
+    } finally { clean(home, proj); }
+  });
+}
+
 test('clamp: an ABSENT global substitutes the schema default as the clamp ceiling (board #111)', () => {
   const { home, proj } = sandbox();
   try {
@@ -356,23 +426,15 @@ test('clamp: scanEverything — a project may still QUIETEN true->false, and a g
       'quietening toward the safe index stays allowed');
     assert.strictEqual(cascade(home, proj, { scanEverything: true }, {}).scanEverything, true,
       'project SILENCE must never clamp a global true away -- the clamp loop only fires when the project sets the key');
-    // Case-folding is what stops a project '"TRUE"' from MISSING the lookup
-    // (indexOf -> -1) and winning through the overlay unclamped -- CoalWash's
-    // H5. It matches the ceiling, so the clamp passes it through with its RAW
-    // spelling preserved (the documented behaviour on this branch). The value
-    // is then a STRING against a `bool` spec, so clampedRead degrades it to the
-    // factory default downstream.
-    // CORRECTED (CWK-057 INSPECT LOW-2): this case is NOT a composition, and
-    // the earlier comment over-credited the clamp. Measured -- clampedRead
-    // ALONE on the raw value returns false, so the validator is sufficient
-    // here; the clamp alone returns the string "TRUE" and is neither necessary
-    // nor sufficient. The genuine composition case is the INVALID value below
-    // ('yes'), where the clamp does the canonical-member substitution the
-    // validator cannot.
-    assert.strictEqual(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }).scanEverything, 'TRUE',
-      'case-folded match rides through with raw spelling (clampedRead is what rejects the wrong TYPE later)');
-    assert.strictEqual(clampedRead(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }), 'scanEverything'), false,
-      'the composed result: a wrong-typed project value cannot turn the key on');
+    // 16e bounce 1 (INSPECT F2) CHANGED THIS STEP, and why the old expectation was WRONG, not the code: it pinned the SHAPE-based result, where a project STRING
+    // 'TRUE' for a bool key indexed as a case-folded member, rode into the merged config raw, and clampedRead then read it as the factory default (false), so a
+    // global `true` the user turned ON was silently lost to a cloned repo's wrong-typed value (and, for docLeak, a string "false" re-opened a gate the user shut).
+    // The rule is now VALIDITY (the schema's own validateValue, what clampedRead applies): a wrong-typed project value is INVALID, gets no say, and the valid
+    // global stands. The case-fold still matters for the ENUM keys (coalledgerMode, updateMode), whose lowercase spelling validates (covered above).
+    assert.strictEqual(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }).scanEverything, true,
+      'a wrong-typed project value gets no say: the valid global true stands');
+    assert.strictEqual(clampedRead(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }), 'scanEverything'), true,
+      'the composed result: a wrong-typed project value neither turns the key on nor wipes the global that did');
   } finally { clean(home, proj); }
 });
 
