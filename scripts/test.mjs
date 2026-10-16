@@ -46,6 +46,7 @@ const TESTS = [
   'scripts/verify-release-shape.test.mjs',
   'scripts/decide-upload.test.mjs',
   'scripts/prune-release-zips.test.mjs',
+  'scripts/front-door-links.test.mjs',
 ];
 
 // Top-level `return` is a SyntaxError in a real ESM module (unlike CJS, which
