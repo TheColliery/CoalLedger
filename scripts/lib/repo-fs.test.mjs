@@ -741,3 +741,48 @@ test('mkdirRepoParents 16f A: a root reached THROUGH a link still works (the roo
     assert.ok(fs.statSync(path.join(real, '.claude', 'coal')).isDirectory());
   } finally { fs.rmSync(real, { recursive: true, force: true }); fs.rmSync(holder, { recursive: true, force: true }); }
 });
+
+// ---- 16f bounce 1 (INSPECT LOW-1, LOW-2): the outside-root test is on the first path SEGMENT; the folder refusals tell the user what to do for a folder ----
+test('16f B1 LOW-1: a real child folder named `..cfg` is inside the root (mkdirRepoParents makes it), and the same chain is still refused as outside when it climbs', () => {
+  const root = scratch('cl-dd-root-');
+  const outside = scratch('cl-dd-out-');
+  try {
+    mkdirRepoParents(path.join(root, '..cfg', 'coal'), root);
+    assert.ok(fs.statSync(path.join(root, '..cfg', 'coal')).isDirectory(), 'a `..cfg` child folder is made inside the project');
+    assert.throws(() => mkdirRepoParents(path.join(root, '..', path.basename(outside), 'x'), root), RepoWriteRefused, 'a real `..` climb out of the root is refused');
+    assert.throws(() => mkdirRepoParents(path.resolve(root, '..'), root), RepoWriteRefused, 'the parent of the root itself is outside');
+    assert.deepStrictEqual(fs.readdirSync(outside), []);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+test('16f B1 LOW-1: isContained and the read-side folder pin (repoEntryKind) accept a `..cfg` child and still refuse a climb', () => {
+  const root = scratch('cl-dd-read-');
+  const outside = scratch('cl-dd-readout-');
+  try {
+    fs.mkdirSync(path.join(root, '..cfg'));
+    fs.writeFileSync(path.join(root, '..cfg', 'a.json'), '{}');
+    fs.writeFileSync(path.join(root, '..cfgfile'), '{}');
+    assert.strictEqual(isContained(path.join(root, '..cfg', 'a.json'), root), true);
+    assert.strictEqual(isContained(path.join(root, '..cfgfile'), root), true);
+    assert.strictEqual(isContained(path.join(root, '..', 'elsewhere'), root), false, 'a climb is outside');
+    assert.strictEqual(isContained(root, root), false, 'the root itself is not contained, as before');
+    assert.strictEqual(repoEntryKind(path.join(root, '..cfg', 'a.json'), root), 'file', 'the folder pin does not read ..cfg as a climb');
+    assert.strictEqual(readRepoFileBounded(path.join(root, '..cfg', 'a.json'), root, 100), '{}');
+    fs.writeFileSync(path.join(outside, 'f.json'), '{}');
+    assert.strictEqual(repoEntryKind(path.join(root, '..', path.basename(outside), 'f.json'), root), 'other', 'an EXISTING entry reached by a climb is still refused');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+test('16f B1 LOW-2: a folder-chain refusal tells the user to fix the folder, never to "replace it with a regular file"; a file target keeps its own text', () => {
+  const root = scratch('cl-dd-msg-');
+  try {
+    fs.writeFileSync(path.join(root, '.claude'), 'x');
+    let folderMsg = '';
+    try { mkdirRepoParents(path.join(root, '.claude', 'coal'), root); } catch (e) { folderMsg = e.message; }
+    assert.match(folderMsg, /\[refused\].*\.claude.*not a directory/);
+    assert.match(folderMsg, /real folder/);
+    assert.doesNotMatch(folderMsg, /regular file/);
+    fs.mkdirSync(path.join(root, 'd'));
+    let fileMsg = '';
+    try { writeRepoFile(path.join(root, 'd'), 'x', root); } catch (e) { fileMsg = e.message; }
+    assert.match(fileMsg, /regular file/, 'a refusal about a FILE target keeps the file text');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

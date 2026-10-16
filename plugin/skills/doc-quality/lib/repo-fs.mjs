@@ -41,10 +41,16 @@ export const MAX_DOC_BYTES = 4 * 1024 * 1024; // 4 MiB
 // a dotfile manager may legitimately symlink; they still get the kind gate + size bound
 // below, since `/dev/zero` there is still a hang (CoalMine's Step 3 ruling 1, re-derived
 // for this room: the global config is this room's ONE home-file read).
+// A relative path escapes its root when its FIRST SEGMENT is `..` (or it is absolute, a different drive on Windows). A lexical `startsWith('..')` also
+// refuses a real child folder named `..cfg` (16f INSPECT LOW-1), so the test is on the segment.
+function escapesRoot(rel) {
+  return rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel);
+}
+
 export function isContained(child, root) {
   if (root == null) return true;
   const rel = path.relative(root, child);
-  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  return rel !== '' && !escapesRoot(rel);
 }
 
 // lstat-FIRST kind gate, before anything opens the path. Returns 'file' (proceed),
@@ -69,7 +75,7 @@ export function isContained(child, root) {
 // swapped in between is not caught here (the fd re-check in readRepoFileBounded only re-checks kind and size).
 function folderChainIsPlain(p, root) {
   const rel = path.relative(root, p);
-  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+  if (rel === '' || escapesRoot(rel)) return false;
   const parents = rel.split(path.sep).slice(0, -1);
   let cur = root;
   for (const part of parents) {
@@ -146,9 +152,12 @@ export function readRepoFileBounded(file, root, maxBytes) {
   finally { try { fs.closeSync(fd); } catch {} }
 }
 
+const FOLDER_FIX = 'make that path a real folder inside the project (remove the link or the file that sits there)';
+
 export class RepoWriteRefused extends Error {
-  constructor(target, why) {
-    super(`[refused] ${target}: ${why} — replace it with a regular file inside the project (or remove it) and re-run.`);
+  // `fix` is what the user is told to do; the default fits a file target, the folder-chain checks pass FOLDER_FIX (16f INSPECT LOW-2).
+  constructor(target, why, fix = 'replace it with a regular file inside the project (or remove it)') {
+    super(`[refused] ${target}: ${why} — ${fix} and re-run.`);
     this.name = 'RepoWriteRefused';
     this.target = target;
   }
@@ -167,18 +176,18 @@ export function mkdirRepoParents(dir, root) {
   if (root == null) { fs.mkdirSync(dir, { recursive: true }); return; }
   const rel = path.relative(root, dir);
   if (rel === '') return;
-  if (rel.startsWith('..') || path.isAbsolute(rel)) throw new RepoWriteRefused(dir, 'it is outside the project root');
+  if (escapesRoot(rel)) throw new RepoWriteRefused(dir, 'it is outside the project root', FOLDER_FIX);
   let cur = root;
   for (const part of rel.split(path.sep)) {
     cur = path.join(cur, part);
     let st = null;
-    try { st = fs.lstatSync(cur); } catch (e) { if (e.code !== 'ENOENT') throw new RepoWriteRefused(cur, `it could not be inspected (${e.code})`); }
+    try { st = fs.lstatSync(cur); } catch (e) { if (e.code !== 'ENOENT') throw new RepoWriteRefused(cur, `it could not be inspected (${e.code})`, FOLDER_FIX); }
     if (st === null) {
-      try { fs.mkdirSync(cur); } catch (e) { if (e.code !== 'EEXIST') throw new RepoWriteRefused(cur, `its folder could not be made (${e.code})`); }
-      try { st = fs.lstatSync(cur); } catch (e) { throw new RepoWriteRefused(cur, `it could not be inspected after it was made (${e.code})`); }
+      try { fs.mkdirSync(cur); } catch (e) { if (e.code !== 'EEXIST') throw new RepoWriteRefused(cur, `its folder could not be made (${e.code})`, FOLDER_FIX); }
+      try { st = fs.lstatSync(cur); } catch (e) { throw new RepoWriteRefused(cur, `it could not be inspected after it was made (${e.code})`, FOLDER_FIX); }
     }
-    if (st.isSymbolicLink()) throw new RepoWriteRefused(cur, 'a link or junction sits on the path to the config folder, wherever it points');
-    if (!st.isDirectory()) throw new RepoWriteRefused(cur, 'it exists and is not a directory');
+    if (st.isSymbolicLink()) throw new RepoWriteRefused(cur, 'a link or junction sits on the path to the config folder, wherever it points', FOLDER_FIX);
+    if (!st.isDirectory()) throw new RepoWriteRefused(cur, 'it exists and is not a directory', FOLDER_FIX);
   }
 }
 
