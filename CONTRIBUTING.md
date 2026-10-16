@@ -52,7 +52,7 @@ Cross-agent by design—the canaries are plain SKILL.md contracts and the engine
 | `scripts/lib/` | The engine (ESM, shipped): `md-ast` CommonMark+GFM parser · `md-checks` structure checks · `emdash` and `lang-mechanics` mechanics engines · config modules. |
 | `skills/` | The 6+1 canary contracts (`doc-structure`, `doc-grounding`, `doc-standard`, `doc-rot`, `doc-consistency`, `doc-quality`, `doc-leak`). |
 | `commands/` | `/coalledger:stats` (measurement) · `/coalledger:update` (self-update procedure). |
-| `scripts/` | Tool scripts: `build-plugin.mjs`, `verify.mjs`, `test.mjs`, `secret-gate.mjs` (the house secret scan the git hooks run first), the unit/hermetic tests, and `fixtures/` (planted defects + clean decoys). |
+| `scripts/` | Tool scripts: `build-plugin.mjs`, `verify.mjs`, `test.mjs`, `secret-gate.mjs` (the house secret scan the git hooks run first), `front-door-links.mjs` (the org canon's check that the outward links of the README, SECURITY, CONTRIBUTING and PRIVACY answer at the page they name; `.github/workflows/front-door-links.yml` runs it when a front door changes and weekly), the unit/hermetic tests, and `fixtures/` (planted defects + clean decoys). |
 | `plugin/` | Generated Claude Code plugin distribution—never hand-edit. |
 | `platform-configs/.coalledger.json` | Commented factory default configuration. |
 | `.githooks/pre-commit`, `.githooks/pre-push` | The fail-loud repo gate (`secret-gate.mjs`, then `verify.mjs`, then `test.mjs`), identical bytes on both hooks—enable once per clone with `git config core.hooksPath .githooks` (see Developing & Testing above). |

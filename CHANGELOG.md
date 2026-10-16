@@ -2,6 +2,19 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.15.0-beta.7] - 2026-10-16
+
+Config writes refuse a linked folder; GIT_ strip ignores case
+
+Two security fixes in the config helpers: the config CLI no longer makes a folder outside the project when a cloned repo plants a link at the config folder, and the shared `GIT_*` strip now matches the prefix in any case. The installed plugin moved in four files, `scripts/lib/repo-fs.mjs`, `skills/doc-quality/lib/repo-fs.mjs`, `skills/doc-structure/lib/repo-fs.mjs` and `scripts/lib/git-env.mjs`, but no code in the installed plugin calls either helper, so the behaviour change is in the repo-checkout tooling; every other change below is repo tooling the installed plugin does not carry.
+
+### Security
+- **The config CLI judges the folder chain before it makes a folder (commit `31a1c3fbb8b7435463a20376c980742d1a06086b`, CWK2-042).** `scripts/configure.mjs` made the config folder first and judged it after, so a junction or symlink planted at `.claude` or `.claude/coal` made an empty folder outside the project, and a link whose target stayed inside the project was written through. A new helper, `mkdirRepoParents` in `repo-fs.mjs`, walks from the project root one level at a time with `lstat` and refuses any link, wherever it points, or any non-directory; the CLI exits 1 with a `[refused]` message and creates nothing outside the project. The global write to your own `~/.claude` has no project root and is unchanged. Verified on Windows: the junction cases ran red on the old code and green after; the directory-symlink cases are capability-probed and run on the CI legs.
+- **The `GIT_*` strip is case-insensitive (commit `8725bda403c5d521211c7ad3a774ebd76e7b14eb`, CWK2-043).** `gitEnv()` kept `git_dir`, `Git_Dir` and `git_index_file` because it matched the exact text `GIT_`; Windows reads environment names without regard to case, so such a variable reached a git child. The prefix is now matched in any case and `GIT_CEILING_DIRECTORIES` is still set. Verified on Windows: four new cases failed on the old strip and pass now.
+
+### Changed
+- **Repo tooling, not in the installed plugin.** `.github/workflows/front-door-links.yml` (blob `7c582bd703b303392a442fe9f14630a2c88c18b2`), `scripts/front-door-links.mjs` (`3793a0564f3975d2f7e474b39d775c45ba6a3675`), `scripts/lib/front-door-links.mjs` (`7df59db675c80d8e0f0c09f46fcf4a1079ca690b`) and `scripts/front-door-links.test.mjs` (`3cff2b3046bdef56240a2e6fd98703e8a75dc433`) are the org canon's bytes at canon commit `bea2b3d91107883bae3cd6e9a6fab0469e079e44` (commit `a323d39f9c6ffc867c099391a9c7ee633f8b5d0a`): the check reads the links that leave the front-door files (README, SECURITY, CONTRIBUTING, PRIVACY) and fails on a dead page or a "publishing soon" note beside a live one; it runs when a front door changes and weekly. The room lists the lib in its own `BUILD_ONLY_LIB_NAMES` so the dist does not carry it. The four wall-clock bounds in `scripts/lib/md-checks.test.mjs` became structural proofs, with one mutant killed per test.
+
 ## [0.15.0-beta.6] - 2026-10-16
 
 Invalid cloned config values cannot undo clamped settings; link hang fixed
