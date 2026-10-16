@@ -219,25 +219,28 @@ test('CLI fails loud on an unreadable file (exit 1) but still checks the rest', 
 // --- H1 (CoalBoard dogfood): the parser must not go quadratic on crafted docs ---
 import { parseMarkdown } from './md-ast.mjs';
 
-test('H1: a pathological inline-link doc parses in bounded (near-linear) time, not O(N^2)', () => {
-  // `[a](` repeated N: each `]` used to re-scan the tail to EOS -> O(N^2) hang.
-  // Bounded now (MAX_INLINE_DEST): assert a 4000-fragment (16 KB) doc — which the
-  // pre-fix code took ~700ms on and ~2.9s at 8000 — finishes comfortably fast.
-  const doc = '[a]('.repeat(4000);
-  const t0 = process.hrtime.bigint();
-  parseMarkdown(doc);
-  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-  assert.ok(ms < 1500, `pathological parse should be bounded, took ${ms.toFixed(0)}ms`);
+const countNodes = (doc, type) => { let c = 0; walk(parseMarkdown(doc), (n) => { if (n.type === type) c++; }); return c; };
+
+test('H1: an inline destination past MAX_INLINE_DEST stays literal text (the bound that keeps `[a](` repeated linear), and one inside it is still a link', () => {
+  // `[a](` repeated N: each `]` used to re-scan the tail to EOS -> O(N^2) hang (~700ms at 4000, ~2.9s at 8000).
+  // The bound is MAX_INLINE_DEST (2048): the scan gives up past it and the text stays literal. The proof is the
+  // BOUND ITSELF, not a clock (testing.md Determinism): a closed link whose destination is 3000 characters would
+  // be a link without the bound, and is none with it; a 2048-character one sits on the edge and stays a link.
+  assert.strictEqual(countNodes('[a](' + 'x'.repeat(3000) + ')', 'link'), 0, 'a destination over the cap must not become a link');
+  assert.strictEqual(countNodes('[a](' + 'x'.repeat(2048) + ')', 'link'), 1, 'a destination exactly at the cap is still a link');
+  assert.strictEqual(countNodes('[a](' + 'x'.repeat(100) + ')', 'link'), 1);
+  parseMarkdown('[a]('.repeat(4000)); // the pathological shape still parses to the end (the runner's per-test clock is its only bound)
 });
 
 test('H1: checkDocument flags an over-cap doc and does NOT parse it (SIZE-only transitive vector closed — depth is a SEPARATE guard, see doc-too-nested below, board U13/F1)', () => {
-  const over = 'x'.repeat(600 * 1024); // > 512 KB
-  const t0 = process.hrtime.bigint();
+  // The proof that it is NOT parsed is the content, not a clock (testing.md Determinism): a leading line that parses to a real finding
+  // (a link to a missing anchor) would be reported beside doc-too-large if the over-cap doc were parsed, and is not.
+  const control = checkDocument('[x](#nowhere)\n');
+  assert.deepStrictEqual(control.map((x) => x.check), ['anchor-missing'], 'the control line is a finding when the doc is parsed');
+  const over = '[x](#nowhere)\n' + 'x'.repeat(600 * 1024); // > 512 KB
   const f = checkDocument(over);
-  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   assert.strictEqual(f.length, 1);
   assert.strictEqual(f[0].check, 'doc-too-large');
-  assert.ok(ms < 100, `an over-cap doc must be flagged instantly, took ${ms.toFixed(0)}ms`);
   // a benign doc just under the cap still parses normally (no false "too large")
   const ok = checkDocument('# Title\n\nnormal content\n');
   assert.ok(!ok.some((x) => x.check === 'doc-too-large'));
@@ -283,12 +286,12 @@ test('U13/F1: doc-too-nested fires past the container-depth cap, and a benign do
 // -> `['doc-too-nested']` on a document that renders perfectly. Both GREEN
 // below, against the corrected fence-aware, marker-general guard. ---
 test('U13/F1 H1 (findings-back): a list-marker prefix no longer bypasses the container-depth guard', () => {
-  const t0 = process.hrtime.bigint();
-  const f = checkDocument('- ' + '>'.repeat(20000) + ' hi\n'); // the exact 20,000-marker shape measured at 13s pre-fix
-  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  // The shape measured at 13s pre-fix. The proof is the verdict, not a clock (testing.md Determinism): the old guard returned [] for it
+  // after the full 13s, so exactly one doc-too-nested finding is only possible when the guard short-circuits at the cap.
+  const f = checkDocument('- ' + '>'.repeat(20000) + ' hi\n');
   assert.strictEqual(f.length, 1);
   assert.strictEqual(f[0].check, 'doc-too-nested');
-  assert.ok(ms < 200, `the pathological case must now be the FAST case (short-circuits at the cap), took ${ms.toFixed(0)}ms`);
+  assert.match(f[0].message, /> 200\)/, 'the finding names the cap it was refused at');
 });
 
 test('U13/F1 M1 (findings-back): a `>`-heavy fenced code block does not cry-wolf, and a real finding elsewhere in the same doc survives', () => {
@@ -326,14 +329,17 @@ test('H11: a dense-emphasis doc (the processEmphasis O(N^2) vector) scans in bou
   // closer index to 0 and array-spliced per match -> O(N^2). Pre-fix wall times
   // measured through checkDocument: 47 KB ~= 2.5 s, 94 KB ~= 3.9 s, 188 KB ~= 26 s,
   // ~500 KB did not finish in 5 min. Linear now (~0.5 s at 188 KB). A 200 KB doc
-  // that took ~30 s pre-fix must finish comfortably under a generous bound (slow
-  // CI headroom; a reintroduced quadratic blows straight past it).
-  const doc = 'a*b_c*d_'.repeat(25000); // ~200 KB, under MAX_DOC_BYTES
-  const t0 = process.hrtime.bigint();
+  // that took ~30 s pre-fix. No wall-clock bound here (testing.md Determinism): the quadratic and the linear
+  // algorithm produce the SAME tree, so no assertion on the output can tell them apart, and a clock is the flake the rule bans.
+  // What this test pins is that the real parse of the big doc completes (the runner's per-test clock is its only bound) and
+  // yields the right structure: every `*b_c*` pair matched, nothing dropped, nothing mis-paired.
+  const unit = 'a*b_c*d_';
+  const doc = unit.repeat(25000); // ~200 KB, under MAX_DOC_BYTES
   const f = checkDocument(doc);
-  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   assert.ok(!f.some((x) => x.check === 'doc-too-large'), 'the fixture is under the cap (real parse, not short-circuited)');
-  assert.ok(ms < 6000, `dense-emphasis parse must be bounded, took ${ms.toFixed(0)}ms`);
+  assert.deepStrictEqual(f, []);
+  assert.strictEqual(countNodes(unit.repeat(5), 'emphasis'), 5, 'the small instance pairs one emphasis per unit');
+  assert.strictEqual(countNodes(doc, 'emphasis'), 25000, 'the big instance pairs the same, one emphasis per unit');
 });
 // (The angle-dest bound and backtick memo are the other two H11 paths; the angle
 // bound is guarded functionally in md-ast.test.mjs — a wall-clock guard there is
