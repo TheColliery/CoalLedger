@@ -379,3 +379,35 @@ test('table cells: a node ending right before a dropped backslash keeps its own 
   assert.strictEqual(links.length, 1);
   assert.strictEqual(src.slice(links[0].position.start.offset, links[0].position.end.offset), '[x](url)');
 });
+
+// --- 16e unit E (Copilot thread 4227330989): the CWK-032 parser-DoS class on the CROSS-FILE path ---
+// `anchorsOf` parsed a linked target with only the SIZE cap, so a target nested past MAX_CONTAINER_DEPTH (200) reached `parseMarkdown` unguarded while
+// the primary doc got the `doc-too-nested` guard: a one-line link to a hostile file in the repo hung the scan (measured quadratic: a 16000-marker,
+// 32 KB target took 5.6 s, a 32000-marker one 26.8 s). The target over the depth cap is left UNCHECKED (null), the same way an over-size one is.
+// The deterministic leg first: a deep target used to be PARSED, so its missing anchor was reported (`anchor-missing`); it is now left unchecked.
+function linkFixture(t, files) {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'cl-xdepth-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), body);
+  return dir;
+}
+const NEST = (n) => '> '.repeat(n);
+test('16e E: a linked target nested past the depth cap is left unchecked, so no anchor-missing is reported against it (deterministic leg)', (t) => {
+  const dir = linkFixture(t, { 'deep.md': '# Deep\n\n' + NEST(300) + 'x\n', 'shallow.md': '# Shallow\n\n' + NEST(3) + 'x\n' });
+  const main = path.join(dir, 'main.md');
+  const run = (target) => checkDocument('# Main\n\n[d](' + target + '#nope)\n', { filePath: main }).filter((f) => f.check === 'anchor-missing');
+  assert.strictEqual(run('./shallow.md').length, 1, 'control: a shallow target IS parsed, so its missing anchor is reported (the check is live)');
+  assert.strictEqual(run('./deep.md').length, 0, 'a target nested past the cap is not parsed, so nothing is reported against it');
+});
+test('16e E: a target exactly AT the depth cap is still parsed (the guard is the same strict greater-than the primary doc uses)', (t) => {
+  const dir = linkFixture(t, { 'edge.md': '# Edge\n\n' + '>'.repeat(200) + ' x\n' });
+  const f = checkDocument('# Main\n\n[d](./edge.md#nope)\n', { filePath: path.join(dir, 'main.md') }).filter((x) => x.check === 'anchor-missing');
+  assert.strictEqual(f.length, 1, 'depth 200 is not over the cap of 200');
+});
+test('16e E: a hostile linked target returns in bounded time (the second leg; the quadratic parse took 5.6 s at this size)', (t) => {
+  const dir = linkFixture(t, { 'hostile.md': '# Hostile\n\n' + NEST(16000) + 'x\n' });
+  const t0 = process.hrtime.bigint();
+  checkDocument('# Main\n\n[d](./hostile.md#nope)\n', { filePath: path.join(dir, 'main.md') });
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(ms < 1000, 'the cross-file parse must be guarded, took ' + ms.toFixed(0) + 'ms');
+});
