@@ -11,7 +11,7 @@ import { globalConfigPath, findProjectRoot, projectConfigCandidates, projectConf
 // function exists, rather than failing the whole file at link time and taking
 // every pre-existing test with it.
 const configNotices = (...a) => configLoad.configNotices(...a);
-import { clampedRead } from './config-schema.mjs'; // CWK-057: the clamp and the schema validator compose; one test asserts the composed result
+import { clampedRead, CONFIG_SCHEMA } from './config-schema.mjs'; // CWK-057: the clamp and the schema validator compose; one test asserts the composed result
 
 // realpath'd sandboxes: on macOS os.tmpdir() is a symlink (/var -> /private/var);
 // resolving here keeps assertions in the same physical form the walk sees.
@@ -275,6 +275,103 @@ test('clamp: disabledCanaries UNIONs — a project cannot re-enable what global 
   } finally { clean(home, proj); }
 });
 
+// 16e unit D (Copilot thread 4227330928, a section 9 clamp hole): an INVALID value on either side bypassed the union as surely as an absent one. The
+// `!Array.isArray(...) || !Array.isArray(...)` guard left the project-first overlay's invalid value in `out`, `clampedRead` resolved it to the default `[]`,
+// and the user's own global disable was lost: a cloned repo's malformed `disabledCanaries` re-enabled a canary the user had turned off, ["all"] included.
+// The rule (board #111): an invalid side reads as the schema default `[]`, so the other valid side stands.
+for (const [label, g, p, want] of [
+  ['a string project value', ['doc-leak'], 'oops', ['doc-leak']],
+  ['a number project value', ['all'], 7, ['all']],
+  ['a null project value', ['doc-leak'], null, ['doc-leak']],
+  ['an object project value', ['doc-rot'], { all: true }, ['doc-rot']],
+  ['an invalid global and a valid project (the project may only add)', 'oops', ['doc-leak'], ['doc-leak']],
+  ['both sides invalid reads as the schema default', 'oops', 7, []],
+]) {
+  test(`clamp: disabledCanaries with ${label} keeps the valid side (16e D, Copilot 4227330928)`, () => {
+    const { home, proj } = sandbox();
+    try {
+      const merged = cascade(home, proj, { disabledCanaries: g }, { disabledCanaries: p });
+      assert.deepStrictEqual([...clampedRead(merged, 'disabledCanaries')].sort(), [...want].sort());
+    } finally { clean(home, proj); }
+  });
+}
+test('clamp: disabledCanaries with an invalid project value and NO global file reads the schema default (16e D)', () => {
+  const { home, proj } = sandbox();
+  try {
+    assert.deepStrictEqual(clampedRead(cascade(home, proj, {}, { disabledCanaries: 'oops' }), 'disabledCanaries'), []);
+  } finally { clean(home, proj); }
+});
+
+// 16e bounce 1 (INSPECT F1 HIGH, F2 MEDIUM on unit D): the clamp decided a value's SHAPE (`Array.isArray`, a lowercase string match) instead of its VALIDITY
+// (`validateValue`, the rule `clampedRead` applies on read). A value the schema rejects is read as the factory default, so a shape-valid but schema-invalid
+// project value reached `out`, `clampedRead` threw the WHOLE key to the default, and the user's own global setting was lost to a cloned repo. The rule now:
+// a value the schema does not accept is INVALID on either side, never coerced toward the less safe side; an invalid side takes the other valid side or the default.
+// F1: an array holding a non-string element is invalid as a whole (the schema's `strArr`).
+for (const [label, g, p, want] of [
+  ['a number element', ['doc-leak'], [7], ['doc-leak']],
+  ['a null beside a valid name', ['all'], ['doc-rot', null], ['all']],
+  ['an object element', ['doc-leak'], [{}], ['doc-leak']],
+  ['a nested array element', ['doc-leak'], [['doc-rot']], ['doc-leak']],
+  ['a boolean element', ['doc-leak'], [true], ['doc-leak']],
+  ['a non-string element in the GLOBAL list (the global is the invalid side, the project stands)', [7], ['doc-rot'], ['doc-rot']],
+  ['an all-valid mixed-case project list still unions and folds on read', ['doc-leak'], ['Doc-Rot'], ['doc-leak', 'doc-rot']],
+]) {
+  test(`clamp 16e F1: disabledCanaries with ${label} keeps the valid side`, () => {
+    const { home, proj } = sandbox();
+    try {
+      const merged = cascade(home, proj, { disabledCanaries: g }, { disabledCanaries: p });
+      assert.deepStrictEqual([...clampedRead(merged, 'disabledCanaries')].sort(), [...want].sort());
+    } finally { clean(home, proj); }
+  });
+}
+// F2: a bool key is valid only as a JSON boolean; the STRING "false" is not one (the schema rejects it, clampedRead reads it as the default `true`).
+for (const [key, g, p, want] of [
+  ['docLeak', false, 'false', false],
+  ['docLeak', false, 'FALSE', false],
+  ['docLeak', false, 'true', false],
+  ['docLeak', false, 0, false],
+  ['docLeak', false, null, false],
+  ['docLeak', false, [], false],
+  ['docLeak', false, {}, false],
+  ['docLeak', false, true, false], // control: a valid escalation loses to the global
+  ['docLeak', true, false, false], // control: a valid quieter value wins
+  ['scanEverything', false, 'true', false],
+  ['scanEverything', false, 1, false],
+  ['scanEverything', true, 'false', true], // an invalid project value never quietens a valid global
+]) {
+  test(`clamp 16e F2: ${key} global ${JSON.stringify(g)} with project ${JSON.stringify(p)} reads ${JSON.stringify(want)}`, () => {
+    const { home, proj } = sandbox();
+    try {
+      assert.strictEqual(clampedRead(cascade(home, proj, { [key]: g }, { [key]: p }), key), want);
+    } finally { clean(home, proj); }
+  });
+}
+// The sweep over the enum keys: every type the schema rejects must lose to the user's global, never escalate it.
+for (const [key, g] of [['coalledgerMode', 'off'], ['updateMode', 'off']]) {
+  for (const p of [7, null, true, [], {}, 'bogus', '', ' off', 'auto ']) {
+    test(`clamp 16e F2 sweep: ${key} global ${JSON.stringify(g)} with an invalid project ${JSON.stringify(p)} stays ${JSON.stringify(g)}`, () => {
+      const { home, proj } = sandbox();
+      try {
+        assert.strictEqual(clampedRead(cascade(home, proj, { [key]: g }, { [key]: p }), key), g);
+      } finally { clean(home, proj); }
+    });
+  }
+}
+// An invalid GLOBAL value reads as the schema default on the ceiling side too (no raw junk rides into `out`).
+for (const [key, g, p] of [['docLeak', 'false', true], ['scanEverything', 'true', true], ['updateMode', 7, 'auto']]) {
+  test(`clamp 16e F2: an invalid global ${key} ${JSON.stringify(g)} is the schema default for the ceiling, so a project value cannot ride past it`, () => {
+    const { home, proj } = sandbox();
+    try {
+      const merged = cascade(home, proj, { [key]: g }, { [key]: p });
+      const def = CONFIG_SCHEMA.find((s) => s.key === key).def;
+      const read = clampedRead(merged, key);
+      // never LOUDER than the default: for the boolean gates the safe index is `false`, for updateMode the ceiling is the default 'ask'
+      if (typeof def === 'boolean') assert.ok(read === false || read === def, `read ${read}`);
+      else assert.ok(['off', 'remind', 'ask'].includes(read), `read ${read}`);
+    } finally { clean(home, proj); }
+  });
+}
+
 test('clamp: an ABSENT global substitutes the schema default as the clamp ceiling (board #111)', () => {
   const { home, proj } = sandbox();
   try {
@@ -329,23 +426,15 @@ test('clamp: scanEverything — a project may still QUIETEN true->false, and a g
       'quietening toward the safe index stays allowed');
     assert.strictEqual(cascade(home, proj, { scanEverything: true }, {}).scanEverything, true,
       'project SILENCE must never clamp a global true away -- the clamp loop only fires when the project sets the key');
-    // Case-folding is what stops a project '"TRUE"' from MISSING the lookup
-    // (indexOf -> -1) and winning through the overlay unclamped -- CoalWash's
-    // H5. It matches the ceiling, so the clamp passes it through with its RAW
-    // spelling preserved (the documented behaviour on this branch). The value
-    // is then a STRING against a `bool` spec, so clampedRead degrades it to the
-    // factory default downstream.
-    // CORRECTED (CWK-057 INSPECT LOW-2): this case is NOT a composition, and
-    // the earlier comment over-credited the clamp. Measured -- clampedRead
-    // ALONE on the raw value returns false, so the validator is sufficient
-    // here; the clamp alone returns the string "TRUE" and is neither necessary
-    // nor sufficient. The genuine composition case is the INVALID value below
-    // ('yes'), where the clamp does the canonical-member substitution the
-    // validator cannot.
-    assert.strictEqual(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }).scanEverything, 'TRUE',
-      'case-folded match rides through with raw spelling (clampedRead is what rejects the wrong TYPE later)');
-    assert.strictEqual(clampedRead(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }), 'scanEverything'), false,
-      'the composed result: a wrong-typed project value cannot turn the key on');
+    // 16e bounce 1 (INSPECT F2) CHANGED THIS STEP, and why the old expectation was WRONG, not the code: it pinned the SHAPE-based result, where a project STRING
+    // 'TRUE' for a bool key indexed as a case-folded member, rode into the merged config raw, and clampedRead then read it as the factory default (false), so a
+    // global `true` the user turned ON was silently lost to a cloned repo's wrong-typed value (and, for docLeak, a string "false" re-opened a gate the user shut).
+    // The rule is now VALIDITY (the schema's own validateValue, what clampedRead applies): a wrong-typed project value is INVALID, gets no say, and the valid
+    // global stands. The case-fold still matters for the ENUM keys (coalledgerMode, updateMode), whose lowercase spelling validates (covered above).
+    assert.strictEqual(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }).scanEverything, true,
+      'a wrong-typed project value gets no say: the valid global true stands');
+    assert.strictEqual(clampedRead(cascade(home, proj, { scanEverything: true }, { scanEverything: 'TRUE' }), 'scanEverything'), true,
+      'the composed result: a wrong-typed project value neither turns the key on nor wipes the global that did');
   } finally { clean(home, proj); }
 });
 
@@ -368,7 +457,7 @@ test('clamp: scanEverything — an INVALID project value gets no say and the CAN
 test('clamp: docsDriftNudge stays UNCLAMPED — deliberate, by BLAST not type (§9)', () => {
   const { home, proj } = sandbox();
   try {
-    // Same TYPE as docLeak, different BLAST: it suppresses one quiet model-only
+    // Same TYPE as docLeak, different BLAST: it suppresses one quiet user-only
     // line — no offer, no scan, no spend. Re-enabling it in a single project is
     // a legitimate use. This test exists so the asymmetry is deliberate and
     // locked, not an oversight someone "fixes" later.
@@ -960,3 +1049,86 @@ test('CWK-137: the GLOBAL config (root = null, a home file) still kind-gates and
     assert.strictEqual(loadMergedConfig({ cwd: proj, home }).updateCheckDays, 5, 'root=null means a dotfile-manager symlink for the GLOBAL config is honoured, matching CoalMine Step 3 ruling 1, re-decided for this room\'s one home-file read');
   } finally { clean(home, proj); fs.rmSync(outside, { recursive: true, force: true }); }
 });
+
+// ---- 14a (E2-4 class): a link planted at a PARENT folder of the project config must never be followed out of the project ----
+// repoEntryKind used to check containment ONLY when the file itself was a symlink; a junction or symlink at
+// `.claude` or `.claude/coal` makes the file lstat as a regular file, so the read followed the link outside.
+// The witness is a marker value in an OUTSIDE config: the merged config must never carry it.
+const OUTSIDE_MARKER = 'OUTSIDE-MARKER-14a';
+// A 'junction' needs no privilege on Windows; on POSIX the type is ignored and a plain directory symlink is made.
+function canLinkDir(type) {
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-linkprobe-')));
+  try {
+    fs.mkdirSync(path.join(d, 'a'));
+    fs.symlinkSync(path.join(d, 'a'), path.join(d, 'b'), type);
+    return true;
+  } catch { return false; } finally { fs.rmSync(d, { recursive: true, force: true }); }
+}
+const JUNCTION_OK = canLinkDir('junction');
+const DIRLINK_OK = canLinkDir('dir');
+function outsideDir(rel) {
+  // an outside folder (not under the sandbox home) holding a config that carries the marker
+  const out = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-outside-')));
+  const file = path.join(out, rel);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ language: OUTSIDE_MARKER }));
+  return out;
+}
+function linkCase(t, type, plant, outsideRel) {
+  const { home, proj } = sandbox();
+  fs.mkdirSync(path.join(proj, '.git'));
+  const out = outsideDir(outsideRel);
+  t.after(() => clean(home, out));
+  plant(proj, out);
+  return { home, proj, out };
+}
+const linkLegs = [
+  ['at .claude', 'coal/coalledger.json', (proj, out, type) => fs.symlinkSync(out, path.join(proj, '.claude'), type)],
+  ['at .claude/coal', 'coalledger.json', (proj, out, type) => { fs.mkdirSync(path.join(proj, '.claude')); fs.symlinkSync(out, path.join(proj, '.claude', 'coal'), type); }],
+  ['at .claude (the nested legacy name)', '.coalledger.json', (proj, out, type) => fs.symlinkSync(out, path.join(proj, '.claude'), type)],
+  ['at .agents', 'coal/coalledger.json', (proj, out, type) => fs.symlinkSync(out, path.join(proj, '.agents'), type)],
+];
+for (const [type, ok, label] of [['junction', () => JUNCTION_OK, 'junction'], ['dir', () => DIRLINK_OK, 'directory symlink']]) {
+  for (const [where, rel, plant] of linkLegs) {
+    test(`14a: a ${label} planted ${where} never lets the project config read outside the project (capability-gated)`, (t) => {
+      if (!ok()) { t.skip(`this seat cannot create a ${label} on this box`); return; }
+      const { home, proj } = linkCase(t, type, (pr, out) => plant(pr, out, type), rel);
+      const cfg = loadMergedConfig({ cwd: proj, home });
+      assert.notStrictEqual(cfg.language, OUTSIDE_MARKER, 'the outside file was read through the planted link');
+      let notices;
+      assert.doesNotThrow(() => { notices = configNotices(proj, home); }, 'a refused read is absent, never a throw');
+      assert.ok(notices.some((n) => n.includes('UNREADABLE')), 'the notice classifier refuses the escaping entry too (never reads it as a clean config): ' + JSON.stringify(notices));
+    });
+  }
+}
+
+test('14a control: the same config in a REAL .claude/coal folder inside the project is read (the witnesses above are not vacuous)', (t) => {
+  const { home, proj } = sandbox();
+  t.after(() => clean(home));
+  fs.mkdirSync(path.join(proj, '.git'));
+  fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+  fs.writeFileSync(path.join(proj, '.claude', 'coal', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER }));
+  assert.strictEqual(loadMergedConfig({ cwd: proj, home }).language, OUTSIDE_MARKER);
+});
+
+// 15b bounce 1 (the head's ruling): the expected folders are LITERAL (`<root>/.claude/coal` and its siblings), so a link at
+// ANY component between the project root and the config is refused, wherever it points, a target inside the project included.
+// The witness is the same marker; the control above (a real folder) proves the marker is readable when nothing is linked.
+for (const [type, ok, label] of [['junction', () => JUNCTION_OK, 'junction'], ['dir', () => DIRLINK_OK, 'directory symlink']]) {
+  for (const [where, plant] of [
+    ['at .claude (target inside the project)', (proj, type2) => { fs.mkdirSync(path.join(proj, 'shared', 'coal'), { recursive: true }); fs.writeFileSync(path.join(proj, 'shared', 'coal', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER })); fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude'), type2); }],
+    ['at .claude/coal (target inside the project)', (proj, type2) => { fs.mkdirSync(path.join(proj, '.claude')); fs.mkdirSync(path.join(proj, 'shared')); fs.writeFileSync(path.join(proj, 'shared', 'coalledger.json'), JSON.stringify({ language: OUTSIDE_MARKER })); fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude', 'coal'), type2); }],
+  ]) {
+    test(`15b: a ${label} planted ${where} is refused too, the folder pin is literal (capability-gated)`, (t) => {
+      if (!ok()) { t.skip(`this seat cannot create a ${label} on this box`); return; }
+      const { home, proj } = sandbox();
+      t.after(() => clean(home));
+      fs.mkdirSync(path.join(proj, '.git'));
+      plant(proj, type);
+      assert.notStrictEqual(loadMergedConfig({ cwd: proj, home }).language, OUTSIDE_MARKER, 'the config behind a link inside the project was read');
+      let notices;
+      assert.doesNotThrow(() => { notices = configNotices(proj, home); }, 'a refused read is absent, never a throw');
+      assert.ok(notices.some((n) => n.includes('UNREADABLE')), 'the notice classifier refuses it too: ' + JSON.stringify(notices));
+    });
+  }
+}

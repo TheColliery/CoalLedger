@@ -28,12 +28,11 @@ import path from 'node:path';
 
 // Step 2 of the mirror sheet, re-measured HERE: the largest JSONC config this room
 // ships or documents is its own `.coalledger.json` template (a few KB); 1 MiB gives
-// three orders of magnitude of headroom for a hand-edited config. The largest shipped
-// doc this room has is this very MEMORY.md file (its own DECLARED CAP is 107,000
-// characters, well under 1 MiB) -- 4 MiB gives similar headroom over any doc a user
-// would plausibly hand this room to scan (re-derive: `node -e "console.log(Math.max(...
-// require('fs').readdirSync('.').filter(f=>f.endsWith('.md')).map(f=>require('fs').statSync(f).size)))"`
-// from the repo root, or just: this room's biggest tracked .md file is well under 1 MB).
+// three orders of magnitude of headroom for a hand-edited config. The largest
+// TRACKED doc this room has is its CHANGELOG.md (about 100 KB on 2026-10-15; MEMORY.md is machine-local and untracked,
+// so it is not the reference) -- 4 MiB gives similar headroom over any doc a user would plausibly hand this
+// room to scan. Re-derive the largest TRACKED .md, never read a number off this comment:
+// `git ls-files '*.md' | xargs wc -c | sort -rn | head -3` from the repo root (the first row is the total).
 export const MAX_CONFIG_BYTES = 1024 * 1024; // 1 MiB
 export const MAX_DOC_BYTES = 4 * 1024 * 1024; // 4 MiB
 
@@ -53,9 +52,48 @@ export function isContained(child, root) {
 // dangling symlink, or anything realpath/stat cannot resolve -- refuse, never open).
 // A symlink proceeds only if its realpath lies inside root's realpath (or root is
 // null) AND resolves to a regular file.
+// 14a/15b (the E2-4 class, hooks-safety.md section 6 row 10; node/runtime.md section 4: an allowlist pins the
+// LITERAL expected location). When `root` is set the check runs for EVERY entry, not only for a symlinked file:
+// a junction (Windows) or symlink (POSIX) planted at a PARENT folder (`.claude`, `.claude/coal`) leaves the file
+// itself lstat-ing as a plain file, so a symlink-only check never ran and the read followed the link out.
+//  1. FOLDER PIN, by lstat per component, never by comparing a realpath with a hand-joined string (case and 8.3
+//     short names are VOLUME properties, so a string compare would refuse a legitimate `.Claude` or pass a wrong
+//     one): every component between `root` and the entry's own folder must be a real directory. A link at any of
+//     them is refused, wherever it points, a target inside the project included. `root` itself is not walked: a
+//     project opened through a linked path still reads its own files. Node reports a Windows junction as a symbolic
+//     link (measured 2026-10-15), so one lstat test covers both kinds.
+//  2. ENTRY PIN: the entry's realpath must stay inside its own folder's realpath (`.native` on both sides), which
+//     refuses a FILE symlink that leaves its folder.
+// Anything unresolvable or outside root lexically is 'other': fail closed, the callers' existing absent /
+// 'unreadable' paths apply, never a throw. Residual, named: the check and the later open are two steps, so a link
+// swapped in between is not caught here (the fd re-check in readRepoFileBounded only re-checks kind and size).
+function folderChainIsPlain(p, root) {
+  const rel = path.relative(root, p);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+  const parents = rel.split(path.sep).slice(0, -1);
+  let cur = root;
+  for (const part of parents) {
+    cur = path.join(cur, part);
+    let st;
+    try { st = fs.lstatSync(cur); } catch { return false; }
+    if (st.isSymbolicLink()) return false;
+  }
+  return true;
+}
+function entryInsideItsFolder(p, root) {
+  if (!folderChainIsPlain(p, root)) return false;
+  let realFolder, real;
+  try {
+    realFolder = fs.realpathSync.native(path.dirname(p));
+    real = fs.realpathSync.native(p);
+  } catch { return false; }
+  return isContained(real, realFolder); // the entry stays inside the folder itself
+}
+
 export function repoEntryKind(p, root) {
   let st;
   try { st = fs.lstatSync(p); } catch { return 'missing'; }
+  if (root != null && !entryInsideItsFolder(p, root)) return 'other';
   if (st.isSymbolicLink()) {
     let real;
     try { real = fs.realpathSync.native(p); } catch { return 'other'; } // dangling link

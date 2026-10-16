@@ -162,3 +162,49 @@ test('CLI unreadable: a directory passed as a file is unreadable too (EISDIR), c
   assert.equal(r.code, 1, `exit ${r.code}: ${r.out}`);
   assert.match(r.out, /^TOTAL: unknown \(1 unreadable; 0 found in the readable files\)$/m);
 });
+
+// ---------------------------------------------------------------------------
+// 16e unit C (the twin of the zone file CoalWorks/emdash.mjs, CWK2-021): the four CommonMark constructs, in the zone file's own table shape. The
+// reported lines are the spaced-mode hits (a dash that is not fully spaced), the zone file's direction. The 14a record names the MEDIUM: a user's
+// doc with a same-length nested fence example inverted the fence state, so every later line read as code (a miss) or as prose (a false hit).
+// Tokens in the case text: <D> em dash, <T> tab, <B> backtick; all built from code points, so no escape is typed.
+// ---------------------------------------------------------------------------
+const D = String.fromCharCode(0x2014), T = String.fromCharCode(9), B = String.fromCharCode(96);
+const mk = (...lines) => lines.join('\n').split('<D>').join(D).split('<T>').join(T).split('<B>').join(B);
+const COMMONMARK = [
+  // [behaviour and condition, text, the lines that must be reported]
+  ['a tab-indented fence line with no closer opens no fence, so the prose after it is scanned', mk('intro', '', '<T><B><B><B>', 'prose a<D>b here', 'more c<D>d'), [4, 5]],
+  ['a fence line inside a tab-indented code block opens no fence, and the dash in the block is code', mk('intro', '', '<T><B><B><B>', '<T>x<D>y', '<T><B><B><B>', '', 'tail'), []],
+  ['a tab-indented fence inside a list item is a real fence, and the dash inside it is code', mk('- item', '<T><B><B><B>js', '<T>code a<D>b', '<T><B><B><B>', '', 'tail'), []],
+  ['a tab-indented code line with no fence is code, and its dash is not reported', mk('intro', '', '<T>code a<D>b', '', 'tail'), []],
+  ['a dash inside a link destination with balanced parentheses is part of the address', mk('see [t](https://en.wikipedia.org/wiki/Foo_(bar)<D>baz) now'), []],
+  ['a spaced dash after a destination with balanced parentheses is correct', mk('see [t](https://en.wikipedia.org/wiki/Foo_(bar)) <D> next'), []],
+  ['an unspaced dash right after a destination with balanced parentheses is still reported', mk('see [t](https://en.wikipedia.org/wiki/Foo_(bar))<D>next'), [1]],
+  ['a dash inside a plain link destination is part of the address', mk('see [t](http://x<D>y) now'), []],
+  ['a dash inside a link title that holds parentheses is part of the destination', mk('see [t](http://x "a (b)<D>c") now'), []],
+  ['a fence line carrying an info string does not close an open fence', mk('<B><B><B>text', 'example:', '<B><B><B>js', 'x<D>y', '<B><B><B>', '', 'real prose a<D>b here'), [7]],
+  ['a fence line followed by words does not close an open fence', mk('<B><B><B>', 'x<D>y', '<B><B><B> not a closer', 'z<D>w', '<B><B><B>', 'prose a<D>b'), [6]],
+  ['an ordinary closing fence closes the fence', mk('<B><B><B>', 'x<D>y', '<B><B><B>', 'prose a<D>b'), [4]],
+  ['a closing fence followed only by spaces and a tab closes the fence', mk('<B><B><B>', 'x<D>y', '<B><B><B>  <T>', 'prose a<D>b'), [4]],
+  ['a double-backtick run after a one-backtick opener closes nothing, so the dash is prose', mk('<B>a<D>b<B><B>'), [1]],
+  ['a one-backtick run after a two-backtick opener closes nothing, so the dash is prose', mk('<B><B>a<D>b<B>'), [1]],
+  ['a triple-backtick run named in prose masks nothing, so a dash after it is reported', mk('Open with <B><B><B> then say a<D>b and also <B>c<B>.'), [1]],
+  ['an inner single run inside a double-backtick span stays part of the span', mk('<B><B>a<B>b<B><B><D>c'), [1]],
+  ['a dash inside a well-formed code span is code', mk('x <B>a<D>b<B> y'), []],
+  // the nested-destination fallback and the indented-code skip's exact boundaries
+  ['a two-level nested http destination: the dash after it is prose, the bare-URL mask must not swallow it', mk('see [t](https://x/Foo_(bar_(baz)))<D>next'), [1]],
+  ['a two-level nested relative destination: the dash after it is prose', mk('see [t](rel/Foo_(bar_(baz)))<D>next'), [1]],
+  ['two tabs of indentation is indented code', mk('intro', '', '<T><T>code a<D>b', '', 'tail'), []],
+  ['a tab then a space of indentation is indented code', mk('intro', '', '<T> code a<D>b', '', 'tail'), []],
+  ['four spaces then a tab is indented code', mk('intro', '', '    <T>code a<D>b', '', 'tail'), []],
+  ['a space, a tab, two spaces is indented code', mk('intro', '', ' <T>  code a<D>b', '', 'tail'), []],
+  ['three spaces then a tab (the boundary) is indented code', mk('intro', '', '   <T>code a<D>b', '', 'tail'), []],
+  ['a fence line indented four spaces is indented code, so a dash after it is prose', mk('intro', '', '    <B><B><B>', 'x<D>y', '    <B><B><B>', 'prose a<D>b'), [4, 6]],
+  // the MEDIUM the 14a record names: a same-length nested fence example inverts the fence state when the closer needs no rest-of-line check
+  ['a same-length fence line carrying an info string inside a fence does not close it (the nested example)', mk('<B><B><B>md', 'example:', '<B><B><B>js', 'x<D>y', '<B><B><B>', '', 'real prose a<D>b here'), [7]],
+];
+for (const [name, text, want] of COMMONMARK) {
+  test('commonmark: ' + name, () => {
+    assert.deepEqual(scanText(text, 'spaced').map((h) => h.line), want);
+  });
+}

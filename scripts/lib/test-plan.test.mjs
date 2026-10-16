@@ -12,13 +12,13 @@ import { HEAP_MB, TEST_TIMEOUT_MS, FILE_CLOCK_MS, RUN_TIMEOUT_MS, declaredTopLev
 const ROOM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const GATE_JOB_TIMEOUT_MS = 10 * 60 * 1000; // ci.yml: timeout-minutes 10 on the gate job
 
-test('test-plan: the numbers are finite, ordered per test < per file < the waves, the waves plus the direct file end inside the gate job clock, and the heap cap is the room\'s 2048 MB', () => {
+test('test-plan: the numbers are finite, ordered per test < per file < the waves, the waves end inside the gate job clock, and the heap cap is the room\'s 2048 MB', () => {
   for (const [k, v] of Object.entries({ HEAP_MB, TEST_TIMEOUT_MS, FILE_CLOCK_MS, RUN_TIMEOUT_MS })) assert.ok(Number.isInteger(v) && v > 0, `${k} is a positive integer`);
   assert.equal(HEAP_MB, 2048);
   assert.ok(TEST_TIMEOUT_MS > 54600, 'above the slowest file measured (54.6 s, 2026-10-09)');
   assert.ok(TEST_TIMEOUT_MS < FILE_CLOCK_MS && FILE_CLOCK_MS < RUN_TIMEOUT_MS, 'per test < per file < the waves');
-  assert.ok(RUN_TIMEOUT_MS + FILE_CLOCK_MS < GATE_JOB_TIMEOUT_MS, 'the waves, then the one direct file under its own clock, end before the gate job clock does: a stuck run ends in the runner, loudly');
-  assert.ok(RUN_TIMEOUT_MS > 176000, 'above the longest whole run measured (176 s, 2026-10-09, n = 3)');
+  assert.ok(RUN_TIMEOUT_MS < GATE_JOB_TIMEOUT_MS, 'the waves end before the gate job clock does: a stuck run ends in the runner, loudly');
+  assert.ok(RUN_TIMEOUT_MS >= Math.round(1.7 * 264000 / 10000) * 10000, 'at least 1.7 times the longest whole run measured (264 s, 2026-10-09, n = 3, 34 files in waves)');
 });
 
 test('declaredTopLevelTests: counts the test() calls that start a line, test.skip and test.todo included, and nothing indented', () => {
@@ -46,11 +46,33 @@ test('expectationFindings: a PASS file that reported fewer tests than it declare
 
 test('test.mjs: the wiring is the canon runner with the room\'s numbers, a failed start and a short report are named FAILs, and nothing else spawns the tests', () => {
   const src = fs.readFileSync(path.join(ROOM, 'scripts', 'test.mjs'), 'utf8');
-  assert.match(src, /runWaves\(\{ files: TESTS\.filter\(\(f\) => !plan\.DIRECT_FILES\.includes\(f\)\), cwd: repo, env: process\.env, heapMb: plan\.HEAP_MB, fileTimeoutMs: plan\.TEST_TIMEOUT_MS, fileClockMs: plan\.FILE_CLOCK_MS, deadlineMs: plan\.RUN_TIMEOUT_MS \}\)/);
+  assert.match(src, /runWaves\(\{ files: TESTS, cwd: repo, env: process\.env, heapMb: plan\.HEAP_MB, fileTimeoutMs: plan\.TEST_TIMEOUT_MS, fileClockMs: plan\.FILE_CLOCK_MS, deadlineMs: plan\.RUN_TIMEOUT_MS \}\)/);
   assert.match(src, /FAIL test runner: the run did not start/);
-  assert.match(src, /plan\.runDirect\(f, \{ cwd: repo, env: process\.env \}\)/);
+  assert.doesNotMatch(src, /runDirect|DIRECT_FILES/, 'every roster file, the canon runner test included, runs in a wave (09b: the canon test 30 no longer loses to the preload)');
+  assert.doesNotMatch(fs.readFileSync(path.join(ROOM, 'scripts', 'lib', 'test-plan.mjs'), 'utf8'), /runDirect|DIRECT_FILES/);
   assert.match(src, /expectationFindings\(run\.results/);
   assert.match(src, /process\.exitCode = run\.exitCode !== 0 \|\| short\.length \? 1 : 0/);
+});
+
+test('expectationFindings: a PASS or SKIP file that declares NO test the lower bound can count is named, whatever form its tests take (R2: alias, it(), await test(), indented), and a file with one countable test is not', () => {
+  const forms = {
+    'alias.test.mjs': "import { test as t } from 'node:test';\nt('x', () => {});\nt('y', () => {});\n",
+    'it.test.mjs': "import { it } from 'node:test';\nit('x', () => {});\n",
+    'await.test.mjs': "import test from 'node:test';\nawait test('x', () => {});\n",
+    'indented.test.mjs': "import test from 'node:test';\n{\n  test('x', () => {});\n}\n",
+    'ok.test.mjs': "import test from 'node:test';\ntest('x', () => {});\nit('also invisible', () => {});\n",
+    'red.test.mjs': "import { it } from 'node:test';\nit('x', () => {});\n",
+    'zero.test.mjs': '// no test of any form\n',
+    'skipalias.test.mjs': "import { it } from 'node:test';\nit.skip('x', () => {});\n",
+  };
+  const read = (f) => (f in forms ? forms[f] : null);
+  const results = Object.keys(forms).map((file) => ({ file, name: file, status: file === 'red.test.mjs' ? 'FAIL' : file === 'skipalias.test.mjs' ? 'SKIP' : 'PASS', counts: { tests: file === 'zero.test.mjs' ? 0 : 2 } }));
+  const f = expectationFindings(results, read);
+  assert.equal(f.length, 6, f.join('\n'));
+  for (const name of ['alias', 'it', 'await', 'indented']) assert.ok(f.some((x) => x.startsWith(`${name}.test.mjs: declares 0 top-level test(s) the lower bound can count but the run reported 2`)), `${name} is named`);
+  assert.ok(f.some((x) => x.startsWith('zero.test.mjs: declares 0 top-level test(s) the lower bound can count but the run reported 0')), 'a PASS file with no countable test is named even when it reported none');
+  assert.ok(f.some((x) => x.startsWith('skipalias.test.mjs: declares 0')), 'an all-skipped file written through it.skip is named too');
+  assert.ok(f.every((x) => /alias, it\(\), await test\(\) or an indented call/.test(x)), 'the finding names the forms the bound cannot see');
 });
 
 // ---- end to end: the REAL scripts/test.mjs and the REAL runner files, copied into a temp tree whose roster is the planted files ----
@@ -134,6 +156,15 @@ test('test.mjs (run): a file whose second test exits 0 after the first passed is
   assert.match(r.out, /^SHORT scripts\/lib\/half\.test\.mjs: declares 3 top-level test\(s\) but the run reported/m);
 });
 
+test('test.mjs (run): a file whose tests are registered through an alias the lower bound cannot see is named and the gate FAILS (R2; GREEN before 09b)', async (t) => {
+  const dir = plant(t, { 'alias.test.mjs': "import { test as t } from 'node:test';\nimport assert from 'node:assert/strict';\nt('real check', () => assert.equal(1, 1));\nt('second check', () => assert.ok(true));\n" });
+  const r = await runPlanted(dir);
+  assert.equal(r.bound, false, r.out.slice(-400));
+  assert.notEqual(r.code, 0, 'a file the bound cannot count must not read as a clean pass\n' + r.out.slice(-600));
+  assert.match(r.out, /test runner: RED -- 1 file/);
+  assert.match(r.out, /^SHORT scripts\/lib\/alias\.test\.mjs: declares 0 top-level test\(s\) the lower bound can count but the run reported 2/m);
+});
+
 test('test.mjs (run): a test that blocks its thread is ended by the file clock as a named FAIL and a non-zero exit, never a pass, and the other file still runs', async (t) => {
   const dir = plant(t, {
     'block.test.mjs': HDR + "import fs from 'node:fs';\ntest('blocks the thread', () => { fs.writeFileSync('child.pid', String(process.pid)); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15000); });\n",
@@ -153,23 +184,11 @@ test('plant: LOW-1 (re-targeted) a plant whose per-test clock is not above its d
   assert.throws(() => plant(t, { 'x.test.mjs': HDR }, { fileClock: 20000, deadline: 20000 }), /per-test > deadline > per-file/);
 });
 
-test('test.mjs (run): a run that cannot start (an empty wave list) is a named FAIL and a non-zero exit, never a silent pass', async (t) => {
-  // the roster holds only the direct file, so there is nothing to put in a wave: the canon runner refuses an empty list
-  const dir = plant(t, { 'wave-run.test.mjs': HDR + "test('direct and fine', () => assert.ok(true));\n" });
+test('test.mjs (run): a run that cannot start (an empty roster) is a named FAIL and a non-zero exit, never a silent pass', async (t) => {
+  // nothing to put in a wave: the canon runner refuses an empty list
+  const dir = plant(t, {});
   const r = await runPlanted(dir);
   assert.equal(r.bound, false, r.out.slice(-400));
   assert.notEqual(r.code, 0, r.out.slice(-600));
   assert.match(r.out, /FAIL test runner: the run did not start \(no test files were given\)/);
-});
-
-test('test.mjs (run): the direct file is judged by the same TAP reading, and a direct file that hangs is ended by the file clock as a FAIL naming it', async (t) => {
-  const dir = plant(t, {
-    'wave-run.test.mjs': HDR + "import fs from 'node:fs';\ntest('hangs the thread', () => { fs.writeFileSync('child.pid', String(process.pid)); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15000); });\n",
-    'fine.test.mjs': HDR + "test('fine', () => assert.ok(true));\n",
-  });
-  const r = await runPlanted(dir);
-  try { process.kill(Number(fs.readFileSync(path.join(dir, 'child.pid'), 'utf8')), 'SIGKILL'); } catch { /* gone, or never written */ }
-  assert.equal(r.bound, false, 'the run did not end by itself\n' + r.out.slice(-400));
-  assert.notEqual(r.code, 0);
-  assert.match(r.out, /^FAIL scripts\/lib\/wave-run\.test\.mjs: killed at the file clock \(3000 ms\)/m);
 });

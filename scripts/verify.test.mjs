@@ -241,3 +241,21 @@ test('verify.mjs 2.12 pointers: CWK-090 fix 2 -- the injection-site probe loses 
       'the absent-root citation must not FAIL at all -- it is silently out of scope, not "gitignored" and not "does not resolve"');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// CWK2-027: the gate checks the EXEC form. A shell-form hooks.json (a command string carrying ${CLAUDE_PLUGIN_ROOT}) FAILs it, and the pristine copy passes.
+test('verify.mjs negative path: a shell-form hook entry in hooks/hooks.json FAILs the gate (CWK2-027, exec form only)', () => {
+  const dir = scratchRepo();
+  try {
+    assert.strictEqual(run(dir).status, 0, 'pristine copy must PASS');
+    const p = path.join(dir, 'hooks', 'hooks.json');
+    const hj = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const h = hj.hooks.SessionStart[0].hooks[0];
+    h.command = `node "${h.args[0]}"`;
+    delete h.args;
+    fs.writeFileSync(p, JSON.stringify(hj, null, 2) + '\n', 'utf8');
+    const r = run(dir);
+    assert.strictEqual(r.status, 1, 'a shell-form entry must FAIL with exit 1');
+    assert.match(r.stdout, /FAIL hooks\.json does not wire SessionStart in exec form/);
+    assert.match(r.stdout, /FAIL hooks\.json: shell-form or non-node command entries -- SessionStart:/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

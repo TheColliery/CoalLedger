@@ -22,6 +22,8 @@ const LIMITS = { heapMb: 512, fileTimeoutMs: 20000, deadlineMs: 60000 };
 
 // ---- the fixtures: what a test file can do, written once into the sandbox ------------------------------------------------------------------
 const FIXTURES = {
+  // records what environment a test file of the run actually sees (the 15h sandbox test below)
+  'env-probe.fixture.mjs': "import { test } from 'node:test'; import fs from 'node:fs';\ntest('probe', () => fs.writeFileSync(process.env.WAVE_PROBE_OUT, JSON.stringify({ home: process.env.HOME ?? null, profile: process.env.USERPROFILE ?? null, tmpdir: process.env.TMPDIR ?? null, secret: process.env.OPERATOR_SECRET ?? null })));\n",
   'pass.fixture.mjs': "import { test } from 'node:test'; import assert from 'node:assert/strict';\ntest('real check', () => assert.equal(1, 1));\ntest('second check', () => assert.equal(2, 2));\n",
   'pass-slow.fixture.mjs': "import { test } from 'node:test';\ntest('slow check', async () => { await new Promise((r) => setTimeout(r, 700)); });\n",
   'fail.fixture.mjs': "import { test } from 'node:test'; import assert from 'node:assert/strict';\ntest('good', () => assert.ok(true));\ntest('bad one', () => assert.equal(1, 2));\n",
@@ -257,8 +259,8 @@ test('refuses a run with no finite clock, a duplicate file or an empty roster: t
 
 // ---- the reading itself: the byte-equal core, called as a child --------------------------------------------------------------------------
 // CoalFace's machine-reading.mjs, adopted by blob id and NEVER edited here (the owner's rule, BB-87: an improvement found here goes back to CoalFace, whose head builds it in its own belt,
-// and this folder re-adopts by blob id). Source: CoalFace commit 62184163c80c543d497732c0611e43ab9084533c, plugin/skills/coalface/scripts/machine-reading.mjs.
-const MACHINE_READING_BLOB = '1c550b6605125aebda5a2552294eaeb9a5d488ba';
+// and this folder re-adopts by blob id). Source: CoalFace commit 82f8eaf (the file at skills/coalface/scripts/machine-reading.mjs, its plugin/ twin the same blob).
+const MACHINE_READING_BLOB = '5f861a3427e0c06ee677e0e3fe59c912237a86ab'; // re-pinned 2026-10-15 (the 15b courier): CoalFace 82f8eaf, skills/coalface/scripts/machine-reading.mjs; was 1c550b66 (62184163)
 test('machine-reading.mjs is CoalFace\'s file byte for byte (its git blob id, line endings as the repository stores them) -- RED before BB-87', () => {
   const text = fs.readFileSync(MACHINE_READING).toString('utf8').replace(/\r\n/g, '\n');
   const body = Buffer.from(text, 'utf8');
@@ -291,14 +293,44 @@ test('defaultRead passes the running count and the thresholds the room gives to 
   assert.deepEqual(bare.raw.argv, ['--json', '--running', '1'], 'no threshold of ours is passed: the defaults of the core apply');
 });
 
-test('defaultRead against the real core: one reading comes back as a verdict of the three kinds within the clock of the room -- RED before BB-87', async () => {
+// 14h (item 14, courier 10; CoalLedger PR #20 #15): the real core reads os.cpus() and os.freemem(), which every machine answers, so a reading of it is a BREATHE or a WAIT with its thresholds. The test used to accept
+// UNMEASURED as well, which is exactly what a core that crashes, exits 2 or prints nothing readable becomes, so a broken core passed. UNMEASURED stays a legitimate verdict of the STUB cores above (a missing reader,
+// a garbage line, exit 2); against the real one it is a failure.
+test('defaultRead against the real core: one reading comes back as BREATHE or WAIT with both thresholds, never UNMEASURED and no error, within the clock of the room -- RED before 14h (10 #15)', async () => {
   const r = await defaultRead({ readerPath: MACHINE_READING, timeoutMs: LIMITS.fileTimeoutMs })({ running: 1 });
-  assert.ok(['BREATHE', 'WAIT', 'UNMEASURED'].includes(r.verdict), r.verdict);
-  if (r.verdict !== 'UNMEASURED') assert.equal(typeof r.raw.thresholds.cpuMaxPct, 'number');
+  assert.ok(['BREATHE', 'WAIT'].includes(r.verdict), `${r.verdict} ${r.error ?? ''}`);
+  assert.equal(r.error, undefined);
+  assert.equal(typeof r.raw.thresholds.cpuMaxPct, 'number');
+  assert.equal(typeof r.raw.thresholds.memMinPct, 'number');
 });
 
 // ---- the command line -----------------------------------------------------------------------------------------------------------------
-const cli = (args) => spawnSync(process.execPath, [WAVE_RUN, ...args], { cwd: SANDBOX, encoding: 'utf8', timeout: 90000 });
+// The environment of a child this file starts: named keys, never a copy of the process's own (15h). The sandbox stands in for the operator's HOME, profile and temp folders.
+const BASE_ENV_KEYS = ['PATH', 'Path', 'SystemRoot', 'SYSTEMROOT', 'PATHEXT', 'ComSpec'];
+const sandboxEnv = (extra = {}) => ({
+  ...Object.fromEntries(BASE_ENV_KEYS.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])),
+  HOME: SANDBOX, USERPROFILE: SANDBOX, TEMP: SANDBOX, TMP: SANDBOX, TMPDIR: SANDBOX, GIT_CEILING_DIRECTORIES: path.dirname(SANDBOX), GIT_CONFIG_NOSYSTEM: '1',
+  ...extra,
+});
+const cli = (args, extra) => spawnSync(process.execPath, [WAVE_RUN, ...args], { cwd: SANDBOX, encoding: 'utf8', timeout: 90000, env: sandboxEnv(extra) });
+
+// 15h item 2(b), CoalHearth thread 7 (CodeRabbit on PR #19, comment 4231557209; the CoalWorks chief's 14a return D3 item 1): the cli() helper and the direct spawn of WAVE_RUN passed no `env`, so the runner and every test
+// child it started got the operator's real HOME, USERPROFILE, TEMP, TMP, TMPDIR and CLAUDE_CONFIG_DIR (and any token in the shell). Both now go through sandboxEnv(): named keys only (the program path, and SystemRoot
+// where Windows needs it), the folders of the sandbox, no GIT_ name but the two the flock allows, and whatever the case names in `extra`.
+test('a run started through the command line sees the sandbox, never the operator\'s HOME, USERPROFILE, TMPDIR or an ambient token -- RED before 15h (2b)', () => {
+  const out = path.join(SANDBOX, 'env-probe.json');
+  process.env.OPERATOR_SECRET = 'operator-secret-' + process.pid; // an ambient value the child must not receive
+  try {
+    const r = cli(['--heap-mb', '512', '--file-timeout-ms', '20000', '--deadline-ms', '60000', '--serial', '--', ...fx('env-probe')], { WAVE_PROBE_OUT: out });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+  } finally { delete process.env.OPERATOR_SECRET; }
+  const seen = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.deepEqual(seen, { home: SANDBOX, profile: SANDBOX, tmpdir: SANDBOX, secret: null });
+  const env = sandboxEnv({ A: '1' });
+  assert.ok(!Object.keys(env).some((k) => /^GIT_/.test(k) && !['GIT_CEILING_DIRECTORIES', 'GIT_CONFIG_NOSYSTEM'].includes(k)), 'no GIT_ name beyond the two the flock allows');
+  assert.equal(env.GIT_CONFIG_NOSYSTEM, '1');
+  assert.equal(env.A, '1');
+});
 
 test('the command line: --help prints usage and exits 0, a missing clock or an unknown flag exits 64 with the usage line on stderr', () => {
   const help = cli(['--help']);
@@ -408,13 +440,29 @@ test('the stdout preload switches BOTH pipes, stdout and stderr, to blocking (a 
     '}',
     '',
   ].join(String.fromCharCode(10)));
-  const r = spawnSync(process.execPath, ['--import', pathToFileURL(rec).href, '--import', STDOUT_SYNC_URL, '-e', 'console.log(JSON.stringify(globalThis.__calls))'], { encoding: 'utf8', timeout: 30000 });
+  // K3 (08d, found by the first POSIX runs): under the canon runner every child inherits the preload through NODE_OPTIONS, and NODE_OPTIONS imports run BEFORE the command line's, so a recorder
+  // started the old way sees nothing. This child therefore gets an EMPTY NODE_OPTIONS (its heap cap rides its own argv) and loads the preload only by the flag below: the test means the same
+  // alone and under the runner, and the runner's claim that every node process of the run inherits the preload stays true (the preload is not moved onto a command line).
+  const probe = (extra, env) => spawnSync(process.execPath, ['--max-old-space-size=256', ...extra, '-e', 'console.log(JSON.stringify(globalThis.__calls))'], { encoding: 'utf8', timeout: 30000, env });
+  const r = probe(['--import', pathToFileURL(rec).href, '--import', STDOUT_SYNC_URL], { ...process.env, NODE_OPTIONS: '' });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(JSON.parse(r.stdout.trim()).sort(), ['stderr:true', 'stdout:true']);
+  // the control: the shape the runner hands a child (the preload already in NODE_OPTIONS) runs the preload first, so a recorder behind it sees no call -- why the strip above is needed
+  const inherited = probe(['--import', pathToFileURL(rec).href], withStdoutSync({ ...process.env, NODE_OPTIONS: '' }));
+  assert.equal(inherited.status, 0, inherited.stderr);
+  assert.deepEqual(JSON.parse(inherited.stdout.trim()), []);
 });
 
-test('the file clock: a file that hangs before its first test is killed at the clock of the file (FAIL naming it) and the next file still runs -- RED before the fix', async () => {
-  const r = await runWaves({ files: fx('hang-top', 'pass'), cwd: SANDBOX, env: process.env, ...LIMITS, deadlineMs: 40000, fileClockMs: 2000, serial: true, read: scripted('BREATHE') });
+// 2026-10-16 (CoalWash PR #23, run 38774701714, the Windows leg: [FAIL, FAIL] where [FAIL, PASS] was expected, 4.8 s): the clock is the wall clock of EVERY file the run starts, so a fixed 2,000 ms also killed the
+// PASSING file whenever a loaded runner took more than two seconds to start it (a node child with a heap cap and the stdout preload). Reproduced here by making every node start take 2.5 s (a preload that sleeps,
+// NODE_OPTIONS=--import=<it>): the old test read [FAIL, FAIL] in 4.7 s, the runner's own figure. The clock this test uses is now SIZED from a measured solo run of the passing file on this very machine under this very load,
+// four times it plus a second (never below the old 2,000 ms), so the hang is still killed by the clock and the passing file has four times its own measured start to spare.
+test('the file clock: a file that hangs before its first test is killed at the clock of the file (FAIL naming it) and the next file still runs, the clock sized from a measured solo run of the passing file -- RED before the fix', async () => {
+  const t0 = Date.now();
+  const solo = await runWaves({ files: fx('pass'), cwd: SANDBOX, env: process.env, ...LIMITS, serial: true, read: scripted('BREATHE') });
+  assert.deepEqual(solo.results.map((x) => x.status), [STATUS.PASS]);
+  const clock = Math.max(2000, (Date.now() - t0) * 4 + 1000);
+  const r = await runWaves({ files: fx('hang-top', 'pass'), cwd: SANDBOX, env: process.env, ...LIMITS, deadlineMs: clock * 4 + 20000, fileClockMs: clock, serial: true, read: scripted('BREATHE') });
   assert.deepEqual(r.results.map((x) => x.status), [STATUS.FAIL, STATUS.PASS]);
   assert.match(r.results[0].reason, /file clock/);
   assert.equal(r.exitCode, 1);
@@ -430,7 +478,7 @@ test('the file clock is optional but never loose: a value that is not a positive
 });
 
 test('the command line: a file clock that never fires does not hold the process open (the timer is cleared when its file exits)', () => {
-  const r = spawnSync(process.execPath, [WAVE_RUN, '--heap-mb', '512', '--file-timeout-ms', '20000', '--deadline-ms', '60000', '--file-clock-ms', '600000', '--serial', '--', ...fx('pass')], { cwd: SANDBOX, encoding: 'utf8', timeout: 45000 });
+  const r = spawnSync(process.execPath, [WAVE_RUN, '--heap-mb', '512', '--file-timeout-ms', '20000', '--deadline-ms', '60000', '--file-clock-ms', '600000', '--serial', '--', ...fx('pass')], { cwd: SANDBOX, encoding: 'utf8', timeout: 45000, env: sandboxEnv() });
   assert.equal(r.status, 0, 'the process ended on its own, not at the spawn timeout: ' + (r.error ? r.error.code : r.stdout));
   assert.match(r.stdout, /GREEN$/m);
 });
@@ -444,4 +492,60 @@ test('the command line: --file-clock-ms is accepted, shown in the usage, and kil
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stdout, /^FAIL .*hang-top\.fixture\.mjs: killed at the file clock/m);
   assert.match(r.stdout, /pass 1 · fail 1 \(hang-top\.fixture\.mjs\) · vacuous 0 · skipped 0 · not-run 0 · reconciled 2 of 2 — RED$/m);
+});
+
+// ---- item 11 of order 09f (2026-10-09): the three defects the flock's first POSIX runs found --------------------------------------------------------
+
+// K1 (CoalWash 4c6928b, the ubuntu red): a TAP `not ok ... # TODO` is a test the author marked as a known gap. Node counts it under `# todo`, reads `# fail 0` and exits 0; the runner must agree.
+const TODO_TAP = tap(['# Subtest: real check', 'ok 1 - real check', '# Subtest: known gap', 'not ok 2 - known gap # TODO the platform lacks it', '1..2', '# tests 2', '# suites 0', '# pass 1', '# fail 0', '# cancelled 0', '# skipped 0', '# todo 1', '# duration_ms 90']);
+fs.writeFileSync(path.join(SANDBOX, 'todo-fails.fixture.mjs'), "import { test } from 'node:test'; import assert from 'node:assert/strict';" + String.fromCharCode(10) + "test('real check', () => assert.ok(true));" + String.fromCharCode(10) + "test.todo('known gap', () => { throw new Error('not built yet'); });" + String.fromCharCode(10));
+
+test('classifyFile: a failing test marked TODO is not a failure -- a file whose only red is a TODO reads PASS, and a real failure beside it is still named alone -- RED before K1', () => {
+  const todo = classifyFile({ file: 'a.test.mjs', code: 0, signal: null, stdout: TODO_TAP });
+  assert.equal(todo.status, STATUS.PASS, todo.reason);
+  assert.deepEqual(todo.failing, []);
+  const mixed = tap(['# Subtest: real check', 'ok 1 - real check', '# Subtest: known gap', 'not ok 2 - known gap # TODO the platform lacks it', '# Subtest: bad one', 'not ok 3 - bad one', '1..3', '# tests 3', '# suites 0', '# pass 1', '# fail 1', '# cancelled 0', '# skipped 0', '# todo 1']);
+  const both = classifyFile({ file: 'a.test.mjs', code: 1, signal: null, stdout: mixed });
+  assert.equal(both.status, STATUS.FAIL);
+  assert.deepEqual(both.failing, ['bad one'], 'the TODO is not named among the failures');
+  assert.doesNotMatch(both.reason, /known gap/);
+  // only TODO excuses a not-ok: a `not ok` carrying SKIP (node never prints one) is read conservatively as a failure, and a bare `not ok` with no directive is still a failure
+  const skipNotOk = classifyFile({ file: 'a.test.mjs', code: 1, signal: null, stdout: tap(['# Subtest: x', 'not ok 1 - x # SKIP odd', '1..1', '# tests 1', '# suites 0', '# pass 0', '# fail 1', '# cancelled 0', '# skipped 0', '# todo 0']) });
+  assert.deepEqual(skipNotOk.failing, ['x']);
+  assert.equal(classifyFile({ file: 'a.test.mjs', code: 1, signal: null, stdout: tap(['# Subtest: x', 'not ok 1 - x', '1..1', '# tests 1', '# suites 0', '# pass 0', '# fail 1', '# cancelled 0', '# skipped 0', '# todo 0']) }).status, STATUS.FAIL);
+});
+
+test('a real file with a failing test.todo: node exits 0 and the runner reports PASS, the file is not red -- RED before K1', async () => {
+  const r = await runWaves({ files: fx('todo-fails'), cwd: SANDBOX, env: process.env, ...LIMITS, serial: true, read: scripted('BREATHE') });
+  assert.equal(r.results[0].status, STATUS.PASS, r.results[0].reason);
+  assert.equal(r.exitCode, 0);
+});
+
+// K2 (six rooms on macOS): os.tmpdir() is /var/folders/... and a symlink to /private/var/..., while a child's cwd is the realpath. The same folder under two spellings must print as ONE relative name.
+test('display: a file named through a symlinked spelling of the folder prints as the relative name, not as the absolute path (the macOS /private class) -- RED before K2', async (t) => {
+  const link = path.join(os.tmpdir(), 'wave-run-link-' + process.pid + '-' + Date.now());
+  try { fs.symlinkSync(SANDBOX, link, 'junction'); } catch (e) { t.skip('this volume or account cannot make a link: ' + e.code); return; }
+  t.after(() => { try { fs.unlinkSync(link); } catch { /* a junction goes by rmdir on some builds */ try { fs.rmdirSync(link); } catch { /* gone */ } } });
+  const real = fs.realpathSync.native(SANDBOX);
+  const viaLink = path.join(link, 'fail.fixture.mjs');
+  const r = await runWaves({ files: [viaLink, path.join(real, 'pass.fixture.mjs')], cwd: real, env: process.env, ...LIMITS, serial: true, read: scripted('BREATHE') });
+  assert.deepEqual(r.results.map((x) => x.name), ['fail.fixture.mjs', 'pass.fixture.mjs']);
+  assert.match(r.summary.line, /fail 1 \(fail\.fixture\.mjs\)/);
+  // the other spelling: the run's folder named through the link, the file through the real path
+  const other = await runWaves({ files: [path.join(real, 'fail.fixture.mjs')], cwd: link, env: process.env, ...LIMITS, serial: true, read: scripted('BREATHE') });
+  assert.deepEqual(other.results.map((x) => x.name), ['fail.fixture.mjs']);
+});
+
+test('display fails closed: a file outside the folder, and a path that cannot be resolved, print as given -- never as a guessed relative name', async () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'wave-run-outside-'));
+  try {
+    fs.copyFileSync(path.join(SANDBOX, 'pass.fixture.mjs'), path.join(outside, 'pass.fixture.mjs'));
+    const gone = path.join(SANDBOX, 'sub', '..', 'not-here.fixture.mjs');
+    const r = await runWaves({ files: [path.join(outside, 'pass.fixture.mjs'), gone], cwd: SANDBOX, env: process.env, ...LIMITS, serial: true, read: scripted('BREATHE') });
+    assert.equal(r.results[0].name, path.join(outside, 'pass.fixture.mjs'));
+    assert.equal(r.results[1].name, gone, 'an unresolvable path is shown as the caller wrote it');
+    assert.match(r.results[1].reason, /missing/);
+  } finally {
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
 });

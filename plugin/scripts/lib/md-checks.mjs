@@ -362,9 +362,14 @@ export function checkDocument(src, opts = {}) {
     let set = null;
     try {
       const text = readFile(absPath);
-      // same cap as the primary doc — a linked target over the limit is left
-      // unchecked (null) rather than pulled into the parser's worst case.
-      set = (typeof text === 'string' && text.length > MAX_DOC_BYTES) ? null : collectAnchors(parseMarkdown(text));
+      // same caps as the primary doc — a linked target over the size limit OR nested
+      // past MAX_CONTAINER_DEPTH is left unchecked (null) rather than pulled into the
+      // parser's worst case. 16e (Copilot thread 4227330989): the depth guard the
+      // primary doc gets above (CWK-032) was missing on this cross-file path, where a
+      // 32 KB target of `> ` markers took 5.6 s to parse and a 64 KB one 26.8 s
+      // (quadratic), so a one-line link to a hostile file in the repo hung the scan.
+      set = (typeof text === 'string' && (text.length > MAX_DOC_BYTES || maxContainerDepth(text) > MAX_CONTAINER_DEPTH))
+        ? null : collectAnchors(parseMarkdown(text));
     } catch { set = null; }
     targetCache.set(absPath, set);
     return set;

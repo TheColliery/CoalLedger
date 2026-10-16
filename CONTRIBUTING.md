@@ -48,7 +48,7 @@ Cross-agent by design—the canaries are plain SKILL.md contracts and the engine
 | `hooks/ag-conductor.js` | Antigravity `PreInvocation` conductor adapter—mirrors the CC conductor's offers via a ported adapter (Phoenix-13); works with, live delivery not yet validated. |
 | `hooks/coalledger-doctrack.js` | PostToolUse: records edited DOC files and the `MEMORY.md`-update satisfier that feeds the docs memory-drift reminder (Phoenix-13). |
 | `hooks/coalledger-drift-stop.js` | Stop: emits the quiet docs memory-drift reminder when docs were edited but `MEMORY.md` was not (Phoenix-13). |
-| `hooks/hooks.json` | Hook wiring via `${CLAUDE_PLUGIN_ROOT}/hooks/…`. |
+| `hooks/hooks.json` | Hook wiring in exec form: `command` is `node` and the script path `${CLAUDE_PLUGIN_ROOT}/hooks/…` sits in `args`, so no shell expands the placeholder; `verify.mjs` refuses a shell-form entry. |
 | `scripts/lib/` | The engine (ESM, shipped): `md-ast` CommonMark+GFM parser · `md-checks` structure checks · `emdash` and `lang-mechanics` mechanics engines · config modules. |
 | `skills/` | The 6+1 canary contracts (`doc-structure`, `doc-grounding`, `doc-standard`, `doc-rot`, `doc-consistency`, `doc-quality`, `doc-leak`). |
 | `commands/` | `/coalledger:stats` (measurement) · `/coalledger:update` (self-update procedure). |

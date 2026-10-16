@@ -38,6 +38,7 @@ const TESTS = [
   'scripts/configure.test.mjs',
   'scripts/build-plugin.test.mjs',
   'scripts/verify.test.mjs',
+  'scripts/hooks-exec-form.test.mjs',
   'scripts/cli-guard.test.mjs',
   'scripts/secret-scan.test.mjs',
   'scripts/secret-gate.test.mjs',
@@ -74,22 +75,16 @@ if (missing.length) {
     // force-exited file keeps its tail. A file is judged by its TAP, never by its exit code alone: a file that exits 0 before its tests register is VACUOUS and the run is RED
     // (testing.md; measured on Node 24.19: process.exit(0) there prints "# pass 1" and exits 0). The room adds one check the canon names as open: expectationFindings, a lower bound
     // on the tests a PASS file must report. Dynamic and inside the step that needs it, per node/runtime.md section 1 (a gate entry imports node builtins only at the top).
-    const { runWaves, summarize } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'wave-run.mjs')).href);
+    const { runWaves } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'wave-run.mjs')).href);
     const plan = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'test-plan.mjs')).href);
     let run = null;
     try {
-      run = await runWaves({ files: TESTS.filter((f) => !plan.DIRECT_FILES.includes(f)), cwd: repo, env: process.env, heapMb: plan.HEAP_MB, fileTimeoutMs: plan.TEST_TIMEOUT_MS, fileClockMs: plan.FILE_CLOCK_MS, deadlineMs: plan.RUN_TIMEOUT_MS });
+      run = await runWaves({ files: TESTS, cwd: repo, env: process.env, heapMb: plan.HEAP_MB, fileTimeoutMs: plan.TEST_TIMEOUT_MS, fileClockMs: plan.FILE_CLOCK_MS, deadlineMs: plan.RUN_TIMEOUT_MS });
     } catch (e) {
       console.error(`FAIL test runner: the run did not start (${e && e.message ? e.message : 'error'})`);
       process.exitCode = 1;
     }
     if (run) {
-      // the canon's own runner test is run directly (scripts/lib/test-plan.mjs, DIRECT_FILES: a named divergence), then every file is put back in roster order for ONE reconciled summary
-      const byFile = new Map(run.results.map((r) => [r.file, r]));
-      for (const f of plan.DIRECT_FILES) if (TESTS.includes(f)) byFile.set(f, plan.runDirect(f, { cwd: repo, env: process.env }));
-      run.results = TESTS.map((f) => byFile.get(f));
-      run.summary = summarize(run.results, TESTS.length);
-      run.exitCode = run.summary.red ? 1 : 0;
       for (const r of run.results) {
         if (r.status === 'PASS' || r.status === 'SKIP') continue;
         console.log(`${r.status} ${r.name}: ${r.reason}`);
@@ -99,7 +94,7 @@ ${r.stdout ?? ''}${r.stderr ?? ''}`);
       const short = plan.expectationFindings(run.results, (f) => { try { return fs.readFileSync(path.join(repo, f), 'utf8'); } catch { return null; } });
       for (const s of short) console.log(`SHORT ${s}`);
       console.log(run.summary.line);
-      if (short.length) console.log(`test runner: RED -- ${short.length} file(s) reported fewer tests than they declare (SHORT lines above)`);
+      if (short.length) console.log(`test runner: RED -- ${short.length} file(s) failed the declared-test lower bound (SHORT lines above)`);
       process.exitCode = run.exitCode !== 0 || short.length ? 1 : 0;
     }
   }

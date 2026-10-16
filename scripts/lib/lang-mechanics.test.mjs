@@ -698,3 +698,38 @@ test('ko CLI: --script ko reports the KO rule, --script zh reports none of it', 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// 16e unit C (the twin of the zone file CoalWorks/emdash.mjs, CWK2-021): the same four CommonMark constructs in this file's own Markdown awareness.
+// The sentinel is a Han, ASCII comma, Han run (HAN below), which fires zh-halfwidth-punct wherever the line is prose and nowhere it is code, so the
+// reported line numbers show which lines the fence state, the indentation skip and the masks left as prose. Tokens: <T> tab, <B> backtick.
+// ---------------------------------------------------------------------------
+const HAN = '你好,再见';
+const mkl = (...lines) => lines.join('\n').split('<T>').join(String.fromCharCode(9)).split('<B>').join(String.fromCharCode(96));
+const MD_CASES = [
+  // [behaviour and condition, text, the lines that must be reported]
+  ['a tab-indented fence line with no closer opens no fence, so the prose after it is scanned', mkl('intro', '', '<T><B><B><B>', HAN, HAN), [4, 5]],
+  ['a tab-indented code line is code, and its Han comma is not reported', mkl('intro', '', '<T>' + HAN, '', 'tail'), []],
+  ['two tabs of indentation is indented code', mkl('intro', '', '<T><T>' + HAN, '', 'tail'), []],
+  ['a tab then a space of indentation is indented code', mkl('intro', '', '<T> ' + HAN, '', 'tail'), []],
+  ['four spaces then a tab is indented code', mkl('intro', '', '    <T>' + HAN, '', 'tail'), []],
+  ['a space, a tab, two spaces is indented code', mkl('intro', '', ' <T>  ' + HAN, '', 'tail'), []],
+  ['a tab-indented fence inside a list item is a real fence, and the Han comma inside it is code', mkl('- item', '<T><B><B><B>js', '<T>' + HAN, '<T><B><B><B>', '', 'tail'), []],
+  ['a fence line indented four spaces is indented code, so the line after it is prose', mkl('intro', '', '    <B><B><B>', HAN, '    <B><B><B>', HAN), [4, 6]],
+  ['a fence line carrying an info string does not close an open fence', mkl('<B><B><B>text', 'example:', '<B><B><B>js', HAN, '<B><B><B>', '', HAN), [7]],
+  ['a same-length fence line carrying an info string inside a fence does not close it (the nested example)', mkl('<B><B><B>md', 'example:', '<B><B><B>js', HAN, '<B><B><B>', '', HAN), [7]],
+  ['a fence line followed by words does not close an open fence', mkl('<B><B><B>', HAN, '<B><B><B> not a closer', HAN, '<B><B><B>', HAN), [6]],
+  ['an ordinary closing fence closes the fence', mkl('<B><B><B>', HAN, '<B><B><B>', HAN), [4]],
+  ['a closing fence followed only by spaces and a tab closes the fence', mkl('<B><B><B>', HAN, '<B><B><B>  <T>', HAN), [4]],
+  ['a link destination with balanced parentheses is masked whole, so a Han comma inside it is part of the address', mkl('see [t](https://en.wikipedia.org/wiki/Foo_(bar)' + HAN + ') now'), []],
+  ['a Han comma right after a destination with balanced parentheses is still reported', mkl('see [t](https://en.wikipedia.org/wiki/Foo_(bar))' + HAN), [1]],
+  ['a two-level nested destination is masked only to its first closing parenthesis, the prose after it is scanned', mkl('see [t](rel/Foo_(bar_(baz)))' + HAN), [1]],
+  ['a one-backtick opener with a double-backtick run after it closes nothing, so the Han comma is prose', mkl('<B>' + HAN + '<B><B>'), [1]],
+  ['a two-backtick opener with a one-backtick run after it closes nothing, so the Han comma is prose', mkl('<B><B>' + HAN + '<B>'), [1]],
+  ['a Han comma inside a well-formed code span is code', mkl('x <B>' + HAN + '<B> y'), []],
+];
+for (const [name, text, want] of MD_CASES) {
+  test('commonmark: ' + name, () => {
+    assert.deepEqual(checkText(text).map((f) => f.line), want);
+  });
+}

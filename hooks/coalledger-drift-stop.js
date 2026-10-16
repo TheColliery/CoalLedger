@@ -48,21 +48,19 @@ function lib(name) {
   return pathToFileURL(path.join(__dirname, '..', 'scripts', 'lib', name)).href;
 }
 
-// One quiet English model-context line. CL's conductor idiom is an English
-// directive TO the agent, which then surfaces user-facing prose in the session's
-// language per the SessionStart language lock — so there is no per-language
-// table here (a NAMED divergence from CoalMine's translated Stop line; the note
-// is model-facing, not shown verbatim). DISTINCT from CoalMine's CODE note (this
+// One quiet English line addressed to the USER. A Stop `systemMessage` is shown in
+// the transcript and the interactive UI and the model never reads it (measured
+// 2026-10-15, hooks-safety.md section 4), so the text speaks to the person, not
+// to the agent. No per-language table (a NAMED divergence from CoalMine's
+// translated Stop line). DISTINCT from CoalMine's CODE note (this
 // names DOCS) so a session that edited both code and docs gets two
 // non-redundant notes, one per axis.
 //
-// ROUTED, not commanded (board #25): the hook cannot tell whether the
-// responder holding this Stop owns MEMORY.md or is a production-line station
-// worker forbidden to write it (org law — writes gate to the room-gate OUT
-// step). An unconditional "update MEMORY.md" either tells a station worker to
-// violate that law or reads as noise it correctly ignores. The line states the
-// fact (drift never lost) and branches the ACTION on who can act on it.
-const DRIFT_LINE = "[CoalLedger] Docs memory-drift: documentation changed this session but no MEMORY.md update was recorded. If you own this session's record, update MEMORY.md before ending; if you are a station worker who cannot write it, report the drift in your return instead. (Advisory; disable: docsDriftNudge=false in .coalledger.json)";
+// Addressed to the person who reads the transcript (board #25 routed the action
+// for an agent reader; since the 2026-10-15 measurement the reader is the user):
+// what happened (documents changed, MEMORY.md not updated) and what to do (update
+// it if this project keeps its record there, otherwise ignore the line).
+const DRIFT_LINE = "[CoalLedger] Docs memory-drift: documentation was edited this session but MEMORY.md was not updated. If this project keeps its record in MEMORY.md, update it before you finish; otherwise ignore this. (Advisory, shown to you only; turn it off with docsDriftNudge=false in .coalledger.json)";
 
 // Clear the edit BATCH, never the session-long SATISFIER. CC's Stop fires per
 // RESPONSE (many per session), so deleting `.docmemmoved` here would forget a

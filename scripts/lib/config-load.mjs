@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { parseJsonc } from './jsonc.mjs';
-import { CONFIG_SCHEMA } from './config-schema.mjs';
+import { CONFIG_SCHEMA, validateValue } from './config-schema.mjs';
 import { readRepoFileBounded, repoEntryKind, MAX_CONFIG_BYTES } from './repo-fs.mjs';
 
 export function claudeBaseDir(home = os.homedir()) {
@@ -400,7 +400,7 @@ function readJsonc(file, root) {
 //                    because the day such a reader lands, the guard must
 //                    already be correct and the direction already argued.
 // NOT clamped, and each for its OWN reason — the classifier is BLAST, not type:
-//   docsDriftNudge   also a boolean, but it suppresses ONE quiet model-only
+//   docsDriftNudge   also a boolean, but it suppresses ONE quiet user-only
 //                    line: no offer, no scan, no spend. Re-enabling that in a
 //                    single project is a legitimate use, so it stays plain.
 //                    (docLeak vs docsDriftNudge is why two booleans must never
@@ -474,6 +474,12 @@ const SAFER_ENUM = {
 };
 const SAFER_UNION = ['disabledCanaries'];
 const SCHEMA_DEFAULT = Object.fromEntries(CONFIG_SCHEMA.map((s) => [s.key, s.def]));
+const SCHEMA_SPEC = Object.fromEntries(CONFIG_SCHEMA.map((s) => [s.key, s]));
+// 16e bounce 1 (INSPECT F1 HIGH, F2 MEDIUM): VALIDITY, not shape. A value is usable only when the schema accepts it -- the very rule clampedRead applies on read,
+// where a value the schema rejects is read as the factory default. Judging a SHAPE instead (`Array.isArray`, a lowercase string match) let a shape-valid but
+// schema-invalid value ([7], the string "false") reach `out`, after which clampedRead threw the WHOLE key to the default and the user's own setting was lost.
+// An invalid value is never coerced toward the less safe side: it is ABSENT, and the other valid side (or the schema default) stands.
+const isValid = (key, v) => v !== undefined && validateValue(SCHEMA_SPEC[key], v) === null;
 
 export function mergeSafety(global, project) {
   const out = { ...global, ...project };
@@ -489,7 +495,8 @@ export function mergeSafety(global, project) {
     // observable output for those two — the fix is still required (closes the
     // mechanism's own hole structurally, holds for any future default change) but
     // has no live bite today for those two keys.
-    const effectiveGlobal = global[key] !== undefined ? global[key] : SCHEMA_DEFAULT[key];
+    // 16e: an invalid GLOBAL value (a string for a bool key, a number for an enum) reads as the schema default, exactly as clampedRead reads it.
+    const effectiveGlobal = isValid(key, global[key]) ? global[key] : SCHEMA_DEFAULT[key];
     // CASE-FOLD to match the schema's case-insensitive enums (clampedRead
     // lowercases). Comparing raw case let a project 'AUTO'/'Off' miss the
     // lookup (indexOf -> -1) and fall through to the overlay, re-enabling a
@@ -516,7 +523,8 @@ export function mergeSafety(global, project) {
     // lowercases). Comparing raw case let a project 'AUTO'/'Off' miss the
     // lookup (indexOf -> -1) and fall through to the overlay, re-enabling a
     // globally-off skill — CoalWash paid for this one (H5).
-    const pi = order.indexOf(String(project[key]).toLowerCase());
+    // 16e F2: a project value counts only when the schema accepts it; the STRING "false" for a bool key is not one (it indexed as 0 and was stored raw).
+    const pi = isValid(key, project[key]) ? order.indexOf(String(project[key]).toLowerCase()) : -1;
     if (pi !== -1 && pi <= gi) {
       out[key] = project[key]; // valid project value at or below the ceiling -> raw spelling preserved (unchanged from before this fix)
     } else if (giFromFallback) {
@@ -536,8 +544,14 @@ export function mergeSafety(global, project) {
     // fallthrough below (nothing to union with), so a non-empty default would
     // silently under-protect exactly like the SAFER_ENUM hole this board
     // fixed. `disabledCanaries`'s default is `[]` (config-schema.mjs), holds.
-    if (!Array.isArray(global[key]) || !Array.isArray(project[key])) continue;
-    out[key] = [...new Set([...global[key], ...project[key]])]; // a project may add, never remove
+    if (project[key] === undefined) continue; // nothing to union: `out` already holds the global's own value
+    // 16e D (Copilot thread 4227330928): an INVALID value on either side bypassed the union as surely as an absent one (board #111's class). The old
+    // `!Array.isArray(global) || !Array.isArray(project)` skip left the project-first overlay's invalid value in `out`, clampedRead resolved it to the
+    // default, and the user's own global disable ("all" included) was lost to a cloned repo's malformed key. An invalid side now reads as the schema
+    // default (the empty array), so the other valid side stands: a project may add, never remove, and junk adds nothing.
+    // 16e bounce 1 F1: VALIDITY, the schema's `strArr` (every element a string), not Array.isArray: [7] or ["doc-rot", null] is invalid as a whole.
+    const side = (v) => (isValid(key, v) ? v : (Array.isArray(SCHEMA_DEFAULT[key]) ? SCHEMA_DEFAULT[key] : []));
+    out[key] = [...new Set([...side(global[key]), ...side(project[key])])]; // a project may add, never remove
   }
   return out;
 }

@@ -67,13 +67,21 @@ try {
   if (/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(pj.version || '')) ok(`plugin.json version '${pj.version}' is semver (pre-release accepted)`);
   else fail(`plugin.json version '${pj.version}' not semver`);
   if (pj.license === 'Apache-2.0') ok('plugin.json license = Apache-2.0'); else fail(`plugin.json license = '${pj.license}' (series license is Apache-2.0)`);
-  const hj = fs.readFileSync(path.join(repo, 'hooks', 'hooks.json'), 'utf8');
-  if (hj.includes('${CLAUDE_PLUGIN_ROOT}/hooks/coalledger-conductor.js')) ok('hooks.json wires SessionStart via ${CLAUDE_PLUGIN_ROOT}/hooks');
-  else fail('hooks.json does not wire SessionStart under ${CLAUDE_PLUGIN_ROOT}/hooks');
-  if (hj.includes('${CLAUDE_PLUGIN_ROOT}/hooks/coalledger-doctrack.js')) ok('hooks.json wires PostToolUse (docs-drift tracker)');
-  else fail('hooks.json does not wire the docs-drift tracker (coalledger-doctrack.js)');
-  if (hj.includes('${CLAUDE_PLUGIN_ROOT}/hooks/coalledger-drift-stop.js')) ok('hooks.json wires Stop (docs-drift nudge)');
-  else fail('hooks.json does not wire the docs-drift Stop nudge (coalledger-drift-stop.js)');
+  // CWK2-027: every hook entry is the EXEC form (`command: "node"` + one `args` path), never a shell string. A shell-form string carrying
+  // ${CLAUDE_PLUGIN_ROOT} runs through PowerShell where Git for Windows is absent, and there the variable expands to nothing (hooks-safety.md section 3).
+  const hooks = JSON.parse(fs.readFileSync(path.join(repo, 'hooks', 'hooks.json'), 'utf8')).hooks || {};
+  const WIRED = [['SessionStart', 'coalledger-conductor.js', 'SessionStart'], ['PostToolUse', 'coalledger-doctrack.js', 'PostToolUse (docs-drift tracker)'], ['Stop', 'coalledger-drift-stop.js', 'Stop (docs-drift nudge)']];
+  const entries = (event) => (hooks[event] || []).flatMap((g) => g.hooks || []);
+  for (const [event, script, label] of WIRED) {
+    const want = `${'$'}{CLAUDE_PLUGIN_ROOT}/hooks/${script}`;
+    const hit = entries(event).filter((h) => Array.isArray(h.args) && h.args.length === 1 && h.args[0] === want);
+    const exec = hit.length > 0 && hit.every((h) => h.type === 'command' && h.command === 'node' && !('shell' in h) && !('onFailure' in h));
+    if (exec) ok(`hooks.json wires ${label} in exec form (node + ${want})`);
+    else fail(`hooks.json does not wire ${label} in exec form: want command "node" with args ["${want}"], no shell, no onFailure`);
+  }
+  const stray = Object.entries(hooks).flatMap(([event, groups]) => groups.flatMap((g) => g.hooks || []).filter((h) => h.command !== 'node').map((h) => `${event}: ${JSON.stringify(h.command)}`));
+  if (stray.length === 0) ok('hooks.json: no hook entry names anything but node as its command');
+  else fail(`hooks.json: shell-form or non-node command entries -- ${stray.join('; ')}`);
 } catch (e) { fail(`plugin manifest: ${e.message}`); }
 
 console.log('marketplace.json:');
