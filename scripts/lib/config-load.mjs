@@ -536,8 +536,13 @@ export function mergeSafety(global, project) {
     // fallthrough below (nothing to union with), so a non-empty default would
     // silently under-protect exactly like the SAFER_ENUM hole this board
     // fixed. `disabledCanaries`'s default is `[]` (config-schema.mjs), holds.
-    if (!Array.isArray(global[key]) || !Array.isArray(project[key])) continue;
-    out[key] = [...new Set([...global[key], ...project[key]])]; // a project may add, never remove
+    if (project[key] === undefined) continue; // nothing to union: `out` already holds the global's own value
+    // 16e D (Copilot thread 4227330928): an INVALID value on either side bypassed the union as surely as an absent one (board #111's class). The old
+    // `!Array.isArray(global) || !Array.isArray(project)` skip left the project-first overlay's invalid value in `out`, clampedRead resolved it to the
+    // default, and the user's own global disable ("all" included) was lost to a cloned repo's malformed key. An invalid side now reads as the schema
+    // default (the empty array), so the other valid side stands: a project may add, never remove, and junk adds nothing.
+    const side = (v) => (Array.isArray(v) ? v : (Array.isArray(SCHEMA_DEFAULT[key]) ? SCHEMA_DEFAULT[key] : []));
+    out[key] = [...new Set([...side(global[key]), ...side(project[key])])]; // a project may add, never remove
   }
   return out;
 }

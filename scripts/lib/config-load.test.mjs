@@ -275,6 +275,33 @@ test('clamp: disabledCanaries UNIONs — a project cannot re-enable what global 
   } finally { clean(home, proj); }
 });
 
+// 16e unit D (Copilot thread 4227330928, a section 9 clamp hole): an INVALID value on either side bypassed the union as surely as an absent one. The
+// `!Array.isArray(...) || !Array.isArray(...)` guard left the project-first overlay's invalid value in `out`, `clampedRead` resolved it to the default `[]`,
+// and the user's own global disable was lost: a cloned repo's malformed `disabledCanaries` re-enabled a canary the user had turned off, ["all"] included.
+// The rule (board #111): an invalid side reads as the schema default `[]`, so the other valid side stands.
+for (const [label, g, p, want] of [
+  ['a string project value', ['doc-leak'], 'oops', ['doc-leak']],
+  ['a number project value', ['all'], 7, ['all']],
+  ['a null project value', ['doc-leak'], null, ['doc-leak']],
+  ['an object project value', ['doc-rot'], { all: true }, ['doc-rot']],
+  ['an invalid global and a valid project (the project may only add)', 'oops', ['doc-leak'], ['doc-leak']],
+  ['both sides invalid reads as the schema default', 'oops', 7, []],
+]) {
+  test(`clamp: disabledCanaries with ${label} keeps the valid side (16e D, Copilot 4227330928)`, () => {
+    const { home, proj } = sandbox();
+    try {
+      const merged = cascade(home, proj, { disabledCanaries: g }, { disabledCanaries: p });
+      assert.deepStrictEqual([...clampedRead(merged, 'disabledCanaries')].sort(), [...want].sort());
+    } finally { clean(home, proj); }
+  });
+}
+test('clamp: disabledCanaries with an invalid project value and NO global file reads the schema default (16e D)', () => {
+  const { home, proj } = sandbox();
+  try {
+    assert.deepStrictEqual(clampedRead(cascade(home, proj, {}, { disabledCanaries: 'oops' }), 'disabledCanaries'), []);
+  } finally { clean(home, proj); }
+});
+
 test('clamp: an ABSENT global substitutes the schema default as the clamp ceiling (board #111)', () => {
   const { home, proj } = sandbox();
   try {
