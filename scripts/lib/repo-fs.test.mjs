@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isContained, repoEntryKind, readRepoFileBounded, writeRepoFile, RepoWriteRefused, MAX_CONFIG_BYTES, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { isContained, repoEntryKind, readRepoFileBounded, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 function scratch(prefix) {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
@@ -662,4 +662,82 @@ test('repoEntryKind 14a: a FILE symlink that stays inside root but leaves its ow
     fs.symlinkSync(path.join(root, 'elsewhere', 'real.json'), path.join(root, 'coal', 'c.json'), 'file');
     assert.equal(repoEntryKind(path.join(root, 'coal', 'c.json'), root), 'other');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// ---- 16f unit A (CWK2-042): mkdirRepoParents -- the chain from the project root is judged with lstat BEFORE any folder is made ----
+// A link at any existing component is refused wherever it points (the same literal pin as the 15b read side); each missing component is made one at a time
+// with a plain mkdir (never recursive across an unchecked chain) and re-checked after it is made; a refused target makes nothing.
+function mkdirChainRoot(prefix) { return scratch(prefix); }
+test('mkdirRepoParents 16f A: creates every missing component inside root, one level at a time', () => {
+  const root = mkdirChainRoot('cl-mkd-ok-');
+  try {
+    mkdirRepoParents(path.join(root, '.claude', 'coal'), root);
+    assert.ok(fs.statSync(path.join(root, '.claude', 'coal')).isDirectory());
+    mkdirRepoParents(path.join(root, '.claude', 'coal'), root); // idempotent on an existing chain
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+test('mkdirRepoParents 16f A: dir === root is a no-op, and root = null makes the folder as the home-file caller needs', () => {
+  const root = mkdirChainRoot('cl-mkd-root-');
+  const home = mkdirChainRoot('cl-mkd-null-');
+  try {
+    mkdirRepoParents(root, root);
+    mkdirRepoParents(path.join(home, 'a', 'b'), null);
+    assert.ok(fs.statSync(path.join(home, 'a', 'b')).isDirectory());
+  } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+test('mkdirRepoParents 16f A: a folder outside root lexically is refused and nothing is made', () => {
+  const root = mkdirChainRoot('cl-mkd-lex-');
+  const outside = mkdirChainRoot('cl-mkd-lexout-');
+  try {
+    assert.throws(() => mkdirRepoParents(path.join(outside, 'x'), root), RepoWriteRefused);
+    assert.throws(() => mkdirRepoParents(path.join(root, '..', path.basename(outside), 'y'), root), RepoWriteRefused);
+    assert.deepStrictEqual(fs.readdirSync(outside), []);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+test('mkdirRepoParents 16f A: a FILE at a component is refused (not a directory) and nothing is made behind it', () => {
+  const root = mkdirChainRoot('cl-mkd-file-');
+  try {
+    fs.writeFileSync(path.join(root, '.claude'), 'x');
+    assert.throws(() => mkdirRepoParents(path.join(root, '.claude', 'coal'), root), RepoWriteRefused);
+    assert.strictEqual(fs.readFileSync(path.join(root, '.claude'), 'utf8'), 'x');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+for (const [type, label] of [['junction', 'junction'], ['dir', 'directory symlink']]) {
+  const ok = canLinkDirKind(type);
+  for (const [where, plant, chain] of [
+    ['the first component', (root, target) => fs.symlinkSync(target, path.join(root, '.claude'), type), ['.claude', 'coal']],
+    ['the second component', (root, target) => { fs.mkdirSync(path.join(root, '.claude')); fs.symlinkSync(target, path.join(root, '.claude', 'coal'), type); }, ['.claude', 'coal', 'deep']],
+  ]) {
+    test(`mkdirRepoParents 16f A: a ${label} at ${where} pointing OUTSIDE is refused and nothing is made outside (capability-gated)`, (t) => {
+      if (!ok) { t.skip(`this seat cannot create a ${label} on this box`); return; }
+      const root = mkdirChainRoot('cl-mkd-link-');
+      const outside = mkdirChainRoot('cl-mkd-linkout-');
+      try {
+        plant(root, outside);
+        assert.throws(() => mkdirRepoParents(path.join(root, ...chain), root), RepoWriteRefused);
+        assert.deepStrictEqual(fs.readdirSync(outside), [], 'a refused target makes nothing outside');
+      } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+    });
+  }
+  test(`mkdirRepoParents 16f A: a ${label} whose target stays INSIDE root is refused too, wherever it points (capability-gated)`, (t) => {
+    if (!ok) { t.skip(`this seat cannot create a ${label} on this box`); return; }
+    const root = mkdirChainRoot('cl-mkd-linkin-');
+    try {
+      fs.mkdirSync(path.join(root, 'shared'));
+      fs.symlinkSync(path.join(root, 'shared'), path.join(root, '.claude'), type);
+      assert.throws(() => mkdirRepoParents(path.join(root, '.claude', 'coal'), root), RepoWriteRefused);
+      assert.deepStrictEqual(fs.readdirSync(path.join(root, 'shared')), []);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+test('mkdirRepoParents 16f A: a root reached THROUGH a link still works (the root itself is not walked)', (t) => {
+  if (!canLinkDirKind('junction')) { t.skip('this seat cannot create a junction on this box'); return; }
+  const real = mkdirChainRoot('cl-mkd-viaroot-');
+  const holder = mkdirChainRoot('cl-mkd-viaholder-');
+  try {
+    const linked = path.join(holder, 'proj');
+    fs.symlinkSync(real, linked, 'junction');
+    mkdirRepoParents(path.join(linked, '.claude', 'coal'), linked);
+    assert.ok(fs.statSync(path.join(real, '.claude', 'coal')).isDirectory());
+  } finally { fs.rmSync(real, { recursive: true, force: true }); fs.rmSync(holder, { recursive: true, force: true }); }
 });

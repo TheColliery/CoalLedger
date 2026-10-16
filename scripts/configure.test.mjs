@@ -295,3 +295,71 @@ test('configure: a MALFORMED config\'s .bak is written from the bytes ALREADY RE
     assert.strictEqual(written.updateCheckDays, 9, 'the rebuild from defaults must still succeed and apply the flag, despite the non-zero exit');
   } finally { clean(home, proj); }
 });
+
+// ---- 16f unit A (CWK2-042, the mkdir-before-guard class): the config's parent folder is made ONLY after the chain from the project root is judged ----
+// `configure.mjs` ran `fs.mkdirSync(dirname(writePath), { recursive: true })` BEFORE writeRepoFile's containment check, so a `.claude` junction pointing OUTSIDE the
+// project got an empty `coal` folder created outside and only then was the write refused (Copilot thread 4227330887, the reviewer's witness 887). The guard now
+// judges the target before anything is made (mkdirRepoParents in repo-fs.mjs): a refused target makes nothing, here or outside.
+function canJunction() {
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-cfg-junction-probe-')));
+  try {
+    fs.mkdirSync(path.join(d, 'a'));
+    fs.symlinkSync(path.join(d, 'a'), path.join(d, 'b'), 'junction');
+    return true;
+  } catch { return false; }
+  finally { fs.rmSync(d, { recursive: true, force: true }); }
+}
+const JUNCTION_CLI_OK = canJunction();
+function outsideDir() {
+  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-cfg-outside-')));
+}
+test('configure 16f A: a .claude junction to OUTSIDE the project is refused and NOTHING is made outside (witness 887; red on the mkdir-first code)', (t) => {
+  if (!JUNCTION_CLI_OK) { t.skip('this seat cannot create a junction on this box'); return; }
+  const { home, proj } = sandbox();
+  const outside = outsideDir();
+  t.after(() => clean(home, outside));
+  fs.symlinkSync(outside, path.join(proj, '.claude'), 'junction');
+  const r = run(['--severityFloor', 'high'], { home, proj });
+  assert.strictEqual(r.status, 1, `the write must be refused with exit 1; got ${r.status}\n${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /\[refused\]/);
+  assert.deepStrictEqual(fs.readdirSync(outside), [], 'a refused target makes nothing outside the project');
+});
+test('configure 16f A: a .claude/coal junction (the second component) to OUTSIDE is refused and NOTHING is made outside', (t) => {
+  if (!JUNCTION_CLI_OK) { t.skip('this seat cannot create a junction on this box'); return; }
+  const { home, proj } = sandbox();
+  const outside = outsideDir();
+  t.after(() => clean(home, outside));
+  fs.mkdirSync(path.join(proj, '.claude'));
+  fs.symlinkSync(outside, path.join(proj, '.claude', 'coal'), 'junction');
+  const r = run(['--severityFloor', 'high'], { home, proj });
+  assert.strictEqual(r.status, 1, `exit ${r.status}\n${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /\[refused\]/);
+  assert.deepStrictEqual(fs.readdirSync(outside), [], 'nothing is written through the second component either');
+});
+test('configure 16f A: a .claude junction whose target stays INSIDE the project is refused too (the folder pin is literal, as for reads)', (t) => {
+  if (!JUNCTION_CLI_OK) { t.skip('this seat cannot create a junction on this box'); return; }
+  const { home, proj } = sandbox();
+  t.after(() => clean(home));
+  fs.mkdirSync(path.join(proj, 'shared'));
+  fs.symlinkSync(path.join(proj, 'shared'), path.join(proj, '.claude'), 'junction');
+  const r = run(['--severityFloor', 'high'], { home, proj });
+  assert.strictEqual(r.status, 1, `exit ${r.status}\n${r.stdout}${r.stderr}`);
+  assert.deepStrictEqual(fs.readdirSync(path.join(proj, 'shared')), [], 'nothing is made behind the link');
+});
+test('configure 16f A: a real .claude folder takes the config (the plain case, green before and after)', (t) => {
+  const { home, proj } = sandbox();
+  t.after(() => clean(home));
+  fs.mkdirSync(path.join(proj, '.claude'));
+  const r = run(['--severityFloor', 'high'], { home, proj });
+  assert.strictEqual(r.status, 0, `stderr: ${r.stderr}`);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(proj, '.claude', 'coal', 'coalledger.json'), 'utf8')).severityFloor, 'high');
+});
+test('configure 16f A: a missing .claude and .claude/coal are created INSIDE the project, one at a time, and the config is written', (t) => {
+  const { home, proj } = sandbox();
+  t.after(() => clean(home));
+  assert.ok(!fs.existsSync(path.join(proj, '.claude')));
+  const r = run(['--severityFloor', 'high'], { home, proj });
+  assert.strictEqual(r.status, 0, `stderr: ${r.stderr}`);
+  assert.ok(fs.statSync(path.join(proj, '.claude', 'coal')).isDirectory());
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(proj, '.claude', 'coal', 'coalledger.json'), 'utf8')).severityFloor, 'high');
+});

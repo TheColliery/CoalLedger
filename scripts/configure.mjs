@@ -43,7 +43,7 @@ import { fileURLToPath } from 'url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { parseJsonc } from './lib/jsonc.mjs';
 import { findProjectRoot, projectConfigPath, ownDirDefault, globalConfigPath } from './lib/config-load.mjs';
-import { readRepoFileBounded, writeRepoFile, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
+import { readRepoFileBounded, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
 
 function printHelp() {
   const lines = [
@@ -256,7 +256,9 @@ function main() {
   }
 
   try {
-    fs.mkdirSync(path.dirname(writePath), { recursive: true });
+    // 16f A (CWK2-042): the folder is made only after the chain from the project root is judged (a refused target makes nothing); writeRoot is null for the home file.
+    const writeRoot = isGlobal ? null : projectRoot;
+    mkdirRepoParents(path.dirname(writePath), writeRoot);
     // CWK-137: a plain fs.writeFileSync FOLLOWS a symlink at the destination
     // (node/runtime.md §5) -- a repo-planted symlink at writePath would have written
     // this config's JSON into whatever it points at (CoalMine's PoC-2 class:
@@ -265,7 +267,6 @@ function main() {
     // replaces via temp+rename, which swaps the directory entry rather than writing
     // through it. writeRoot mirrors readRoot: null for the global (home) file, the
     // project root otherwise.
-    const writeRoot = isGlobal ? null : projectRoot;
     writeRepoFile(writePath, JSON.stringify(cfg, null, 2) + '\n', writeRoot);
     // Move-on-CONFIG-WRITE-only (no-old-version-leftover): the legacy root
     // file is removed only AFTER the new-home write above succeeded, and only

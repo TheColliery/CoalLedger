@@ -154,6 +154,34 @@ export class RepoWriteRefused extends Error {
   }
 }
 
+// 16f A (CWK2-042, the mkdir-before-guard class; Copilot thread 4227330887): the parent folder of a project write is made ONLY after the chain from the
+// project root is judged. `fs.mkdirSync(dirname, { recursive: true })` ran BEFORE writeRepoFile's containment check, so a `.claude` junction to OUTSIDE the
+// project got an empty `coal` folder created outside and only then was the write refused. This walks `root` down to `dir` one component at a time with lstat
+// (the same literal pin as the 15b read side, repoEntryKind): a link or junction at ANY existing component is refused wherever it points, a target inside
+// the project included; a component that exists and is not a directory is refused; each MISSING component is made with a plain, NON-recursive mkdir and
+// re-checked with lstat right after (a link swapped in between is caught), so a refused target makes nothing. `root` itself is not walked (a project opened
+// through a linked path still works, as for reads). `root = null` (the home file) keeps the plain recursive mkdir: no containment is asked there.
+// Throws RepoWriteRefused, never a raw errno. Residual, named: the walk and the later write are separate steps, so a link swapped in after the last re-check
+// is caught only by writeRepoFile's own realpath check on the nearest existing ancestor.
+export function mkdirRepoParents(dir, root) {
+  if (root == null) { fs.mkdirSync(dir, { recursive: true }); return; }
+  const rel = path.relative(root, dir);
+  if (rel === '') return;
+  if (rel.startsWith('..') || path.isAbsolute(rel)) throw new RepoWriteRefused(dir, 'it is outside the project root');
+  let cur = root;
+  for (const part of rel.split(path.sep)) {
+    cur = path.join(cur, part);
+    let st = null;
+    try { st = fs.lstatSync(cur); } catch (e) { if (e.code !== 'ENOENT') throw new RepoWriteRefused(cur, `it could not be inspected (${e.code})`); }
+    if (st === null) {
+      try { fs.mkdirSync(cur); } catch (e) { if (e.code !== 'EEXIST') throw new RepoWriteRefused(cur, `its folder could not be made (${e.code})`); }
+      try { st = fs.lstatSync(cur); } catch (e) { throw new RepoWriteRefused(cur, `it could not be inspected after it was made (${e.code})`); }
+    }
+    if (st.isSymbolicLink()) throw new RepoWriteRefused(cur, 'a link or junction sits on the path to the config folder, wherever it points');
+    if (!st.isDirectory()) throw new RepoWriteRefused(cur, 'it exists and is not a directory');
+  }
+}
+
 // The nearest ancestor of `p` that actually EXISTS on disk — `p` itself may not exist
 // yet (the normal case for a config being created for the first time).
 function nearestExistingAncestor(p) {
