@@ -9,6 +9,7 @@
 ![version](https://img.shields.io/github/v/tag/TheColliery/CoalLedger?label=version&color=blue)
 ![license](https://img.shields.io/badge/license-Apache_2.0-blue)
 ![status](https://img.shields.io/badge/status-beta-orange)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/TheColliery/CoalLedger?utm_source=oss&utm_medium=github&utm_campaign=TheColliery%2FCoalLedger&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 ![Claude Code: validated](https://img.shields.io/badge/Claude_Code-validated-brightgreen)
 ![Antigravity: works with](https://img.shields.io/badge/Antigravity-works_with-blue)
