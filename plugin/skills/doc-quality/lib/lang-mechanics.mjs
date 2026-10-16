@@ -271,8 +271,12 @@ const CHECKS = [
 const mask = (s) => 'x'.repeat(s.length);
 
 function maskInline(line) {
-  let out = line.replace(/(`+)[\s\S]*?\1/g, mask);
-  out = out.replace(/\]\([^)]*\)/g, mask);
+  // 16e (the zone file CoalWorks/emdash.mjs, CWK2-021): a span opens and closes on a backtick run of EXACTLY the same length, so the lookarounds keep a run
+  // from being matched as a SUBSTRING of a longer one (a lone backtick then the first backtick of a longer run had masked the prose between them).
+  let out = line.replace(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g, mask);
+  // A destination may hold ONE level of balanced parentheses (Foo_(bar)); one the balanced rule cannot consume (a nest two deep, an unbalanced "(")
+  // is masked up to its FIRST ")" by the old rule, the second alternative, so the prose after it stays visible.
+  out = out.replace(/\]\((?:(?:[^()]|\([^()]*\))*\)|[^)]*\))/g, mask);
   // MED-1 (r34 INSPECT): the prior `<[^ >]*>` stopped at the FIRST space, so
   // any HTML comment or tag carrying a space or an attribute (`<!-- 注释, -->`,
   // `<span title="中,文">`) left its content unmasked. Masking up to the
@@ -290,9 +294,13 @@ function maskInline(line) {
   return out;
 }
 
+// A fence opens with >=3 backticks or tildes after 0-3 SPACES (16e: a tab is four columns of indentation, so a tab-indented line is indented code,
+// never a fence) and closes with a fence of the SAME character, AT LEAST the same length and followed only by spaces or tabs (CommonMark): `rest` is
+// what follows the run, so the caller can refuse a would-be closer that carries an info string or words. OPEN, carried from the zone file and named
+// not fixed: a backtick opener whose info string holds a backtick is inline code in CommonMark and is still read here as a fence.
 function fenceInfo(line) {
-  const m = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
-  return m ? { ch: m[1][0], len: m[1].length } : null;
+  const m = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+  return m ? { ch: m[1][0], len: m[1].length, rest: line.slice(m[0].length) } : null;
 }
 
 // LICENSE/NOTICE/COPYING-class files, and a <!-- third-party-text --> own-
@@ -367,17 +375,15 @@ export function checkText(text, opts = {}) {
       if (frontMatterEnd !== -1 && i <= frontMatterEnd) continue; // whole front-matter block: metadata, never prose
       const f = fenceInfo(raw);
       if (fence) {
-        if (f && f.ch === fence.ch && f.len >= fence.len) fence = null;
+        if (f && f.ch === fence.ch && f.len >= fence.len && /^[ \t]*$/.test(f.rest)) fence = null;
         continue; // inside a fence: content, never prose mechanics
       }
       if (f) { fence = f; continue; }
       if (/^\s{0,3}>/.test(raw)) continue; // blockquote: quoted matter
-      // INDENTED CODE BLOCK (MED-1, r34 INSPECT): 4+ leading spaces is
-      // Markdown's other code form -- parity with emdash.mjs's own
-      // identical rule and its stated trade: indented CONTINUATION text
-      // inside a list item is skipped too, so this OVER-excludes; a miss is
-      // the safe direction, never a manufactured hit.
-      if (/^ {4,}\S/.test(raw)) continue;
+      // INDENTED CODE BLOCK (MED-1, r34 INSPECT): 4+ columns of leading indentation, a tab counting as four, is Markdown's other code form -- 4+ spaces,
+      // or 0-3 spaces then a tab (16e), then any further spaces or tabs, then text. Parity with emdash.mjs's own identical rule and its stated trade:
+      // indented CONTINUATION text inside a list item is skipped too, so this OVER-excludes; a miss is the safe direction, never a manufactured hit.
+      if (/^(?: {4,}| {0,3}\t)[ \t]*\S/.test(raw)) continue;
     }
     const line = opts.plain ? raw : maskInline(raw);
     const script = classifyLine(line);

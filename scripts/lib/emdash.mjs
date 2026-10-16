@@ -39,9 +39,14 @@
 //
 // HONEST REACH -- the limits are stated because an instrument whose limits are
 // unstated has a clean run that means an unknown amount:
-//   - FENCED CODE is excluded by a real line-state machine (``` and ~~~, with
-//     the closing fence required to be at least as long as the opener, per
-//     CommonMark). A single-line regex structurally cannot do this.
+//   - FENCED CODE is excluded by a real line-state machine (``` and ~~~, an
+//     opener indented 0-3 SPACES, a tab-indented line being indented code; the
+//     closing fence required to be of the same character, at least as long as
+//     the opener and followed only by spaces or tabs, per CommonMark). A
+//     single-line regex structurally cannot do this. OPEN (carried from the zone
+//     file CoalWorks/emdash.mjs, CWK2-021, named not fixed): a backtick opener
+//     whose info string holds a backtick is inline code in CommonMark and is
+//     still read here as a fence.
 //   - INLINE CODE is excluded by MASKING, not deleting: each span becomes the
 //     same number of 'x' characters. Deleting would fuse its neighbours and
 //     manufacture case is STRIPPING THE BACKTICKS ALONE, while deleting the
@@ -49,7 +54,10 @@
 //     named the wrong mechanism for the right rule). Masking is immune to both
 //     because it preserves adjacency exactly, the property being measured.
 //   - URLS AND LINK TARGETS are masked the same way: an em-dash inside an
-//     address is part of the address. Covers ](...) destinations, <...>
+//     address is part of the address. Covers ](...) destinations (one level of
+//     balanced parentheses: Foo_(bar); a nest two deep or an unbalanced ( is
+//     masked only up to its first ), so a dash AFTER that point reads as prose
+//     and a dash inside a deeper nest can be a false hit), <...>
 //     autolinks, and bare http(s):// runs.
 //   - THAI LINES are skipped whole (any char in U+0E00-U+0E7F). Thai follows
 //     different rules and the owner's own prose is not in scope.
@@ -156,21 +164,32 @@ const mask = (s) => 'x'.repeat(s.length);
 // Order matters: code spans first (a URL inside a code span is code, not a
 // URL), then link destinations, then autolinks, then bare URLs.
 function maskInline(line) {
-  // A span closes on a run of the SAME length as its opener, so a shorter run
-  // INSIDE a longer delimiter stays part of the span (LOW-3, INSPECT-found:
-  // the prior single-run regex ended the span at the inner backtick of ``a`b``).
-  let out = line.replace(/(`+)[\s\S]*?\1/g, mask);
-  out = out.replace(/\]\([^)]*\)/g, mask);
+  // A span opens and closes on a backtick run of EXACTLY the same length (CommonMark),
+  // so a shorter run INSIDE a longer delimiter stays part of the span (LOW-3,
+  // INSPECT-found: the prior single-run regex ended the span at the inner backtick of
+  // ``a`b``), and a longer run is no closer for a shorter opener (16e, the zone file's
+  // CWK2-021: the lookarounds keep a run from being matched as a SUBSTRING of a longer
+  // one, which had masked prose between a lone backtick and the first backtick of a
+  // longer run).
+  let out = line.replace(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g, mask);
+  // A destination may hold ONE level of balanced parentheses (Foo_(bar)). One the
+  // balanced rule cannot consume (a nest two deep, an unbalanced "(") is masked up to
+  // its FIRST ")" by the old rule, the second alternative: left to the bare-URL mask
+  // below it would swallow the prose past the link, a miss (the zone file's bounce 1, F2).
+  out = out.replace(/\]\((?:(?:[^()]|\([^()]*\))*\)|[^)]*\))/g, mask);
   out = out.replace(/<[^ >]*>/g, mask);
   out = out.replace(/https?:\/\/\S+/g, mask);
   return out;
 }
 
-// A fence opens with >=3 backticks or tildes and closes with a fence of the
-// SAME character and AT LEAST the same length (CommonMark).
+// A fence opens with >=3 backticks or tildes after 0-3 SPACES (16e, the zone file's
+// CWK2-021: a tab is four columns of indentation, so a tab-indented line is indented
+// code, never a fence) and closes with a fence of the SAME character, AT LEAST the same
+// length and followed only by spaces or tabs (CommonMark): `rest` is what follows the
+// run, so the caller can refuse a would-be closer that carries an info string or words.
 function fenceInfo(line) {
-  const m = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
-  return m ? { ch: m[1][0], len: m[1].length } : null;
+  const m = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+  return m ? { ch: m[1][0], len: m[1].length, rest: line.slice(m[0].length) } : null;
 }
 
 /**
@@ -199,21 +218,23 @@ export function scanText(text, mode = 'spaced') {
     const raw = lines[i];
     const f = fenceInfo(raw);
     if (fence) {
-      if (f && f.ch === fence.ch && f.len >= fence.len) fence = null;
+      if (f && f.ch === fence.ch && f.len >= fence.len && /^[ \t]*$/.test(f.rest)) fence = null;
       continue; // inside a fence: content, never typography
     }
     if (f) { fence = f; continue; }
     if (THAI.test(raw)) continue;              // Thai line: out of scope
     if (/^\s{0,3}>/.test(raw)) continue;       // blockquote: quoted matter
-    // INDENTED CODE BLOCK (LOW-1/LOW-2, INSPECT-found): 4+ leading spaces is
-    // Markdown's other code form, and a fence indented that far inside a list
-    // item is not matched by fenceInfo's 0-3 space rule either. Skipping the
+    // INDENTED CODE BLOCK (LOW-1/LOW-2, INSPECT-found): 4+ columns of leading
+    // indentation, a tab counting as four, is Markdown's other code form. Exactly:
+    // 4+ spaces, or 0-3 spaces then a tab (16e: a tab reaches 4 columns at once),
+    // then any further spaces or tabs, then text. A fence indented that far inside a
+    // list item is not matched by fenceInfo's 0-3 space rule either. Skipping the
     // line covers both. STATED TRADE, not a silent one: indented CONTINUATION
     // text inside a list item is skipped too, so this OVER-excludes -- it can
     // miss a real hit, never manufacture one. A miss is the safe direction for
     // an instrument seven rooms will trust; the alternative needs a list-state
     // machine, which is a parser, which is not what this is.
-    if (/^ {4,}\S/.test(raw)) continue;
+    if (/^(?: {4,}| {0,3}\t)[ \t]*\S/.test(raw)) continue;
     const line = maskInline(raw);
     for (let c = 0; c < line.length; c++) {
       if (line[c] !== EMDASH) continue;
