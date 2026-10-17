@@ -8,7 +8,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { gitEnv } from './lib/git-env.mjs';
 
@@ -77,7 +77,7 @@ test('verify.mjs negative path: an over-cap .claude-plugin/plugin.json descripti
     assert.strictEqual(over.status, 1, 'a plugin.json description over 1024 chars must FAIL with exit 1');
     assert.match(over.stdout, /\.claude-plugin\/plugin\.json: description 1025 chars exceeds the 1024-char cap/,
       'the FAIL line names the file, the exact length, and the cap');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { removeTree(dir); }
 });
 
 test('verify.mjs negative path: a truthy NON-STRING plugin.json description fails loud, never silently reads as 0 chars', () => {
@@ -90,7 +90,7 @@ test('verify.mjs negative path: a truthy NON-STRING plugin.json description fail
       assert.match(r.stdout, /\.claude-plugin\/plugin\.json: description is not a string \(got \w+\)/,
         `expected the non-string FAIL line for ${JSON.stringify(bad)}, got:\n${r.stdout}`);
     }
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { removeTree(dir); }
 });
 
 test('verify.mjs negative path: a missing plugin.json description FAILs, does not pass as empty', () => {
@@ -100,7 +100,7 @@ test('verify.mjs negative path: a missing plugin.json description FAILs, does no
     const r = run(dir);
     assert.strictEqual(r.status, 1, 'an empty description must FAIL');
     assert.match(r.stdout, /\.claude-plugin\/plugin\.json: description missing/, r.stdout);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { removeTree(dir); }
 });
 
 // CWK-078 findings-back LOW-1: block 2.12 (the pointer gate) had ZERO automated
@@ -145,7 +145,7 @@ test('verify.mjs block 2.12: a citation into a NEW gitignored top-level entry FA
     const red = run(dir);
     assert.strictEqual(red.status, 1, 'a citation into a NEW gitignored top-level dir must FAIL even though the dir never existed on disk');
     assert.match(red.stdout, /README\.md cites `scratch-out\/notes\.md`, which lives under the gitignored `scratch-out\/`/, red.stdout);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { removeTree(dir); }
 });
 
 // CWK-079 F2: looksPathShaped's own comment (pointer-check.mjs) claims the non-local
@@ -179,7 +179,7 @@ test('CWK-079 non-locality: a shape-rejected citation planted ALONE under a giti
     assert.strictEqual(both.status, 1, 'both citations under the now-discovered root must FAIL');
     assert.match(both.stdout, /README\.md cites `scratch-lib\/lib`, which lives under the gitignored `scratch-lib\/`/, both.stdout);
     assert.match(both.stdout, /README\.md cites `scratch-lib\/notes\.md`, which lives under the gitignored `scratch-lib\/`/, both.stdout);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { removeTree(dir); }
 });
 
 // CWK-090 fix 2 -- RE-AIMED per the order's own instruction (a characterization test is
@@ -253,7 +253,7 @@ test('verify.mjs 2.12 pointers: CWK-090 fix 2 -- CHARACTERIZATION: a lone-CR .gi
     const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: dir, encoding: 'utf8', input: 'totally-fake-root/\n', env: probeEnv });
     assert.match(verbose.stdout, /\.gitignore:2:/,
       'the matching pattern must be the lone-CR line (line 2), naming the source unambiguously');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { removeTree(dir); }
 });
 
 // THE PROOFS THAT MUST RUN EVERYWHERE -- they assert OUR gate's behaviour, not the host
@@ -275,7 +275,7 @@ test('verify.mjs 2.12 pointers: CWK-090 fix 2 -- the injection-site probe loses 
       'the gate must never report the absent-root citation as gitignored -- the exact false FAIL the bare feed would have produced');
     assert.doesNotMatch(r.stdout, /FAIL.*totally-fake-root/,
       'the absent-root citation must not FAIL at all -- it is silently out of scope, not "gitignored" and not "does not resolve"');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { removeTree(dir); }
 });
 
 // CWK2-027: the gate checks the EXEC form. A shell-form hooks.json (a command string carrying ${CLAUDE_PLUGIN_ROOT}) FAILs it, and the pristine copy passes.
@@ -293,5 +293,37 @@ test('verify.mjs negative path: a shell-form hook entry in hooks/hooks.json FAIL
     assert.strictEqual(r.status, 1, 'a shell-form entry must FAIL with exit 1');
     assert.match(r.stdout, /FAIL hooks\.json does not wire SessionStart in exec form/);
     assert.match(r.stdout, /FAIL hooks\.json: shell-form or non-node command entries -- SessionStart:/);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { removeTree(dir); }
+});
+
+// r15 LOW-1 (order 18a): every per-case teardown goes through removeTree. This proves the retry matters, by CAPABILITY (a probe), never by process.platform: a child
+// node process whose cwd is the folder holds a handle on it for about 1.5 s. Where a plain rmSync of a held folder succeeds (POSIX), the leg is absent and the test
+// skips VISIBLY; where it is blocked (Windows: EBUSY, EPERM or ENOTEMPTY), one plain rmSync throws and removeTree returns once the child has exited.
+test('verify.test teardown: a folder a child still holds is refused by one plain rmSync and removed by removeTree once the child exits (r15 LOW-1)', async (t) => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-verify-held-')));
+  fs.writeFileSync(path.join(dir, 'held.txt'), 'x');
+  const child = spawn(process.execPath, ['-e', 'process.stdout.write("ready\\n"); setTimeout(() => {}, 1500);'], { cwd: dir, timeout: 20000, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'ignore'] });
+  const closed = new Promise((resolve) => child.on('close', resolve));
+  try {
+    await new Promise((resolve, reject) => {
+      child.stdout.once('data', resolve);
+      child.once('error', reject);
+      child.once('close', () => reject(new Error('the holder child exited before it was ready')));
+    });
+    let plain = null;
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { plain = e; }
+    if (plain === null) {
+      t.skip('a held handle does not block a delete on this volume');
+      return;
+    }
+    assert.ok(['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(plain.code), 'one plain rmSync of a held folder throws a busy-class error, got ' + plain.code);
+    assert.ok(fs.existsSync(dir), 'the folder is still there after the refused delete');
+    removeTree(dir);
+    assert.strictEqual(fs.existsSync(dir), false, 'removeTree returned with the folder gone');
+    assert.notStrictEqual(await closed, null, 'the holder child exited on its own, not by the timeout');
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await closed;
+    removeTree(dir);
+  }
 });
