@@ -20,11 +20,41 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const COPY = ['hooks', 'platform-configs', 'skills', 'commands', '.claude-plugin', 'scripts', 'plugin', '.github'];
 const COPY_FILES = ['LICENSE', 'NOTICE'];
 
-function scratchRepo() {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-verify-')));
+// CWK2-055: each kind of scratch repo is built ONCE per file run (lazily, on its first case) and every case copies its template into its own fresh folder, so a case
+// that mutates its tree never reaches the template or another case, and the eight-directory copy and the two git spawns are paid once, not per case.
+// Teardown of a tree git children just used: on Windows a git.exe that outlives its launcher by a few seconds still holds the tree, and one plain rmSync answers
+// EBUSY, EPERM or ENOTEMPTY (the retrying shape of scripts/release-notes.test.mjs removeTree). A tree still held past the budget throws: a real leak stays loud.
+function removeTree(dir, budgetMs = 30000) {
+  const until = Date.now() + budgetMs;
+  for (;;) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); return; } catch (e) {
+      if (!['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(e && e.code) || Date.now() >= until) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    }
+  }
+}
+const templates = [];
+test.after(() => { for (const d of templates) removeTree(d); });
+function makeTemplateDir(prefix) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  templates.push(dir);
+  return dir;
+}
+let plainTemplate = null;
+function plainTemplateDir() {
+  if (plainTemplate) return plainTemplate;
+  const dir = makeTemplateDir('clg-verify-tpl-');
   for (const d of COPY) fs.cpSync(path.join(repo, d), path.join(dir, d), { recursive: true });
   for (const f of COPY_FILES) fs.cpSync(path.join(repo, f), path.join(dir, f));
+  return (plainTemplate = dir);
+}
+function copyTemplate(template) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-verify-')));
+  fs.cpSync(template, dir, { recursive: true });
   return dir;
+}
+function scratchRepo() {
+  return copyTemplate(plainTemplateDir());
 }
 function run(dir) {
   return spawnSync(process.execPath, [path.join(dir, 'scripts', 'verify.mjs')], { cwd: dir, encoding: 'utf8' });
@@ -79,13 +109,19 @@ test('verify.mjs negative path: a missing plugin.json description FAILs, does no
 // gives the block a real git repo, a gitignored top-level entry, and a planted
 // citation into it.
 const POINTER_ROOT_DOCS = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'PRIVACY.md', 'CHANGELOG.md', '.gitignore'];
-function pointerScratchRepo() {
-  const dir = scratchRepo();
+let pointerTemplate = null;
+function pointerTemplateDir() {
+  if (pointerTemplate) return pointerTemplate;
+  const dir = makeTemplateDir('clg-verify-ptpl-');
+  fs.cpSync(plainTemplateDir(), dir, { recursive: true });
   for (const f of POINTER_ROOT_DOCS) fs.cpSync(path.join(repo, f), path.join(dir, f));
   const pointerEnv = gitEnv(path.dirname(dir)); // CWK-133/C-4 -- never inherit an ambient GIT_DIR
   spawnSync('git', ['init', '-q'], { cwd: dir, env: pointerEnv });
   spawnSync('git', ['add', '-A'], { cwd: dir, env: pointerEnv });
-  return dir;
+  return (pointerTemplate = dir);
+}
+function pointerScratchRepo() {
+  return copyTemplate(pointerTemplateDir());
 }
 
 test('verify.mjs block 2.12: a citation into a NEW gitignored top-level entry FAILs the gate, with NO directory ever created on disk -- the CLEAN-CLONE proof (CWK-078 LOW-1, re-proven pattern-based at CWK-079)', () => {
