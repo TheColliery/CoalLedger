@@ -351,14 +351,14 @@ try {
     // INCLUDED, filtered only on '.git'. WHAT THIS WIDENING ACTUALLY BUYS,
     // corrected (CWK-078 findings-back MED-4): the prior shape (tracked roots plus
     // non-hidden top-level DIRECTORIES) missed this room's gitignored DOT-DIRS
-    // (.claude, .agents, .gemini) — a real citation into one, README.md:103's
-    // `.claude/coal/coalledger.json`, was silently unreachable by the ignoredRoots
+    // (.claude, .agents, .gemini) — a real citation into one, the README's
+    // config-resolution paragraph's `.claude/coal/coalledger.json`, was silently unreachable by the ignoredRoots
     // question because a dot-dir was never even fed to `git check-ignore`. A bare
     // gitignored top-level FILE (CLAUDE.md, MEMORY*.md, AGENTS.md,
     // COALLEDGER_BLUEPRINT.md) was never actually at risk either way, before or
     // after this widening: `pointerCandidates`' own shape rule drops every token
     // with no `/` LONG before `ignoredRoots` is ever consulted
-    // (pointer-check.mjs:335 — "a bare filename is the USER's repo's"), so a
+    // (`pointerCandidates` in pointer-check.mjs — "a bare filename is the USER's repo's"), so a
     // citation shaped like a bare file can never reach this branch. The dot-dir
     // reach is real and load-bearing; the file half was never reachable to begin
     // with. Read-only reference for the shape: CoalWash/scripts/verify.mjs's own
