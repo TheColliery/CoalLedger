@@ -317,8 +317,8 @@ try {
     // Configure section names for the CASCADE (`.claude/coal/coalledger.json`,
     // config-load.mjs's own AGENT_DIR_ORDER) — one path, two meanings, and the
     // empty set could not tell them apart. Confirmed live: with agentHomes empty
-    // and the feed widened to all top-level entries (below), README.md:103's
-    // `.claude/coal/coalledger.json` citation FAILs as unreachable — a correct
+    // and the feed widened to all top-level entries (below), the README's
+    // config-resolution paragraph's `.claude/coal/coalledger.json` citation FAILs as unreachable — a correct
     // ship-text sentence convicted by a gate that had never been asked to hold
     // its own agent homes out.
     // REALPATH THE COMPARE (CWK-078 findings-back MED-1): `projectConfigCandidates`
