@@ -565,29 +565,22 @@ try {
     // `doc-structure` all reach `candidateRoots` today) now probes that name against OUR
     // `.gitignore`, and if a future pattern of ours happens to share it, the citation
     // FAILs as "not reachable from a clone" although it was never ours to be wrong
-    // about. MEASURED ON THIS TREE (re-derive: partition `candidateRoots` against
+    // about. MEASURED ON THIS TREE at the CWK-079 port (re-derive: partition `candidateRoots` against
     // `topAll ∪ tracked ∪ trackedDirs`): 25 distinct shape-qualified first segments
-    // cited, of which 15 are neither an on-disk top-level entry nor a tracked path of
+    // cited, of which 15 were neither an on-disk top-level entry nor a tracked path of
     // ours — a real, nonzero foreign-name-collision population, not a hypothetical. Of
-    // those 15, the ones that could ACTUALLY collide are only the ones matching a real
+    // those, the ones that could ACTUALLY collide are only the ones matching a real
     // `.gitignore` pattern; the live pass line below states how many of THIS run's
-    // `toProbe` actually came back gitignored -- MEASURED TODAY: ZERO (0 of 22 probed),
-    // after the working-tree `.gitignore` corruption above was fixed. Re-derive, never
-    // quote: the pass line prints this every run. No narrowing is added for this
+    // `toProbe` actually came back gitignored (zero at the port, after the working-tree
+    // `.gitignore` corruption above was fixed). Those counts are the port's reading, not
+    // today's: re-derive, never quote, the pass line prints the live ones every run. No narrowing is added for this
     // population — an existence- or ourRoots-based test would re-open the exact
     // vacuity this ticket was built to close (it would specifically re-exclude the
     // claude.ai staging dir this room already depends on catching).
     console.log(`  --   gitignored-root citations: ${candidateRoots.size} distinct first segment(s) shape-qualified and cited, ${toProbe.length} probed through one git check-ignore call (${homesPresent} of ${agentHomes.size} agent-home roots held out) — ${ignoredRoots.size} gitignored`);
 
-    // A path the room's OWN text points at is held to this gate; a path inside a file adopted BY BLOB ID from the .github canon is the canon's wording, which this room does not
-    // edit. The one such token is the placeholder `scripts/lib/...` in git-env-census.mjs's comment above collectScriptsMjs (09a). It rides the same event-expiry as
-    // PENDING_POINTERS (the entry FAILs once the canon reword drops the token, or once the path resolves), so it cannot outlive its cause; the shipped PENDING_POINTERS list
-    // itself stays empty (pointer-check.test.mjs pins that).
-    const CANON_TEXT_POINTERS = [
-      { path: 'scripts/lib/...', reason: 'an elided-path placeholder in the comment of the adopted canon git-env-census.mjs (blob 28f153a8); delete this entry when the canon rewords it' },
-    ];
     const findings = checkPointers({
-      pending: [...PENDING_POINTERS, ...CANON_TEXT_POINTERS],
+      pending: PENDING_POINTERS,
       surfaces,
       ourRoots,
       ignoredRoots,
