@@ -24,11 +24,13 @@ const COPY_FILES = ['LICENSE', 'NOTICE'];
 // that mutates its tree never reaches the template or another case, and the eight-directory copy and the two git spawns are paid once, not per case.
 // Teardown of a tree git children just used: on Windows a git.exe that outlives its launcher by a few seconds still holds the tree, and one plain rmSync answers
 // EBUSY, EPERM or ENOTEMPTY (the retrying shape of scripts/release-notes.test.mjs removeTree). A tree still held past the budget throws: a real leak stays loud.
-function removeTree(dir, budgetMs = 30000) {
+// onRetry (default: nothing) is called once per retried attempt, with the refusal; the held-handle test below uses it to release its holder, so only a retry can succeed.
+function removeTree(dir, budgetMs = 30000, onRetry = () => {}) {
   const until = Date.now() + budgetMs;
   for (;;) {
     try { fs.rmSync(dir, { recursive: true, force: true }); return; } catch (e) {
       if (!['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(e && e.code) || Date.now() >= until) throw e;
+      onRetry(e);
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
     }
   }
@@ -297,12 +299,13 @@ test('verify.mjs negative path: a shell-form hook entry in hooks/hooks.json FAIL
 });
 
 // r15 LOW-1 (order 18a): every per-case teardown goes through removeTree. This proves the retry matters, by CAPABILITY (a probe), never by process.platform: a child
-// node process whose cwd is the folder holds a handle on it for about 1.5 s. Where a plain rmSync of a held folder succeeds (POSIX), the leg is absent and the test
-// skips VISIBLY; where it is blocked (Windows: EBUSY, EPERM or ENOTEMPTY), one plain rmSync throws and removeTree returns once the child has exited.
+// node process whose cwd is the folder holds a handle on it until removeTree's FIRST retry callback kills it (E1 t176, order 18c: a timer-released holder could let go between
+// the plain attempt and removeTree, so a single-attempt remover would pass). Where a plain rmSync of a held folder succeeds (POSIX), the leg is absent and the test skips
+// VISIBLY; where it is blocked (Windows: EBUSY, EPERM or ENOTEMPTY), one plain rmSync throws, and only a retried removeTree can remove the folder.
 test('verify.test teardown: a folder a child still holds is refused by one plain rmSync and removed by removeTree once the child exits (r15 LOW-1)', async (t) => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-verify-held-')));
   fs.writeFileSync(path.join(dir, 'held.txt'), 'x');
-  const child = spawn(process.execPath, ['-e', 'process.stdout.write("ready\\n"); setTimeout(() => {}, 1500);'], { cwd: dir, timeout: 20000, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'ignore'] });
+  const child = spawn(process.execPath, ['-e', 'process.stdout.write("ready\\n"); setInterval(() => {}, 1000);'], { cwd: dir, timeout: 20000, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'ignore'] });
   const closed = new Promise((resolve) => child.on('close', resolve));
   try {
     await new Promise((resolve, reject) => {
@@ -318,9 +321,12 @@ test('verify.test teardown: a folder a child still holds is refused by one plain
     }
     assert.ok(['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(plain.code), 'one plain rmSync of a held folder throws a busy-class error, got ' + plain.code);
     assert.ok(fs.existsSync(dir), 'the folder is still there after the refused delete');
-    removeTree(dir);
+    let retries = 0;
+    removeTree(dir, 30000, () => { retries += 1; if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
+    assert.ok(retries >= 1, 'removeTree retried at least once, so the retry is what removed the folder');
     assert.strictEqual(fs.existsSync(dir), false, 'removeTree returned with the folder gone');
-    assert.notStrictEqual(await closed, null, 'the holder child exited on its own, not by the timeout');
+    await closed;
+    assert.strictEqual(child.signalCode, 'SIGKILL', 'the holder was released by the retry callback, not by a timer or the spawn timeout');
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     await closed;
