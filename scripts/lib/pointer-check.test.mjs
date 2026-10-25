@@ -634,3 +634,19 @@ test('classifyCheckIgnoreResult (allowlist): neither non-pipe code is reported a
     assert.doesNotMatch(classifyCheckIgnoreResult(brokenPipe(code, 129)).message, /exited 129/, code);
   }
 });
+
+// 25a (CWK2-061): the classifier decides by `ci.error.code`, never `ci.error.message`. These two legs put the opposite word in the
+// message from the one in the code, so a message-reading mutant fails them. The shared brokenPipe helper always writes the same word
+// into both, which is why no earlier leg could tell the two apart.
+test('classifyCheckIgnoreResult (code over message): a non-pipe error whose MESSAGE says EPIPE is still a spawn failure', () => {
+  const v = classifyCheckIgnoreResult({ error: Object.assign(new Error('write EPIPE'), { code: 'ENOENT' }), status: 128, stdout: '', stderr: '' });
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn/);
+  assert.doesNotMatch(v.message, /exited 128/);
+});
+
+test('classifyCheckIgnoreResult (code over message): an EPIPE code whose message names no pipe still reads the exit status', () => {
+  const v = classifyCheckIgnoreResult({ error: Object.assign(new Error('write'), { code: 'EPIPE' }), status: 129, stdout: '', stderr: '' });
+  assert.match(v.message, /exited 129/);
+  assert.doesNotMatch(v.message, /failed to spawn/);
+});
