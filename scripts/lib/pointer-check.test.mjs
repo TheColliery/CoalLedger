@@ -650,3 +650,18 @@ test('classifyCheckIgnoreResult (code over message): an EPIPE code whose message
   assert.match(v.message, /exited 129/);
   assert.doesNotMatch(v.message, /failed to spawn/);
 });
+
+// 25a bounce 1 (INSPECT LOW-1): the EOF half is the Windows spelling of the same broken pipe, so it is pinned to error.code too.
+// The first leg's code is EOF and its message names no pipe, so a mutant that reads EOF from the message passes every earlier leg. The twin puts EOF in the message of a non-pipe code, so a message-keyed EOF check fails it.
+test('classifyCheckIgnoreResult (code over message): an EOF code whose message names no pipe still reads the exit status', () => {
+  const v = classifyCheckIgnoreResult({ error: Object.assign(new Error('write'), { code: 'EOF' }), status: 129, stdout: '', stderr: '' });
+  assert.match(v.message, /exited 129/);
+  assert.doesNotMatch(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (code over message): a non-pipe error whose MESSAGE says EOF is still a spawn failure', () => {
+  const v = classifyCheckIgnoreResult({ error: Object.assign(new Error('write EOF'), { code: 'ENOENT' }), status: 128, stdout: '', stderr: '' });
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn/);
+  assert.doesNotMatch(v.message, /exited 128/);
+});
