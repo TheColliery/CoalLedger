@@ -46,7 +46,7 @@ test('the files that left the pin list read clean with NO pin: the canon secret-
     assert.deepEqual(r.findings, [], `${rel} is refused now`);
   }
   assert.equal(gitBlobId(read('scripts/secret-gate.test.mjs').text), 'b2801af6cd802112b8f3370b42733b6b96b194ee');
-  assert.equal(gitBlobId(read('scripts/secret-scan.test.mjs').text), 'a0319dcdcc03aaa1ab17918d77fc0c959c6342db', 'the Bankfire source copy (bd328f2), the parity blob');
+  assert.equal(gitBlobId(read('scripts/secret-scan.test.mjs').text), '7899e587713f20ad534f9f1e01c610ac4e9cd0ec', 'the Bankfire source copy (7d285e8), the parity blob');
   assert.ok(gitBlobId(read('scripts/release-notes.mjs').text).startsWith('f8d998d8'));
   assert.ok(gitBlobId(read('scripts/release-notes.test.mjs').text).startsWith('f9dde432'));
 });
