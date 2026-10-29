@@ -3,9 +3,10 @@
 // string-vs-comment fix: a value ending in a literal backslash, e.g. "C:\\",
 // must terminate its string correctly instead of leaking escape state into the
 // next token).
+// The strip is linear on unclosed input: an unclosed opener is consumed to the end in one match.
 
 export function stripJsonc(content) {
-  return content.replace(/"(?:\\.|[^"\\])*"|\/\/.*|\/\*[\s\S]*?\*\//g, (m) => (m[0] === '"' ? m : ''));
+  return content.replace(/"(?:\\[\s\S]|[^"\\])*(?:"|\\?$)|\/\/.*|\/\*[\s\S]*?(\*\/|$)/g, (m, close) => (m[0] === '"' || (m[1] === '*' && close !== '*/') ? m : ''));
 }
 
 // Prototype-pollution guard (OWASP Node.js): a poisoned project

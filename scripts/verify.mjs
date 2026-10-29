@@ -17,6 +17,7 @@ import { checkPointers, pointerCandidates, looksPathShaped, DEFAULT_SURFACE_PLAN
 import { checkConfigKeys, checkConfigReadPath } from './lib/config-keys.mjs';
 import { projectConfigCandidates, physicalDir } from './lib/config-load.mjs';
 import { gitEnv } from './lib/git-env.mjs';
+import { readRepoFileBounded, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -184,7 +185,8 @@ try {
 
 console.log('config (factory vs schema):');
 try {
-  let c = fs.readFileSync(path.join(repo, 'platform-configs', '.coalledger.json'), 'utf8');
+  let c = readRepoFileBounded(path.join(repo, 'platform-configs', '.coalledger.json'), repo, MAX_CONFIG_BYTES);
+  if (c === null) throw new Error('platform-configs/.coalledger.json is unreadable or over the config size bound');
   if (c.charCodeAt(0) === 0xFEFF) c = c.slice(1);
   const cfg = JSON.parse(stripJsonc(c));
   const errors = validateConfig(cfg);
