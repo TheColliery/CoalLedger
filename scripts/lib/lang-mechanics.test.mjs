@@ -733,3 +733,18 @@ for (const [name, text, want] of MD_CASES) {
     assert.deepEqual(checkText(text).map((f) => f.line), want);
   });
 }
+
+// 29a P4: the tag mask stops at the last closing bracket, so an unclosed tag-opener run checks in linear time and the finding after it is kept.
+test('an unclosed tag-opener run of 128 KiB checks within 100 ms (best of 3) and keeps the finding after it', () => {
+  const text = '<a'.repeat(65536) + ' 如果甲,那么丙\n';
+  const times = [];
+  let found = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = process.hrtime.bigint();
+    found = checkText(text).filter((f) => f.rule === 'zh-halfwidth-punct');
+    times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  assert.strictEqual(found.length, 1);
+  assert.deepStrictEqual([found[0].line, found[0].col], [1, 2 * 65536 + 5]);
+  assert.ok(Math.min(...times) < 100, `best of 3 = ${Math.min(...times).toFixed(1)} ms, budget 100 ms`);
+});

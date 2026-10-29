@@ -289,7 +289,9 @@ function maskInline(line) {
   // reopening MED-1: a `>` inside a quoted attribute value would still end
   // the mask early, an accepted, unlikely edge (emdash.mjs's own tag mask
   // carries the same shape).
-  out = out.replace(/<[a-zA-Z!/?][^>]*>/g, mask);
+  // A tag match always ends at a '>', so only the text up to the last '>' can hold one; the rest is kept as it is.
+  const lastGt = out.lastIndexOf('>');
+  if (lastGt !== -1) out = out.slice(0, lastGt + 1).replace(/<[a-zA-Z!/?][^>]*>/g, mask) + out.slice(lastGt + 1);
   out = out.replace(/https?:\/\/\S+/g, mask);
   return out;
 }
