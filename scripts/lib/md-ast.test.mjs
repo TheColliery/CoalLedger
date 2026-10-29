@@ -406,3 +406,26 @@ test('CommonMark conformance: `--!>` does NOT end an HTML comment block (spec 0.
   assert.deepStrictEqual(blocks('<!-- foo -->*bar*\n*baz*\n'), ['html', 'paragraph']);
   assert.deepStrictEqual(blocks('<!-- Foo\n\nbar\n   baz -->\nokay\n'), ['html', 'paragraph']);
 });
+
+// 29a P2: the ATX heading match is linear; the heading text is unchanged at 128 KiB.
+test('an ATX heading of 128 KiB of inner spaces parses within 50 ms (best of 3) with its text intact', () => {
+  const n = 128 * 1024 - 4;
+  const src = '# a' + ' '.repeat(n) + 'b';
+  const times = [];
+  let text = '';
+  for (let i = 0; i < 3; i++) {
+    const t0 = process.hrtime.bigint();
+    const h = parseMarkdown(src).children.find((c) => c.type === 'heading');
+    text = textContent(h);
+    times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  assert.strictEqual(text, 'a' + ' '.repeat(n) + 'b');
+  assert.ok(Math.min(...times) < 50, `best of 3 = ${Math.min(...times).toFixed(1)} ms, budget 50 ms`);
+});
+
+// 29a P2 regression leg at the same size: look-alike closing runs that do not end the heading keep all of their text.
+test('an ATX heading of look-alike closing runs at 128 KiB keeps its whole text', () => {
+  const src = '# a' + ' #a'.repeat(43690);
+  const h = parseMarkdown(src).children.find((c) => c.type === 'heading');
+  assert.strictEqual(textContent(h), 'a' + ' #a'.repeat(43690));
+});

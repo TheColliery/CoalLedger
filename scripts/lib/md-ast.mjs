@@ -166,7 +166,7 @@ export function walk(node, fn, ancestors = []) {
 // ---------------------------------------------------------------------------
 
 const THEMATIC_RE = /^([-_*])[ \t]*(?:\1[ \t]*){2,}$/;
-const ATX_RE = /^(#{1,6})(?:[ \t]+(.*?))??[ \t]*$/;
+const ATX_RE = /^(#{1,6})(?:[ \t]+(.*))?$/;
 const SETEXT_RE = /^(=+|-+)[ \t]*$/;
 const FENCE_OPEN_RE = /^(`{3,}|~{3,})[ \t]*(.*)$/;
 
@@ -630,8 +630,18 @@ export function parseMarkdown(src) {
     if (atx) {
       closeLeaf();
       let content = atx[2] || '';
-      const closing = /[ \t]+#+[ \t]*$/.exec(content);
-      if (closing) content = content.slice(0, closing.index);
+      // trailing spaces and tabs go (index loop, not a regex: the match must stay linear on long runs)
+      let end = content.length;
+      while (end > 0 && (content[end - 1] === ' ' || content[end - 1] === '\t')) end--;
+      content = content.slice(0, end);
+      // a closing sequence is a trailing run of '#' preceded by a space or tab; that whitespace goes with it
+      let h = end;
+      while (h > 0 && content[h - 1] === '#') h--;
+      if (h < end && h > 0 && (content[h - 1] === ' ' || content[h - 1] === '\t')) {
+        let w = h;
+        while (w > 0 && (content[w - 1] === ' ' || content[w - 1] === '\t')) w--;
+        content = content.slice(0, w);
+      }
       if (/^#+$/.test(content)) content = '';
       // content offset: after the hashes + following whitespace
       let cp = s.p + atx[1].length;
