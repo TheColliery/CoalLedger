@@ -190,7 +190,7 @@ const MAX_DOC_BYTES = 512 * 1024; // 512 KB
 // needs real container-state tracking pre-parse, which is the parser's own
 // job and defeats the point of a cheap O(lines) scan.
 const MAX_CONTAINER_DEPTH = 200; // defensible per-doc: a real 12-level email-quote thread scans 0 findings in 0ms; 200 is ~17x that headroom, and the crash floor this guard backstops sits far higher (~4,000-5,000 markers) — the number is chosen for realistic-document headroom, not to chase either floor (see the try/catch backstop below for the crash axis; this guard's own job is the CPU-time axis, whose floor is materially LOWER — measured live: 278ms already at 3,000 markers on the pre-fix bypass path)
-const FENCE_OPEN_RE = /^[ \t]{0,3}(`{3,}|~{3,})/;
+const FENCE_OPEN_RE = /^[ \t]{0,3}(`{3,}|~{3,})(.*)$/;
 const CONTAINER_OPENER_RE = /[ \t]{0,3}(?:>[ \t]?|[-+*][ \t]|[0-9]{1,9}[.)][ \t])/y; // sticky — advances lastIndex on match, never zero-length
 function maxContainerDepth(src) {
   let max = 0;
@@ -202,7 +202,9 @@ function maxContainerDepth(src) {
       if (fm && fm[1][0] === fenceChar && fm[1].length >= fenceLen) { fenceChar = null; fenceLen = 0; }
       continue; // inside a fence: `>` etc. here is literal code text, never a container marker
     }
-    if (fm) { fenceChar = fm[1][0]; fenceLen = fm[1].length; continue; } // opening fence line itself isn't scanned either
+    // A backtick opener whose info string holds a backtick is not a fence (the parser's own rule): its line is counted like any other.
+    const isFenceOpener = fm && !(fm[1][0] === '`' && fm[2].includes('`'));
+    if (isFenceOpener) { fenceChar = fm[1][0]; fenceLen = fm[1].length; continue; } // opening fence line itself isn't scanned either
     CONTAINER_OPENER_RE.lastIndex = 0;
     let depth = 0;
     while (CONTAINER_OPENER_RE.test(line)) {

@@ -418,3 +418,17 @@ test('16e E: a hostile 16000-marker linked target is left unchecked, so nothing 
   const f = checkDocument('# Main\n\n[d](./hostile.md#nope)\n', { filePath: path.join(dir, 'main.md') }).filter((x) => x.check === 'anchor-missing');
   assert.strictEqual(f.length, 0, 'a target nested past the cap is not parsed, so no anchor-missing is reported against it');
 });
+
+// 29a P1: a backtick fence opener whose info string holds a backtick is not a fence (the parser's own rule), so the nesting guard counts its lines.
+test('a backtick opener whose info holds a backtick does not hide 16384 nested quote markers: one doc-too-nested within 100 ms (best of 3)', () => {
+  const src = '``` `\n' + '> '.repeat(16384) + 'x\n';
+  const times = [];
+  let found = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = process.hrtime.bigint();
+    found = checkDocument(src).filter((f) => f.check === 'doc-too-nested');
+    times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  assert.strictEqual(found.length, 1);
+  assert.ok(Math.min(...times) < 100, `best of 3 = ${Math.min(...times).toFixed(1)} ms, budget 100 ms`);
+});
