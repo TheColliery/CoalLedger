@@ -2,6 +2,18 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.15.0-beta.8] - 2026-10-29
+
+Long or malformed input no longer slows the checks to a crawl
+
+Four fixes in the installed plugin. Three made a check do far more work than its input needed: a long line of unclosed tags, a heading with a long run of inner spaces, and a config file with an unclosed comment. The fourth hid a nesting finding behind an invalid code fence. Each keeps its result: a malformed config still reads as malformed, and the same headings and tags are found. The one visible difference is the nesting finding in the last bullet. The installed plugin moved in six files: `scripts/lib/jsonc.mjs`, `scripts/lib/md-ast.mjs`, `scripts/lib/md-checks.mjs`, `skills/doc-quality/lib/lang-mechanics.mjs`, `skills/doc-structure/lib/md-ast.mjs` and `skills/doc-structure/lib/md-checks.mjs`; the rest of this release is repo tooling the installed plugin does not carry.
+
+### Fixed
+- **The config reader strips comments in linear time on unclosed input (commit `d032004a804ba4e5a38f450179c4a69ca32d7334`).** A comment or string left open in a `.coalledger.json` file made the reader's comment strip take time that grew quadratically with the file's size. An open comment or string now runs to the end of the file in one step. A malformed config still fails to parse, and a well-formed one reads to the same value as before.
+- **The language check masks tags quickly on a long line of unclosed tags (commit `589d50e20cea6e6484fbca8a839fc6adff339b3c`).** On a line with many opening angle brackets and no closing one, the tag masking scanned to the end of the line for every opener. It now stops at the last closing bracket, where any tag must end; the text after it is kept as it was, so the same spans are masked.
+- **An ATX heading with a long run of inner spaces parses fast, with the same heading text (commit `61136107d98d18bcef48ebd1331f2727af3b098f`).** The heading pattern backtracked over the run, so the work grew quadratically with the heading's length. The heading now parses without that backtracking, and its depth and text are unchanged.
+- **A document that opens an invalid backtick fence before nesting past the limit now gets the nesting finding (commit `b64bb0daf258a55f03ee1c979d7e8d066b441ad2`).** The invalid fence opener hid the nested lines inside a fence, so such a document got no nesting finding. It now gets the one nesting finding, as every other over-deep document does; a document past the nesting limit still reports only that finding.
+
 ## [0.15.0-beta.7] - 2026-10-16
 
 Config writes refuse a linked folder; GIT_ strip ignores case
