@@ -440,3 +440,9 @@ test('a CRLF fenced block holding 201 nested quote markers is code, not a nest: 
   assert.strictEqual(findings.some((f) => f.check === 'doc-too-nested'), false, 'a CRLF fence opener was missed, so its contents were counted as nested quote markers');
   assert.strictEqual(findings.some((f) => f.check === 'bare-url'), true, 'the bare URL after the fence was hidden by the false doc-too-nested');
 });
+
+// 29c r32 L3: a CR inside a fence-like line is not the end of its line, so the line is not a fence opener (the parser's own rule). The 201 quote markers after it still nest.
+test('a CR inside a fence-like line does not open a fence, so 201 nested quote markers after it still give doc-too-nested', () => {
+  const findings = checkDocument('```js\rx\n' + '> '.repeat(201) + 'x\n```\n');
+  assert.strictEqual(findings.filter((f) => f.check === 'doc-too-nested').length, 1);
+});

@@ -449,7 +449,7 @@ try {
       ['SUMMARY.md (GitBook nav list, not ship-text prose; pointerCandidates() = 0 here, and its relative links are gated on every push by link-check.yml running md-checks.mjs over it)', (f) => f === 'SUMMARY.md'],
       // order 29c (the Antigravity install): three root files that AG reads and nothing else does. Each reason is MEASURED at this tree
       // (scratchpad/29c/b2/pointer-measure.txt: pointerCandidates() = 0 for all three), so a declared-out row is honest; the AG test pins their fields.
-      ['plugin.json (Antigravity manifest at the repo root; its description is the .claude-plugin manifest text verbatim, pointerCandidates() = 0 here; name, version, logo and author are pinned by scripts/agy-validate.test.mjs)', (f) => f === 'plugin.json'],
+      ['plugin.json (Antigravity manifest at the repo root; scripts/agy-validate.test.mjs pins name, description and version equal to .claude-plugin/plugin.json and author equal to its author.name, requires displayName, logo and author present, and checks the logo file exists; pointerCandidates() = 0 here)', (f) => f === 'plugin.json'],
       ['hooks.json (Antigravity hook manifest at the repo root, one command line, pointerCandidates() = 0 here)', (f) => f === 'hooks.json'],
       ['assets/logo.svg (the Antigravity logo, an SVG mark with no prose beyond its aria-label, pointerCandidates() = 0 here)', (f) => f === 'assets/logo.svg'],
     ];

@@ -24,6 +24,9 @@ test('the AG manifest carries the marketplace fields and the Claude Code version
   for (const key of ['displayName', 'description', 'version', 'logo', 'author']) {
     assert.ok(ag[key], `plugin.json has no ${key}`);
   }
+  assert.equal(ag.name, claude.name, 'AG and Claude Code manifests disagree on name');
+  assert.equal(ag.description, claude.description, 'AG and Claude Code manifests disagree on description');
+  assert.equal(ag.author, claude.author.name, 'AG author is not the Claude Code author.name');
   assert.equal(ag.version, claude.version, 'AG and Claude Code manifests disagree on version');
   assert.ok(fs.existsSync(path.join(repo, ag.logo)), `logo ${ag.logo} is not in the repo`);
 });
@@ -37,7 +40,7 @@ test('agy validate: the built plugin has no error, no missing-logo note, and onl
   const env = agyEnv(home);
   // Skip ONLY when agy is absent; a probe that hangs or fails is a failure, not a skip.
   const probe = probeAgy({ timeoutMs: AGY_TIMEOUT_MS, env });
-  if (probe.state === 'absent') { t.skip('agy not on PATH: AG plugin validation not run'); return; }
+  if (probe.state === 'absent') { t.skip(`AG plugin validation not run: ${probe.reason}`); return; }
   assert.equal(probe.state, 'present', `agy probe failed (not a skip): ${probe.reason}`);
 
   const r = validateAgyPlugin({ pluginDir: path.join(repo, 'plugin'), env, timeoutMs: AGY_TIMEOUT_MS });
