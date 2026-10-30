@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CoalLedger">
+  <rect width="64" height="64" rx="10" fill="#1d2433"/>
+  <rect x="15" y="11" width="34" height="42" rx="3" fill="#f2ead8"/>
+  <rect x="15" y="11" width="7" height="42" rx="3" fill="#8a6d3b"/>
+  <g stroke="#9aa3b5" stroke-width="2" stroke-linecap="round">
+    <line x1="27" y1="22" x2="43" y2="22"/>
+    <line x1="27" y1="29" x2="43" y2="29"/>
+    <line x1="27" y1="36" x2="43" y2="36"/>
+  </g>
+  <line x1="27" y1="44" x2="43" y2="44" stroke="#d9a441" stroke-width="3" stroke-linecap="round"/>
+</svg>

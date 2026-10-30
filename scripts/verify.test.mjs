@@ -17,7 +17,8 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Every top-level dir/file verify.mjs's checks touch (hooks/.github for the
 // files+version-pin scan, scripts for the entry itself + libs + fixtures,
 // plugin for the dist-parity check).
-const COPY = ['hooks', 'platform-configs', 'skills', 'commands', '.claude-plugin', 'scripts', 'plugin', '.github'];
+// order 29c: plugin.json, hooks.json and assets are the Antigravity DIST_ITEMS; without them the copy's plugin/ holds orphans with no source.
+const COPY = ['hooks', 'platform-configs', 'skills', 'commands', '.claude-plugin', 'scripts', 'plugin', '.github', 'plugin.json', 'hooks.json', 'assets'];
 const COPY_FILES = ['LICENSE', 'NOTICE'];
 
 // CWK2-055: each kind of scratch repo is built ONCE per file run (lazily, on its first case) and every case copies its template into its own fresh folder, so a case

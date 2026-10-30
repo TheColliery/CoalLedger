@@ -1,0 +1,11 @@
+{
+  "coalledger": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node hooks/ag-conductor.js PreInvocation",
+        "timeout": 30
+      }
+    ]
+  }
+}

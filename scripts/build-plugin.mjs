@@ -37,6 +37,12 @@ export const DIST_ITEMS = [
   'hooks',
   'skills',
   path.join('scripts', 'lib'),
+  // order 29c (the Antigravity route): AG registers a FOLDER holding plugin.json and hooks.json at its root, runs a hook command from the folder
+  // holding hooks.json, and reads the logo inside the installed folder. Claude Code reads .claude-plugin/plugin.json and hooks/hooks.json, never these
+  // root paths, so the three items below ride beside the Claude Code entries without changing what that route loads.
+  'plugin.json',
+  'hooks.json',
+  'assets',
 ];
 
 // GENERATED engine copy: dist-relative path -> the ONE source it is copied from.
@@ -111,7 +117,8 @@ const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 // every git spawn imports, is a different matter and still ships.
 // The test runner (wave-run.mjs, stdout-sync.mjs, machine-reading.mjs adopted by blob id from the .github canon, and this room's test-plan.mjs, 09a) is likewise a development tool
 // that scripts/test.mjs calls and nothing installed does; it replaces test-spawn.mjs (08b), which was build-only for the same reason.
-const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs', 'release-shape.mjs', 'asset-upload-mode.mjs', 'release-prune.mjs', 'secret-scan.mjs', 'test-plan.mjs', 'wave-run.mjs', 'stdout-sync.mjs', 'machine-reading.mjs', 'git-env-census.mjs', 'git-env-census.vectors.mjs', 'git-env-pins.mjs', 'front-door-links.mjs']);
+// agy-probe.mjs (order 29c) is the same kind of tool: only scripts/agy-validate.test.mjs imports it, to probe the agy CLI from the test.
+const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs', 'release-shape.mjs', 'asset-upload-mode.mjs', 'release-prune.mjs', 'secret-scan.mjs', 'test-plan.mjs', 'wave-run.mjs', 'stdout-sync.mjs', 'machine-reading.mjs', 'git-env-census.mjs', 'git-env-census.vectors.mjs', 'git-env-pins.mjs', 'front-door-links.mjs', 'agy-probe.mjs']);
 const isBuildOnlyLib = (p) => BUILD_ONLY_LIB_NAMES.has(path.basename(p));
 const isDistExcluded = (p) => isTest(p) || isBuildOnlyLib(p);
 
