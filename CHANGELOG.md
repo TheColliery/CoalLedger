@@ -2,6 +2,21 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.16.0-beta.1] - 2026-10-31
+
+Antigravity loads the conductor; CRLF fences stop hiding findings
+
+The repository root now carries an Antigravity manifest, its hook wiring and a logo, so Antigravity finds the session conductor when it loads a plugin folder or installs from a directory. A fix in the nesting guard also stops a CRLF document's fenced block from being read as nesting, which had hidden every other finding in such a document. The installed plugin moved in five files: `plugin.json`, `hooks.json` and `assets/logo.svg` are new at the plugin root, and `scripts/lib/md-checks.mjs` and `skills/doc-structure/lib/md-checks.mjs` changed. The rest of this release is repo tooling the installed plugin does not carry.
+
+The Antigravity claim is measured, not promised: on agy 1.4.12, headless, Windows, 2026-10-31, the conductor fired and its offer reached the model, for each of the two layouts tried (n = 1 per layout). No support tier moves in this release: the README's Antigravity tier and install text are unchanged, and that is the owner's and the chief's call.
+
+### Added
+- **Antigravity finds the conductor at the plugin root (commit `f4d76b25eb59983b163c61b47d8d79fc475e9d5f`).** The repository root and the distribution carry a `plugin.json` (the Antigravity manifest), a `hooks.json` that wires the existing `hooks/ag-conductor.js` on `PreInvocation`, and `assets/logo.svg`. A plugin folder under `.agents/plugins/` and an install from a directory now load the conductor. The Claude Code route is unchanged.
+- **Known limit, T-10:** the repository-root `skills/doc-structure/` holds the skill's contract without its engine. An install that loads the repository root (Antigravity's install from the GitHub link) therefore cannot run `doc-structure`'s mechanical engine. The engine ships under `plugin/skills/`, and the README's file-copy route uses that folder.
+
+### Fixed
+- **A CRLF document's fenced block is read as code, not as nesting (commit `5313fa6b0a636546b4db4cf41b3fcce059ce6cb4`).** The nesting guard read a fence opener with its carriage return still attached, so a fenced block holding deep quote markers counted as nested and hid every other finding in the document. The regression arrived in `v0.15.0-beta.8` (commit `b64bb0daf258a55f03ee1c979d7e8d066b441ad2`). The guard now reads each line the way the parser does, with its trailing carriage return removed.
+
 ## [0.15.0-beta.8] - 2026-10-29
 
 Long or malformed input no longer slows the checks to a crawl
