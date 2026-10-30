@@ -432,3 +432,11 @@ test('a backtick opener whose info holds a backtick does not hide 16384 nested q
   assert.strictEqual(found.length, 1);
   assert.ok(Math.min(...times) < 100, `best of 3 = ${Math.min(...times).toFixed(1)} ms, budget 100 ms`);
 });
+
+// 29c CodeRabbit t225 F1/F7: a CRLF document keeps the \r on every line, and the fence opener must still be read as an opener.
+test('a CRLF fenced block holding 201 nested quote markers is code, not a nest: no doc-too-nested, and the bare URL after it is still reported', () => {
+  const src = ['```', '> '.repeat(201), '```', '', 'see https://example.com/page', ''].join('\r\n');
+  const findings = checkDocument(src);
+  assert.strictEqual(findings.some((f) => f.check === 'doc-too-nested'), false, 'a CRLF fence opener was missed, so its contents were counted as nested quote markers');
+  assert.strictEqual(findings.some((f) => f.check === 'bare-url'), true, 'the bare URL after the fence was hidden by the false doc-too-nested');
+});

@@ -196,7 +196,9 @@ function maxContainerDepth(src) {
   let max = 0;
   let fenceChar = null;
   let fenceLen = 0;
-  for (const line of src.split('\n')) {
+  for (const raw of src.split('\n')) {
+    // The parser's splitLines strips one trailing CR per line (md-ast.mjs), so the guard reads a CRLF opener the same way: FENCE_OPEN_RE's `.` never matches a CR.
+    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
     const fm = FENCE_OPEN_RE.exec(line);
     if (fenceChar) {
       if (fm && fm[1][0] === fenceChar && fm[1].length >= fenceLen) { fenceChar = null; fenceLen = 0; }
