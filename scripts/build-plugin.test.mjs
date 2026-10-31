@@ -249,3 +249,47 @@ test('checkDist names a folder link that points at its own parent, and does not 
   assert.ok(out.some((l) => /symlink/.test(l) && l.includes('loop')),
     `checkDist must name the looping link; got: ${JSON.stringify(out)}`);
 });
+
+// 29d c2 (r34 M1): a link at a PARENT component of a source is refused too. A junction at `.claude-plugin` or `scripts` pointing outside would
+// otherwise ship the outside bytes with every gate green: the walk below stops at the source's own path and never looked above it.
+test('buildDist refuses a junction at .claude-plugin, the parent of a DIST_ITEM, and keeps the outside bytes out of plugin/', (t) => {
+  const src = scratchSources('clg-src-parent-cp-');
+  const dist = scratchDist();
+  const outside = scratchDist();
+  t.after(() => { for (const d of [src, dist, outside]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  fs.writeFileSync(path.join(outside, 'plugin.json'), 'OUTSIDE-PARENT-CP-BYTES');
+  fs.rmSync(path.join(src, '.claude-plugin'), { recursive: true, force: true });
+  fs.symlinkSync(outside, path.join(src, '.claude-plugin'), 'junction');
+  assert.throws(() => buildDist(dist, src), /link or junction/, 'a link at a parent component is refused, and the refusal names it');
+  assert.equal(anyFileHolds(dist, 'OUTSIDE-PARENT-CP-BYTES'), false, 'the outside bytes reach no dist file');
+});
+
+test('buildDist refuses a junction at scripts, the parent of the engine sources, and keeps the outside bytes out of plugin/', (t) => {
+  const src = scratchSources('clg-src-parent-sc-');
+  const dist = scratchDist();
+  const outside = scratchDist();
+  t.after(() => { for (const d of [src, dist, outside]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  fs.mkdirSync(path.join(outside, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(outside, 'lib', 'md-ast.mjs'), 'OUTSIDE-PARENT-SC-BYTES');
+  fs.rmSync(path.join(src, 'scripts'), { recursive: true, force: true });
+  fs.symlinkSync(outside, path.join(src, 'scripts'), 'junction');
+  assert.throws(() => buildDist(dist, src), /link or junction/, 'a link at a parent component is refused, and the refusal names it');
+  assert.equal(anyFileHolds(dist, 'OUTSIDE-PARENT-SC-BYTES'), false, 'the outside bytes reach no dist file');
+});
+
+test('checkDist names a junction at a parent component of a DIST_ITEM instead of comparing through it', (t) => {
+  const src = scratchSources('clg-src-parent-chk-');
+  const dist = scratchDist();
+  const outside = scratchDist();
+  t.after(() => { for (const d of [src, dist, outside]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  buildDist(dist, src);
+  fs.writeFileSync(path.join(outside, 'plugin.json'), 'OUTSIDE-PARENT-CHK-BYTES');
+  fs.rmSync(path.join(src, '.claude-plugin'), { recursive: true, force: true });
+  fs.symlinkSync(outside, path.join(src, '.claude-plugin'), 'junction');
+  const out = checkDist(dist, src);
+  assert.ok(out.some((l) => /symlink/.test(l) && l.includes('.claude-plugin')),
+    `checkDist must name the parent link; got: ${JSON.stringify(out)}`);
+});

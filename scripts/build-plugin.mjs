@@ -150,10 +150,25 @@ function filesMatch(a, b) {
 
 // 29d CWK2-079: a link or junction in a source the build copies is refused by name, never copied as a link and never followed. Walks with lstat;
 // a source that is absent is left to the copy below, which fails on its own. Runs BEFORE the dist is removed, so a refused build leaves plugin/ as it was.
+// 29d c2 (r34 M1): the first link on the path from `root` down to `rel`, component by component with lstat. `root` itself is not walked, and a link
+// at a PARENT component is found as well as the entry's own. Null when there is none, or when the path is absent. The 15b folder walk
+// (repo-fs.mjs folderChainIsPlain) is internal there, and exporting it would change the generated skill copies, so the same lstat rule is written here.
+function firstLinkAbove(root, rel) {
+  let cur = '';
+  for (const part of rel.split(path.sep)) {
+    cur = cur ? path.join(cur, part) : part;
+    let st;
+    try { st = fs.lstatSync(path.join(root, cur)); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+    if (st.isSymbolicLink()) return cur;
+  }
+  return null;
+}
+
 function assertNoLinks(root, rel) {
+  const link = firstLinkAbove(root, rel);
+  if (link !== null) throw new Error(`${link}: a link or junction in the source tree is refused (the build copies files, never links)`);
   let st;
   try { st = fs.lstatSync(path.join(root, rel)); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
-  if (st.isSymbolicLink()) throw new Error(`${rel}: a link or junction in the source tree is refused (the build copies files, never links)`);
   if (st.isDirectory()) for (const n of fs.readdirSync(path.join(root, rel))) assertNoLinks(root, path.join(rel, n));
 }
 
@@ -204,13 +219,22 @@ export function checkDist(distRoot = dist, srcRoot = repo) {
     if (st.isDirectory()) return fs.readdirSync(abs).flatMap((n) => filesUnder(root, path.join(rel, n)));
     return [rel];
   };
+  // 29d c2 (r34 M1): a link at a parent component names the item and skips it in that tree, instead of comparing or recursing through it.
+  const linkAboveItem = (root, item) => {
+    const link = firstLinkAbove(root, item);
+    if (link === null) return false;
+    out.push(`symlink in DIST_ITEM (refused, not followed): ${link}`);
+    return true;
+  };
   for (const item of DIST_ITEMS) {
-    for (const rel of filesUnder(srcRoot, item)) {
+    const srcLinked = linkAboveItem(srcRoot, item);
+    for (const rel of srcLinked ? [] : filesUnder(srcRoot, item)) {
       const d = path.join(distRoot, rel);
       if (!fs.existsSync(d)) out.push(`missing in plugin/: ${rel}`);
       else if (!filesMatch(path.join(srcRoot, rel), d)) out.push(`stale in plugin/: ${rel}`);
     }
-    for (const rel of filesUnder(distRoot, item)) {
+    const distLinked = linkAboveItem(distRoot, item);
+    for (const rel of distLinked ? [] : filesUnder(distRoot, item)) {
       if (GENERATED.has(rel)) continue; // build output, byte-checked against its own source below
       if (!fs.existsSync(path.join(srcRoot, rel))) out.push(`orphan in plugin/ (no source): ${rel}`);
     }
