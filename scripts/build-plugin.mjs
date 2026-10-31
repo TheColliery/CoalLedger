@@ -173,6 +173,10 @@ function assertNoLinks(root, rel) {
 }
 
 export function buildDist(distRoot = dist, srcRoot = repo) {
+  // 29f T-12: a link as the dist root is refused by name before anything is removed; the removal below never reaches through it.
+  let distRootSt = null;
+  try { distRootSt = fs.lstatSync(distRoot); } catch (e) { if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') throw e; }
+  if (distRootSt && distRootSt.isSymbolicLink()) throw new Error(`${path.basename(distRoot)}: a link or junction at the dist root is refused (the build removes and rewrites plugin/, and never through a link)`);
   for (const rel of DIST_ITEMS) assertNoLinks(srcRoot, rel);
   for (const [, srcRel] of GENERATED) assertNoLinks(srcRoot, srcRel);
   fs.rmSync(distRoot, { recursive: true, force: true });
@@ -208,6 +212,10 @@ export function missingDistSources(srcRoot = repo) {
 
 export function checkDist(distRoot = dist, srcRoot = repo) {
   const out = [];
+  // 29f T-12: a linked dist root is named and not walked through (the walk would compare, or recurse into, whatever the link points at).
+  let distRootSt = null;
+  try { distRootSt = fs.lstatSync(distRoot); } catch (e) { if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') throw e; }
+  if (distRootSt && distRootSt.isSymbolicLink()) { out.push(`symlink plugin/ root (refused, not followed): ${path.basename(distRoot)}`); return out; }
   for (const rel of missingDistSources(srcRoot)) out.push(`missing source DIST_ITEM: ${rel} (nothing to ship, and nothing compared)`);
   const filesUnder = (root, rel) => {
     if (isDistExcluded(rel)) return []; // excluded from the dist -> excluded here too, both directions

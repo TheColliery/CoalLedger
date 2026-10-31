@@ -293,3 +293,54 @@ test('checkDist names a junction at a parent component of a DIST_ITEM instead of
   assert.ok(out.some((l) => /symlink/.test(l) && l.includes('.claude-plugin')),
     `checkDist must name the parent link; got: ${JSON.stringify(out)}`);
 });
+
+// 29f T-12 (CodeRabbit t232 F1/F6): the dist root itself is a path too. A link there is refused by name before anything is removed, and the
+// removal never reaches through it. Each leg checks the thing the link points at is untouched.
+test('buildDist refuses a junction as the dist root, and leaves the folder it points at untouched', (t) => {
+  const src = scratchSources('clg-src-distroot-j-');
+  const outside = scratchDist();
+  const holder = scratchDist();
+  t.after(() => { for (const d of [src, outside, holder]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  fs.writeFileSync(path.join(outside, 'keep.txt'), 'OUTSIDE-DIST-ROOT-BYTES');
+  const distLink = path.join(holder, 'plugin');
+  fs.symlinkSync(outside, distLink, 'junction');
+  assert.throws(() => buildDist(distLink, src), /dist root/, 'a link as the dist root is refused, and the refusal names it');
+  assert.equal(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8'), 'OUTSIDE-DIST-ROOT-BYTES', 'the folder the dist root points at is untouched');
+});
+
+test('buildDist refuses a dangling link as the dist root', (t) => {
+  const src = scratchSources('clg-src-distroot-d-');
+  const target = scratchDist();
+  const holder = scratchDist();
+  t.after(() => { for (const d of [src, holder]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  const distLink = path.join(holder, 'plugin');
+  fs.symlinkSync(target, distLink, 'junction');
+  fs.rmSync(target, { recursive: true, force: true });
+  assert.throws(() => buildDist(distLink, src), /dist root/, 'a dangling link as the dist root is refused, and the refusal names it');
+});
+
+test('buildDist refuses a dist root that is a link into the source tree, and removes nothing under it', (t) => {
+  const src = scratchSources('clg-src-distroot-in-');
+  const holder = scratchDist();
+  t.after(() => { for (const d of [src, holder]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  const distLink = path.join(holder, 'plugin');
+  fs.symlinkSync(path.join(src, 'hooks'), distLink, 'junction');
+  assert.throws(() => buildDist(distLink, src), /dist root/, 'a link into the source tree as the dist root is refused, and the refusal names it');
+  assert.ok(fs.existsSync(path.join(src, 'hooks', 'coalledger-conductor.js')), 'the source files under the link are untouched');
+});
+
+test('checkDist names a linked dist root instead of walking through it', (t) => {
+  const src = scratchSources('clg-src-distroot-chk-');
+  const dist = scratchDist();
+  const holder = scratchDist();
+  t.after(() => { for (const d of [src, dist, holder]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  buildDist(dist, src);
+  const distLink = path.join(holder, 'plugin');
+  fs.symlinkSync(dist, distLink, 'junction');
+  const out = checkDist(distLink, src);
+  assert.ok(out.some((l) => /symlink plugin\/ root/.test(l)), `checkDist must name the linked dist root; got: ${JSON.stringify(out)}`);
+});
