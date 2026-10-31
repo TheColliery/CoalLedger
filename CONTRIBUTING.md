@@ -36,7 +36,7 @@ node scripts/test.mjs           # zero-dependency test suite (explicit file list
 
 ## 🖥️ Supported Platforms
 
-Cross-agent by design—the canaries are plain SKILL.md contracts and the engine is plain Node scripts. The conductor hook is capability-keyed, not Claude-Code-only: Claude Code wires it directly (validated); Antigravity wires it through a ported adapter (works with—built and hermetically tested, live delivery not yet validated); a hookless platform (works with) invokes canaries manually or via a best-effort agent-driven offer. A field report from another platform is a welcome contribution.
+Cross-agent by design—the canaries are plain SKILL.md contracts and the engine is plain Node scripts. The conductor hook is capability-keyed, not Claude-Code-only: Claude Code wires it directly (validated); Antigravity wires it through its plugin folder (validated for agy 1.4.12, headless, on the plugin-folder and directory-install routes; see the README's Install section); a hookless platform (works with) invokes canaries manually or via a best-effort agent-driven offer. A field report from another platform is a welcome contribution.
 
 ---
 
@@ -45,7 +45,7 @@ Cross-agent by design—the canaries are plain SKILL.md contracts and the engine
 | Path | Purpose |
 |---|---|
 | `hooks/coalledger-conductor.js` | SessionStart conductor: canary offers + self-update scheduling (Phoenix-13). |
-| `hooks/ag-conductor.js` | Antigravity `PreInvocation` conductor adapter—mirrors the CC conductor's offers via a ported adapter (Phoenix-13); works with, live delivery not yet validated. |
+| `hooks/ag-conductor.js` | Antigravity `PreInvocation` conductor adapter—mirrors the CC conductor's offers via a ported adapter (Phoenix-13); validated on the plugin-folder and directory-install routes (agy 1.4.12, headless, one run per route). |
 | `hooks/coalledger-doctrack.js` | PostToolUse: records edited DOC files and the `MEMORY.md`-update satisfier that feeds the docs memory-drift reminder (Phoenix-13). |
 | `hooks/coalledger-drift-stop.js` | Stop: emits the quiet docs memory-drift reminder when docs were edited but `MEMORY.md` was not (Phoenix-13). |
 | `hooks/hooks.json` | Claude Code hook wiring in exec form: `command` is `node` and the script path `${CLAUDE_PLUGIN_ROOT}/hooks/…` sits in `args`, so no shell expands the placeholder; `verify.mjs` refuses a shell-form entry. |

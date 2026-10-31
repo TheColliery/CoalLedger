@@ -30,9 +30,11 @@
 // `additionalContext` key is a DEAD LETTER there — 0 engine hits — and
 // dual-emitting risks protojson rejecting the whole payload; ephemeralMessage
 // = a transient system message, the advisory class — userMessage would
-// fabricate a user turn). Delivery into the agent context is still not
-// live-validated — emitted per spec, claimed as nothing more; manual canary
-// invocation (the AG floor tier) is unaffected either way.
+// fabricate a user turn).
+// Delivery into the agent context was measured on agy 1.4.12 (headless agy -p,
+// Windows, 2026-10-31, one run per route): the once-per-session marker was written
+// on both routes. The interactive IDE was not exercised.
+// Manual canary invocation (the AG floor tier) is unaffected either way.
 //
 // Phoenix-13 throughout: fail-silent, exit 0 always, zero-dep (node builtins
 // only), no network, no child process, no process.exit(); the only write is
