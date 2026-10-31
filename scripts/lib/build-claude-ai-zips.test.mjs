@@ -10,10 +10,24 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const outDir = path.join(repo, 'dist-claude-ai');
 const script = path.join(repo, 'scripts', 'build-claude-ai-zips.mjs');
 
+// 29f F3 (CodeRabbit t232): every child build runs in a sandboxed env. SOURCE_DATE_EPOCH is removed from the inherited copy, so a value the caller
+// exported never reaches a test by inheritance; a test that sets it on purpose passes it to builderEnv. HOME and the temp variables point into this
+// file's tmp fixture, and the heap cap rides the child's env. BUILD_TIMEOUT_MS: one builder run takes about 231 ms on this box (measured
+// 2026-10-31); 60 s leaves headroom for a loaded runner and still ends a hang.
+const BUILD_TIMEOUT_MS = 60000;
+const fixtureHome = fs.realpathSync(fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-claude-ai-home-')));
+test.after(() => fs.rmSync(fixtureHome, { recursive: true, force: true }));
+function builderEnv(setEpoch) {
+  const env = { ...process.env, HOME: fixtureHome, USERPROFILE: fixtureHome, TEMP: fixtureHome, TMP: fixtureHome, TMPDIR: fixtureHome, NODE_OPTIONS: '--max-old-space-size=2048' };
+  delete env.SOURCE_DATE_EPOCH;
+  if (setEpoch !== undefined) env.SOURCE_DATE_EPOCH = String(setEpoch);
+  return env;
+}
+
 test('build-claude-ai-zips: stages every plugin skill with a trimmed, valid description', () => {
   fs.rmSync(outDir, { recursive: true, force: true });
   try {
-    const r = spawnSync(process.execPath, [script], { cwd: repo, encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [script], { cwd: repo, encoding: 'utf8', env: builderEnv(), timeout: BUILD_TIMEOUT_MS });
     assert.equal(r.status, 0, `expected exit 0, got ${r.status}\nstderr: ${r.stderr}`);
     assert.match(r.stdout, /^Done: \d+\/\d+ skill\(s\) staged/m, 'summary line present');
     assert.doesNotMatch(r.stdout, /FAIL/, 'no per-skill failures');
@@ -53,7 +67,7 @@ test('build-claude-ai-zips: fails loud when plugin/ has not been built', () => {
     fs.cpSync(path.join(repo, 'scripts', 'lib', 'desc-cap.mjs'), path.join(tmp, 'scripts', 'lib', 'desc-cap.mjs'));
     fs.cpSync(path.join(repo, 'scripts', 'lib', 'claude-ai-trim.mjs'), path.join(tmp, 'scripts', 'lib', 'claude-ai-trim.mjs'));
     // No plugin/ dir at all under tmp.
-    const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8', env: builderEnv(), timeout: BUILD_TIMEOUT_MS });
     assert.notEqual(r.status, 0, 'exits non-zero when plugin/skills is missing');
     assert.match(r.stderr, /does not exist/, 'names the missing dist as the reason');
   } finally {
@@ -78,7 +92,7 @@ test('build-claude-ai-zips: fails loud when plugin/skills exists but holds NO sk
     fs.cpSync(path.join(repo, 'scripts', 'lib', 'desc-cap.mjs'), path.join(tmp, 'scripts', 'lib', 'desc-cap.mjs'));
     fs.cpSync(path.join(repo, 'scripts', 'lib', 'claude-ai-trim.mjs'), path.join(tmp, 'scripts', 'lib', 'claude-ai-trim.mjs'));
     fs.mkdirSync(path.join(tmp, 'plugin', 'skills'), { recursive: true }); // present, but EMPTY
-    const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8', env: builderEnv(), timeout: BUILD_TIMEOUT_MS });
     assert.notEqual(r.status, 0, `exits non-zero when there is nothing to stage; stdout: ${r.stdout}`);
     // CWK2-032 (CodeRabbit, PR #20): a non-zero exit alone also passes on a crash (a module-load error in the scratch copy), so the guard's OWN message is asserted.
     assert.match(r.stderr, /holds no skill directories/, 'names the empty dist as the reason, so a crash cannot pass for the guard');
@@ -132,7 +146,7 @@ test('build-claude-ai-zips: refuses a file link inside a skill and never stages 
   fs.mkdirSync(path.dirname(secret), { recursive: true });
   fs.writeFileSync(secret, 'WITNESS-SECRET-BYTES');
   fs.symlinkSync(secret, path.join(witnessSkill(tmp, 'demo'), 'leak.txt'));
-  const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8', env: builderEnv(), timeout: BUILD_TIMEOUT_MS });
   assert.notEqual(r.status, 0, `a file link must be refused; exit ${r.status}; stdout: ${r.stdout}`);
   assert.match(r.stderr, /neither a regular file nor a folder/, 'names the refusal, so a crash cannot pass for it');
   const staged = filesUnder(path.join(tmp, 'dist-claude-ai'));
@@ -147,7 +161,7 @@ test('build-claude-ai-zips: refuses a folder link inside a skill and never stage
   fs.mkdirSync(outside, { recursive: true });
   fs.writeFileSync(path.join(outside, 'secret.txt'), 'WITNESS-FOLDER-BYTES');
   fs.symlinkSync(outside, path.join(witnessSkill(tmp, 'demo'), 'linked'), 'junction');
-  const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8', env: builderEnv(), timeout: BUILD_TIMEOUT_MS });
   assert.notEqual(r.status, 0, `a folder link must be refused; exit ${r.status}; stdout: ${r.stdout}`);
   assert.match(r.stderr, /neither a regular file nor a folder/, 'names the refusal, so a crash cannot pass for it');
   const staged = filesUnder(path.join(tmp, 'dist-claude-ai'));
@@ -161,7 +175,7 @@ test('build-claude-ai-zips: stages no dotfile or dot-folder, at any depth', (t) 
   fs.mkdirSync(path.join(dir, 'sub'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'sub', '.DS_Store'), 'x');
   fs.writeFileSync(path.join(dir, '.hidden'), 'x');
-  const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8', env: builderEnv(), timeout: BUILD_TIMEOUT_MS });
   assert.equal(r.status, 0, `the build succeeds; stderr: ${r.stderr}`);
   const names = filesUnder(path.join(tmp, 'dist-claude-ai')).map((f) => path.basename(f));
   assert.ok(names.includes('SKILL.md'), 'the skill itself is staged');
@@ -175,7 +189,7 @@ test('build-claude-ai-zips: refuses a file name holding a control character', (t
   if (!canMake(tmp, 'control')) { t.skip('this volume refuses control characters in file names (probe: create failed)'); return; }
   const dir = witnessSkill(tmp, 'demo');
   fs.writeFileSync(path.join(dir, 'bad\u0001name.md'), 'x');
-  const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'build-claude-ai-zips.mjs')], { encoding: 'utf8', env: builderEnv(), timeout: BUILD_TIMEOUT_MS });
   assert.notEqual(r.status, 0, `a control character in a name must be refused; exit ${r.status}; stdout: ${r.stdout}`);
   assert.match(r.stderr, /control character/, 'names the refusal, so a crash cannot pass for it');
 });
