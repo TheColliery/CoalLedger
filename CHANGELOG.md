@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [Unreleased]
+
+### Fixed
+- The plugin build refuses a link at the dist root (`plugin/`) itself, before it removes anything, and the dist check names it (commit `284667c0bbeb89cb57173d03d523c9114d81f3e1`).
+- The release ZIP builder's tests run each build with a clean environment and a time limit, so a setting inherited from the host cannot fail them (commit `1fc93706c2aa1ae764ee8a56419af0837dc45f95`).
+- Correction: 0.16.0-beta.2 also moved the version in both plugin manifests, `.claude-plugin/plugin.json` and the root `plugin.json`, and its entry did not say so.
+
 ## [0.16.0-beta.2] - 2026-10-31
 
 Antigravity claims match the records; builds refuse links
