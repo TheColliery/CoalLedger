@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildDist, checkDist, DIST_ITEMS, missingDistSources } from './build-plugin.mjs';
 
 function scratchDist() {
@@ -133,4 +134,118 @@ test('checkDist REPORTS a missing source DIST_ITEM instead of passing it silentl
     fs.rmSync(dist, { recursive: true, force: true });
     fs.rmSync(partial, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// 29d CWK2-079: the builder never copies, follows or writes through a link. Each witness runs on a scratch copy of the DIST_ITEM sources,
+// so a planted link never touches the room. A leg whose link kind this volume cannot make skips visibly (probed, never decided by platform).
+// ---------------------------------------------------------------------------
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function scratchSources(prefix) {
+  const src = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  for (const rel of DIST_ITEMS) {
+    fs.mkdirSync(path.dirname(path.join(src, rel)), { recursive: true });
+    fs.cpSync(path.join(repoRoot, rel), path.join(src, rel), { recursive: true });
+  }
+  return src;
+}
+// true when this volume can make the link kind; the probe runs inside the named scratch folder only.
+function canLink(dir, kind) {
+  try {
+    const target = path.join(dir, `probe-target-${kind}`);
+    if (kind === 'junction') fs.mkdirSync(target); else fs.writeFileSync(target, '');
+    fs.symlinkSync(target, path.join(dir, `probe-link-${kind}`), kind);
+    return true;
+  } catch { return false; }
+}
+function allFiles(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = path.join(dir, e.name);
+    return e.isDirectory() ? allFiles(p) : [p];
+  });
+}
+function anyFileHolds(dir, marker) {
+  return allFiles(dir).some((f) => { try { return fs.readFileSync(f, 'utf8').includes(marker); } catch { return false; } });
+}
+
+test('buildDist refuses a folder link inside a source it copies, and names it', (t) => {
+  const src = scratchSources('clg-src-dirlink-');
+  const dist = scratchDist();
+  const outside = scratchDist();
+  t.after(() => { for (const d of [src, dist, outside]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'OUTSIDE-FOLDER-BYTES');
+  fs.symlinkSync(outside, path.join(src, 'skills', 'linked-out'), 'junction');
+  assert.throws(() => buildDist(dist, src), /link or junction/, 'a folder link in a source is refused, and the refusal names it');
+  assert.equal(anyFileHolds(dist, 'OUTSIDE-FOLDER-BYTES'), false, 'the linked folder content reaches no dist file');
+});
+
+test('buildDist refuses a file link where a generated engine file is written, and never writes through it', (t) => {
+  const src = scratchSources('clg-src-filelink-');
+  const dist = scratchDist();
+  const outside = scratchDist();
+  t.after(() => { for (const d of [src, dist, outside]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'file')) { t.skip('this volume refuses file symlinks without privilege (probe: symlink EPERM)'); return; }
+  const target = path.join(outside, 'md-ast.mjs');
+  fs.writeFileSync(target, 'OUTSIDE-ORIGINAL');
+  const libDir = path.join(src, 'skills', 'doc-structure', 'lib');
+  fs.mkdirSync(libDir, { recursive: true });
+  fs.symlinkSync(target, path.join(libDir, 'md-ast.mjs'));
+  assert.throws(() => buildDist(dist, src), /link or junction/, 'a file link at a generated path is refused, and the refusal names it');
+  assert.equal(fs.readFileSync(target, 'utf8'), 'OUTSIDE-ORIGINAL', 'the file the link points at is untouched');
+});
+
+test('buildDist refuses a folder link where a generated engine folder is written, and never writes into the folder it points at', (t) => {
+  const src = scratchSources('clg-src-parentlink-');
+  const dist = scratchDist();
+  const outside = scratchDist();
+  t.after(() => { for (const d of [src, dist, outside]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  const target = path.join(outside, 'md-ast.mjs');
+  fs.writeFileSync(target, 'OUTSIDE-ORIGINAL');
+  fs.mkdirSync(path.join(src, 'skills', 'doc-structure'), { recursive: true });
+  fs.symlinkSync(outside, path.join(src, 'skills', 'doc-structure', 'lib'), 'junction');
+  assert.throws(() => buildDist(dist, src), /link or junction/, 'a folder link on the generated path is refused, and the refusal names it');
+  assert.equal(fs.readFileSync(target, 'utf8'), 'OUTSIDE-ORIGINAL', 'the generated engine was not written through the link');
+});
+
+test('buildDist refuses a link that points inside its own source tree', (t) => {
+  const src = scratchSources('clg-src-insidelink-');
+  const dist = scratchDist();
+  t.after(() => { for (const d of [src, dist]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  const sub = path.join(src, 'skills', 'doc-structure', 'sub');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.symlinkSync(sub, path.join(src, 'skills', 'doc-structure', 'inner'), 'junction');
+  assert.throws(() => buildDist(dist, src), /link or junction/, 'a link into the tree is refused, not copied as a second copy');
+});
+
+test('checkDist names a dangling link in a DIST_ITEM instead of passing it', (t) => {
+  const src = scratchSources('clg-src-dangle-');
+  const dist = scratchDist();
+  t.after(() => { for (const d of [src, dist]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  buildDist(dist, src);
+  const gone = path.join(src, 'gone-target');
+  fs.mkdirSync(gone);
+  fs.symlinkSync(gone, path.join(src, 'skills', 'dangling-link'), 'junction');
+  fs.rmSync(gone, { recursive: true, force: true });
+  const out = checkDist(dist, src);
+  assert.ok(out.some((l) => /symlink/.test(l) && l.includes('dangling-link')),
+    `checkDist must name the dangling link; got: ${JSON.stringify(out)}`);
+});
+
+test('checkDist names a folder link that points at its own parent, and does not descend into it', (t) => {
+  const src = scratchSources('clg-src-loop-');
+  const dist = scratchDist();
+  t.after(() => { for (const d of [src, dist]) fs.rmSync(d, { recursive: true, force: true }); });
+  if (!canLink(src, 'junction')) { t.skip('this volume cannot make a junction (probe: junction failed)'); return; }
+  buildDist(dist, src);
+  const parent = path.join(src, 'skills', 'doc-structure');
+  fs.symlinkSync(parent, path.join(parent, 'loop'), 'junction');
+  const out = checkDist(dist, src);
+  assert.ok(out.some((l) => /symlink/.test(l) && l.includes('loop')),
+    `checkDist must name the looping link; got: ${JSON.stringify(out)}`);
 });

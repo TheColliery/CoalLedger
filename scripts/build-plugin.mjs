@@ -25,6 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mkdirRepoParents, writeRepoFile } from './lib/repo-fs.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(repo, 'plugin');
@@ -147,18 +148,29 @@ function filesMatch(a, b) {
   return crlfToLf(bufA) === crlfToLf(bufB);
 }
 
-export function buildDist(distRoot = dist) {
+// 29d CWK2-079: a link or junction in a source the build copies is refused by name, never copied as a link and never followed. Walks with lstat;
+// a source that is absent is left to the copy below, which fails on its own. Runs BEFORE the dist is removed, so a refused build leaves plugin/ as it was.
+function assertNoLinks(root, rel) {
+  let st;
+  try { st = fs.lstatSync(path.join(root, rel)); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
+  if (st.isSymbolicLink()) throw new Error(`${rel}: a link or junction in the source tree is refused (the build copies files, never links)`);
+  if (st.isDirectory()) for (const n of fs.readdirSync(path.join(root, rel))) assertNoLinks(root, path.join(rel, n));
+}
+
+export function buildDist(distRoot = dist, srcRoot = repo) {
+  for (const rel of DIST_ITEMS) assertNoLinks(srcRoot, rel);
+  for (const [, srcRel] of GENERATED) assertNoLinks(srcRoot, srcRel);
   fs.rmSync(distRoot, { recursive: true, force: true });
   for (const rel of DIST_ITEMS) {
-    const src = path.join(repo, rel);
+    const src = path.join(srcRoot, rel);
     const dst = path.join(distRoot, rel);
     fs.mkdirSync(path.dirname(dst), { recursive: true });
     fs.cpSync(src, dst, { recursive: true, filter: (s) => !isDistExcluded(s) }); // recursive always; EXCLUDE *.test.* + build-only libs — dev-only tooling never ships (clean-clone)
   }
   for (const [distRel, srcRel] of GENERATED) {
     const dst = path.join(distRoot, distRel);
-    fs.mkdirSync(path.dirname(dst), { recursive: true });
-    fs.copyFileSync(path.join(repo, srcRel), dst);
+    mkdirRepoParents(path.dirname(dst), distRoot); // 29d: the link-refusing helpers, never a bare mkdir + copy that follows a link at dst or a parent of dst
+    writeRepoFile(dst, fs.readFileSync(path.join(srcRoot, srcRel)), distRoot);
   }
 }
 
@@ -185,8 +197,11 @@ export function checkDist(distRoot = dist, srcRoot = repo) {
   const filesUnder = (root, rel) => {
     if (isDistExcluded(rel)) return []; // excluded from the dist -> excluded here too, both directions
     const abs = path.join(root, rel);
-    if (!fs.existsSync(abs)) return [];
-    if (fs.statSync(abs).isDirectory()) return fs.readdirSync(abs).flatMap((n) => filesUnder(root, path.join(rel, n)));
+    let st;
+    try { st = fs.lstatSync(abs); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } // absent is nothing to compare; any other failure is loud
+    // 29d CWK2-079: a link is named and never followed: a dangling link would pass as absent, and a link to a parent would recurse without end.
+    if (st.isSymbolicLink()) { out.push(`symlink in DIST_ITEM (refused, not followed): ${rel}`); return []; }
+    if (st.isDirectory()) return fs.readdirSync(abs).flatMap((n) => filesUnder(root, path.join(rel, n)));
     return [rel];
   };
   for (const item of DIST_ITEMS) {
