@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { SANDBOX_ENV } from './test-sandbox.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -42,7 +43,7 @@ console.log('after import, exitCode=' + process.exitCode);
 function runImporter(tmp, target) {
   const importerPath = path.join(tmp, 'importer.mjs');
   fs.writeFileSync(importerPath, IMPORTER);
-  return spawnSync(process.execPath, [importerPath, target], { cwd: tmp, encoding: 'utf8', timeout: 20000 });
+  return spawnSync(process.execPath, [importerPath, target], { cwd: tmp, encoding: 'utf8', timeout: 20000, env: SANDBOX_ENV });
 }
 
 test('configure.mjs: importing it (not spawning it) must not touch the importer exit code', () => {

@@ -21,6 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { SANDBOX_ENV } from '../test-sandbox.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -48,7 +49,7 @@ function runThroughJunction(baseDir, relScript, args, spawnOpts = {}) {
   const link = path.join(tmp, 'via-junction');
   try {
     fs.symlinkSync(baseDir, link, 'junction');
-    return spawnSync(process.execPath, [path.join(link, relScript), ...args], { encoding: 'utf8', ...spawnOpts });
+    return spawnSync(process.execPath, [path.join(link, relScript), ...args], { encoding: 'utf8', env: SANDBOX_ENV, ...spawnOpts });
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

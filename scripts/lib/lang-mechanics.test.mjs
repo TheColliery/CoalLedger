@@ -12,6 +12,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkText, RULES, THIRD_PARTY_MARKER } from './lang-mechanics.mjs';
+import { SANDBOX_ENV } from '../test-sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(here, 'lang-mechanics.mjs');
@@ -143,7 +144,7 @@ test('CLI: a findings run exits 0 and prints the "N finding(s) across N file(s)"
   try {
     const f = path.join(tmp, 'a.md');
     fs.writeFileSync(f, '你好,再见\n');
-    const r = spawnSync(process.execPath, [CLI, f], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [CLI, f], { encoding: 'utf8', env: SANDBOX_ENV });
     assert.equal(r.status, 0);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
@@ -153,13 +154,13 @@ test('CLI: the same findings run\'s stdout carries the summary line, never a non
   try {
     const f = path.join(tmp, 'a.md');
     fs.writeFileSync(f, '你好,再见\n');
-    const r = spawnSync(process.execPath, [CLI, f], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [CLI, f], { encoding: 'utf8', env: SANDBOX_ENV });
     assert.match(r.stdout, /^1 finding\(s\) across 1 file\(s\)$/m);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
 test('CLI: an unreadable file exits 1', () => {
-  const r = spawnSync(process.execPath, [CLI, path.join(os.tmpdir(), 'clg-lang-does-not-exist-xyz.md')], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [CLI, path.join(os.tmpdir(), 'clg-lang-does-not-exist-xyz.md')], { encoding: 'utf8', env: SANDBOX_ENV });
   assert.equal(r.status, 1);
 });
 
@@ -168,7 +169,7 @@ test('CLI: --json emits a parseable array with one entry per file', () => {
   try {
     const f = path.join(tmp, 'a.md');
     fs.writeFileSync(f, '你好,再见\n');
-    const r = spawnSync(process.execPath, [CLI, '--json', f], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [CLI, '--json', f], { encoding: 'utf8', env: SANDBOX_ENV });
     const out = JSON.parse(r.stdout);
     assert.equal(out.length, 1);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
@@ -179,7 +180,7 @@ test('CLI: --json\'s one entry names the rule that fired', () => {
   try {
     const f = path.join(tmp, 'a.md');
     fs.writeFileSync(f, '你好,再见\n');
-    const r = spawnSync(process.execPath, [CLI, '--json', f], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [CLI, '--json', f], { encoding: 'utf8', env: SANDBOX_ENV });
     const out = JSON.parse(r.stdout);
     assert.equal(out[0].findings[0].rule, 'zh-halfwidth-punct');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
@@ -441,7 +442,7 @@ test('en CLI: --script en reports only EN rules, and --script zh reports none of
   try {
     const f = path.join(dir, 'a.md');
     fs.writeFileSync(f, 'First sentence.  Second sentence.\n');
-    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' } });
+    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...SANDBOX_ENV, NODE_OPTIONS: '--max-old-space-size=128' } });
     assert.match(run('en').stdout, /\[en-double-space-after-period\]/);
     assert.match(run('zh').stdout, /^0 finding\(s\)/m);
   } finally {
@@ -598,7 +599,7 @@ test('ja CLI: --script ja reports the JA rule, --script zh reports none of it', 
   try {
     const f = path.join(dir, 'a.md');
     fs.writeFileSync(f, 'これは,見本です\n');
-    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' } });
+    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...SANDBOX_ENV, NODE_OPTIONS: '--max-old-space-size=128' } });
     assert.match(run('ja').stdout, /\[ja-halfwidth-punct\]/);
     assert.match(run('zh').stdout, /^0 finding\(s\)/m);
   } finally {
@@ -691,7 +692,7 @@ test('ko CLI: --script ko reports the KO rule, --script zh reports none of it', 
   try {
     const f = path.join(dir, 'a.md');
     fs.writeFileSync(f, '안녕하세요，세계\n');
-    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' } });
+    const run = (script) => spawnSync(process.execPath, ['--max-old-space-size=128', CLI, '--script', script, f], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { ...SANDBOX_ENV, NODE_OPTIONS: '--max-old-space-size=128' } });
     assert.match(run('ko').stdout, /\[ko-fullwidth-punct\]/);
     assert.match(run('zh').stdout, /^0 finding\(s\)/m);
   } finally {

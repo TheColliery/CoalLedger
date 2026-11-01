@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { SANDBOX_ENV } from './test-sandbox.mjs';
 import { fileURLToPath } from 'node:url';
 import { gitEnv } from './lib/git-env.mjs';
 
@@ -60,7 +61,7 @@ function scratchRepo() {
   return copyTemplate(plainTemplateDir());
 }
 function run(dir) {
-  return spawnSync(process.execPath, [path.join(dir, 'scripts', 'verify.mjs')], { cwd: dir, encoding: 'utf8' });
+  return spawnSync(process.execPath, [path.join(dir, 'scripts', 'verify.mjs')], { cwd: dir, encoding: 'utf8', env: SANDBOX_ENV });
 }
 function writePluginDescription(dir, value) {
   const p = path.join(dir, '.claude-plugin', 'plugin.json');

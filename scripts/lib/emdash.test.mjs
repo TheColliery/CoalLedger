@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { SANDBOX_ENV } from '../test-sandbox.mjs';
 import { fileURLToPath } from 'node:url';
 import { scanText, scanFile, isLegalPath, THIRD_PARTY_MARKER, CASES } from './emdash.mjs';
 
@@ -126,7 +127,7 @@ test('blockquote is excluded under BOTH modes -- the ruling this unit made, not 
 function runCli(args) {
   const r = spawnSync(process.execPath, ['--max-old-space-size=128', EMDASH, ...args], {
     encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL',
-    env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' },
+    env: { ...SANDBOX_ENV, NODE_OPTIONS: '--max-old-space-size=128' },
   });
   return { code: r.status, out: (r.stdout || '') + (r.stderr || '') };
 }

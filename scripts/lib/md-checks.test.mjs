@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { SANDBOX_ENV } from '../test-sandbox.mjs';
 import { fileURLToPath } from 'node:url';
 import { checkDocument } from './md-checks.mjs';
 
@@ -196,7 +197,7 @@ test('CONFIRMED checks never carry a suspected field (backward compat — old fi
 // ---------------------------------------------------------------------------
 
 test('CLI --json: exit 0, parseable JSON, counts match the library', () => {
-  const r = spawnSync(process.execPath, [CLI, '--json', path.join(FIX, 'defects-structure.md')], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [CLI, '--json', path.join(FIX, 'defects-structure.md')], { encoding: 'utf8', env: SANDBOX_ENV });
   assert.strictEqual(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.strictEqual(out.length, 1);
@@ -204,13 +205,13 @@ test('CLI --json: exit 0, parseable JSON, counts match the library', () => {
 });
 
 test('CLI human output: one line per finding + a summary line', () => {
-  const r = spawnSync(process.execPath, [CLI, path.join(FIX, 'decoy-clean.md')], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [CLI, path.join(FIX, 'decoy-clean.md')], { encoding: 'utf8', env: SANDBOX_ENV });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.ok(r.stdout.includes('0 finding(s) across 1 file(s)'));
 });
 
 test('CLI fails loud on an unreadable file (exit 1) but still checks the rest', () => {
-  const r = spawnSync(process.execPath, [CLI, path.join(FIX, 'does-not-exist.md'), path.join(FIX, 'decoy-thai.md')], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [CLI, path.join(FIX, 'does-not-exist.md'), path.join(FIX, 'decoy-thai.md')], { encoding: 'utf8', env: SANDBOX_ENV });
   assert.strictEqual(r.status, 1);
   assert.ok(r.stderr.includes('FAIL'));
   assert.ok(r.stdout.includes('0 finding(s)'), 'the readable file was still checked');
@@ -311,7 +312,7 @@ test('U13/F1: the CLI batch survives a crafted doc between two real files — no
     fs.writeFileSync(path.join(dir, 'good.md'), '[dead link](./nope.md)\n');
     fs.writeFileSync(path.join(dir, 'evil.md'), '>'.repeat(8000) + ' hi\n');
     fs.writeFileSync(path.join(dir, 'good2.md'), '[also dead](./nope2.md)\n');
-    const r = spawnSync(process.execPath, [CLI, '--json', path.join(dir, 'good.md'), path.join(dir, 'evil.md'), path.join(dir, 'good2.md')], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [CLI, '--json', path.join(dir, 'good.md'), path.join(dir, 'evil.md'), path.join(dir, 'good2.md')], { encoding: 'utf8', env: SANDBOX_ENV });
     assert.notStrictEqual(r.stdout.trim(), '', 'stdout must not be empty — pre-fix this was 0 bytes');
     const out = JSON.parse(r.stdout);
     assert.strictEqual(out.length, 3, 'all three files present in the batch, none lost');

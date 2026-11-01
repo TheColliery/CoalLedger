@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { scanFile } from './emdash.mjs';
 import { checkFile } from './lang-mechanics.mjs';
+import { SANDBOX_ENV } from '../test-sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const MD_CHECKS = path.join(here, 'md-checks.mjs');
@@ -59,7 +60,7 @@ function plainRepo(t) {
 
 function runMdChecks(args) {
   return spawnSync(process.execPath, ['--max-old-space-size=256', MD_CHECKS, ...args],
-    { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL' });
+    { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: SANDBOX_ENV });
 }
 
 test('emdash scanFile refuses a doc reached through a folder link, with or without a root, and reads a real folder (capability-gated)', (t) => {
