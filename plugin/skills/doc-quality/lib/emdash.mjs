@@ -87,7 +87,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRepoFileBounded, repoEntryKind, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, docReadRoot, docReadError, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 const EMDASH = String.fromCharCode(0x2014);
 const THAI = /[฀-๿]/;
@@ -272,17 +272,15 @@ export function scanText(text, mode = 'spaced') {
   return hits;
 }
 
-export function scanFile(file, mode = 'spaced') {
+export function scanFile(file, mode = 'spaced', root) {
   if (mode === 'off') return [];
   if (isLegalPath(file)) return [];
-  // CWK-137: this room's docs-health tooling is pointed at a cloned, possibly-hostile
-  // repo's docs by design -- bounded + kind-gated, same shape as md-checks.mjs's and
-  // lang-mechanics.mjs's own CLI reads.
-  const text = readRepoFileBounded(file, null, MAX_DOC_BYTES);
-  if (text === null) {
-    const kind = repoEntryKind(file, null);
-    throw new Error(kind === 'missing' ? `ENOENT: no such file, open '${file}'` : `refused: not a plain file reachable at this path (kind: ${kind}), or over the ${MAX_DOC_BYTES / 1048576} MB bound`);
-  }
+  // T-17: a doc this tool is pointed at may sit in a cloned repository; it is read bounded, kind-gated and under a
+  // literal root (repo-fs.mjs docReadRoot): a link at the file or at a folder between that root and the file is
+  // refused. `root` is the project folder (the CLI's --root); without it the filesystem root of the path is the root.
+  const base = docReadRoot(file, root);
+  const text = readRepoFileBounded(file, base, MAX_DOC_BYTES);
+  if (text === null) throw docReadError(file, base, MAX_DOC_BYTES);
   return scanText(text, mode);
 }
 
@@ -367,7 +365,7 @@ function isMainModule(url) {
   }
 }
 
-// CLI: node emdash.mjs [--selftest] [--mode=unspaced|spaced] <file...>
+// CLI: node emdash.mjs [--selftest] [--mode=unspaced|spaced] [--root=<dir>] <file...>
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.includes('--selftest')) {
@@ -382,6 +380,8 @@ if (isMainModule(import.meta.url)) {
   }
   const modeArg = args.find((a) => a.startsWith('--mode='));
   const mode = modeArg ? modeArg.slice('--mode='.length) : 'spaced';
+  const rootArg = args.find((a) => a.startsWith('--root='));
+  const root = rootArg ? rootArg.slice('--root='.length) : undefined;
   if (mode !== 'unspaced' && mode !== 'spaced' && mode !== 'off') {
     console.log(`FAIL: --mode must be 'unspaced', 'spaced', or 'off' (got '${mode}')`);
     process.exitCode = 1;
@@ -392,7 +392,7 @@ if (isMainModule(import.meta.url)) {
     let total = 0, unreadable = 0;
     for (const f of args.filter((a) => !a.startsWith('--'))) {
       let hits;
-      try { hits = scanFile(f, mode); } catch { console.log(`  --   unreadable, skipped: ${f}`); unreadable++; continue; }
+      try { hits = scanFile(f, mode, root); } catch { console.log(`  --   unreadable, skipped: ${f}`); unreadable++; continue; }
       for (const h of hits) console.log(`${f}:${h.line}:${h.col}: ${h.context}`);
       if (hits.length) console.log(`  ${f}: ${hits.length}`);
       total += hits.length;

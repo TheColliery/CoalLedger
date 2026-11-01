@@ -80,7 +80,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRepoFileBounded, repoEntryKind, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, docReadRoot, docReadError, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 // ---------------------------------------------------------------------------
 // Script ranges (CWK-101-DESIGN §2) -- detection by CODEPOINT, never by a
@@ -428,20 +428,17 @@ export function checkText(text, opts = {}) {
 
 export function checkFile(file, opts = {}) {
   if (isLegalPath(file)) return [];
-  // CWK-137: this room's docs-health CLI is pointed at a cloned, possibly-hostile
-  // repo's docs by design -- a plain fs.readFileSync here opened a FIFO/device/
-  // escaping-symlink target unconditionally. Bounded + kind-gated, same shape as
-  // md-checks.mjs's own CLI read.
-  const text = readRepoFileBounded(file, null, MAX_DOC_BYTES);
-  if (text === null) {
-    const kind = repoEntryKind(file, null);
-    throw new Error(kind === 'missing' ? `ENOENT: no such file, open '${file}'` : `refused: not a plain file reachable at this path (kind: ${kind}), or over the ${MAX_DOC_BYTES / 1048576} MB bound`);
-  }
+  // T-17: a doc this CLI is pointed at may sit in a cloned repository; it is read bounded, kind-gated and under a
+  // literal root (repo-fs.mjs docReadRoot): a link at the file or at a folder between that root and the file is
+  // refused. opts.root is the project folder (the CLI's --root); without it the filesystem root of the path is the root.
+  const base = docReadRoot(file, opts.root);
+  const text = readRepoFileBounded(file, base, MAX_DOC_BYTES);
+  if (text === null) throw docReadError(file, base, MAX_DOC_BYTES);
   return checkText(text, opts);
 }
 
 // ---------------------------------------------------------------------------
-// CLI: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] <file...>
+// CLI: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] [--root=<dir>] <file...>
 // Exit contract (load-bearing, see header): exit 0 on a findings run, exit 1
 // ONLY on an unreadable file -- mirrors md-checks.mjs's own CLI exactly.
 // ---------------------------------------------------------------------------
@@ -474,9 +471,11 @@ if (isMainModule(import.meta.url)) {
   const opts = { plain: args.includes('--plain'), json: args.includes('--json') };
   const scriptIdx = args.findIndex((a) => a === '--script');
   if (scriptIdx !== -1) opts.script = args[scriptIdx + 1];
+  const rootArg = args.find((a) => a.startsWith('--root='));
+  if (rootArg) opts.root = rootArg.slice('--root='.length);
   const files = args.filter((a, i) => !a.startsWith('--') && (scriptIdx === -1 || i !== scriptIdx + 1));
   if (!files.length) {
-    console.error('usage: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] <file.md> [more.md ...]');
+    console.error('usage: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] [--root=<dir>] <file.md> [more.md ...]');
     process.exitCode = 1;
   } else {
     const out = [];

@@ -306,7 +306,7 @@ test('U13/F1 M1 (findings-back): a `>`-heavy fenced code block does not cry-wolf
 });
 
 test('U13/F1: the CLI batch survives a crafted doc between two real files — no lost findings, no empty stdout', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-f1-'));
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'cl-f1-'));
   try {
     fs.writeFileSync(path.join(dir, 'good.md'), '[dead link](./nope.md)\n');
     fs.writeFileSync(path.join(dir, 'evil.md'), '>'.repeat(8000) + ' hi\n');

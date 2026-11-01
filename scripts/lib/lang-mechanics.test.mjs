@@ -139,7 +139,7 @@ test('markdown exclusions: opts.plain disables fence-skipping (the same text WOU
 // unable to fail on a findings-only run.
 // ---------------------------------------------------------------------------
 test('CLI: a findings run exits 0 and prints the "N finding(s) across N file(s)" summary', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clg-lang-cli-'));
+  const tmp = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'clg-lang-cli-'));
   try {
     const f = path.join(tmp, 'a.md');
     fs.writeFileSync(f, '你好,再见\n');
@@ -149,7 +149,7 @@ test('CLI: a findings run exits 0 and prints the "N finding(s) across N file(s)"
 });
 
 test('CLI: the same findings run\'s stdout carries the summary line, never a non-zero exit as the finding signal', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clg-lang-cli-'));
+  const tmp = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'clg-lang-cli-'));
   try {
     const f = path.join(tmp, 'a.md');
     fs.writeFileSync(f, '你好,再见\n');
@@ -164,7 +164,7 @@ test('CLI: an unreadable file exits 1', () => {
 });
 
 test('CLI: --json emits a parseable array with one entry per file', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clg-lang-cli-'));
+  const tmp = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'clg-lang-cli-'));
   try {
     const f = path.join(tmp, 'a.md');
     fs.writeFileSync(f, '你好,再见\n');
@@ -175,7 +175,7 @@ test('CLI: --json emits a parseable array with one entry per file', () => {
 });
 
 test('CLI: --json\'s one entry names the rule that fired', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clg-lang-cli-'));
+  const tmp = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'clg-lang-cli-'));
   try {
     const f = path.join(tmp, 'a.md');
     fs.writeFileSync(f, '你好,再见\n');

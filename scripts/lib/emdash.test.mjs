@@ -51,7 +51,7 @@ test('isLegalPath: an ordinary doc that merely STARTS with a legal word is not s
 // scanFile, file-based -- proves the isLegalPath check actually gates the
 // filesystem entry point, not merely the pure predicate in isolation.
 test('scanFile: a LICENSE-class file is skipped even though it carries a real hit under the configured mode', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-emdash-legal-'));
+  const tmp = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'cl-emdash-legal-'));
   try {
     const bad = 'alpha' + String.fromCharCode(0x2014) + 'beta'; // unspaced -> a finding under 'spaced' mode
     fs.writeFileSync(path.join(tmp, 'LICENSE.md'), bad);
@@ -104,7 +104,7 @@ test("mode 'off': scanText never fires, whatever the text", () => {
 });
 
 test("mode 'off': scanFile never fires either, even on an ordinary (non-legal) filename", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-emdash-off-'));
+  const tmp = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'cl-emdash-off-'));
   try {
     fs.writeFileSync(path.join(tmp, 'ordinary.md'), 'alpha' + String.fromCharCode(0x2014) + 'beta alpha ' + String.fromCharCode(0x2014) + ' beta');
     assert.deepEqual(scanFile(path.join(tmp, 'ordinary.md'), 'off'), []);

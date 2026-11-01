@@ -101,7 +101,7 @@ test('emdash.mjs: --selftest through a junction still runs and reports PASS (the
 
 test('lang-mechanics.mjs: a scan through a junction still finds a planted ZH defect (the guard fired)', (t) => {
   if (!JUNCTION.ok) { t.skip(`junction unavailable on this box: ${JUNCTION.reason}`); return; }
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clg-junction-lang-'));
+  const tmp = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'clg-junction-lang-'));
   try {
     const f = path.join(tmp, 'a.md');
     fs.writeFileSync(f, '你好,再见\n');

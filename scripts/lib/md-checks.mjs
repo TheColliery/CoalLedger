@@ -95,7 +95,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseMarkdown, walk, textContent, makeSlugger, githubSlug } from './md-ast.mjs';
-import { readRepoFileBounded, repoEntryKind, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, docReadRoot, docReadError, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 // A real anchor id/name only — the negative lookbehind for a word-char or hyphen
@@ -500,9 +500,11 @@ function isMainModule(url) {
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const json = args.includes('--json');
-  const files = args.filter((a) => a !== '--json');
+  const rootArg = args.find((a) => a.startsWith('--root='));
+  const root = rootArg ? rootArg.slice('--root='.length) : undefined;
+  const files = args.filter((a) => a !== '--json' && !a.startsWith('--root='));
   if (!files.length) {
-    console.error('usage: node md-checks.mjs [--json] <file.md> [more.md ...]');
+    console.error('usage: node md-checks.mjs [--json] [--root=<dir>] <file.md> [more.md ...]');
     process.exitCode = 1;
   }
   const out = [];
@@ -510,19 +512,14 @@ if (isMainModule(import.meta.url)) {
   for (const f of files) {
     let src;
     try {
-      // CWK-137: a FIFO/device/escaping-symlink named on the command line used to be
-      // opened unconditionally by a plain fs.readFileSync -- this room's own PRODUCT
-      // is pointing it at a cloned, possibly-hostile repo's docs. Bounded at the IO
-      // ceiling (4 MB), not at this file's own 512 KB parser-safety MAX_DOC_BYTES: a
-      // realistic over-512KB doc must still reach checkDocument's own size check below
-      // and come back as a graceful `doc-too-large` FINDING, exactly as before this
-      // fix -- only a kind mismatch (FIFO/device/escaping link) or an astronomically
-      // large file (> 4 MB, never a real doc) is refused at the READ layer.
-      src = readRepoFileBounded(f, null, IO_CEILING_BYTES);
-      if (src === null) {
-        const kind = repoEntryKind(f, null);
-        throw new Error(kind === 'missing' ? 'ENOENT: no such file' : `refused -- not a plain file reachable at this path (kind: ${kind}), or over the ${IO_CEILING_BYTES / 1048576} MB I/O ceiling`);
-      }
+      // T-17: a doc named on the command line may sit in a cloned repository. It is read kind-gated (a FIFO or
+      // device is refused before it is opened), bounded at the I/O ceiling (4 MB) rather than this file's own 512 KB
+      // MAX_DOC_BYTES (a real over-512 KB doc still reaches checkDocument and comes back as a `doc-too-large`
+      // finding), and under a literal root (repo-fs.mjs docReadRoot): a link at the file or at a folder between that
+      // root and the file is refused. --root is the project folder; without it the filesystem root of the path is the root.
+      const base = docReadRoot(f, root);
+      src = readRepoFileBounded(f, base, IO_CEILING_BYTES);
+      if (src === null) throw docReadError(f, base, IO_CEILING_BYTES, 'I/O ceiling');
     } catch (e) {
       console.error(`FAIL ${f}: ${e.message}`);
       process.exitCode = 1;
