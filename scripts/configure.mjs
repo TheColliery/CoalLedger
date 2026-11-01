@@ -257,6 +257,7 @@ function main() {
 
   try {
     // 16f A (CWK2-042): the folder is made only after the chain from the project root is judged (a refused target makes nothing); writeRoot is null for the home file.
+    // Named divergence (29v): the --global write has no containment root by design: its path is globalConfigPath(), chosen by the user's flag and CLAUDE_CONFIG_DIR, never by a repository, and writeRepoFile still refuses an existing link or non-file at that target.
     const writeRoot = isGlobal ? null : projectRoot;
     mkdirRepoParents(path.dirname(writePath), writeRoot);
     // CWK-137: a plain fs.writeFileSync FOLLOWS a symlink at the destination
