@@ -35,6 +35,7 @@ const TESTS = [
   'scripts/lib/emdash.test.mjs',
   'scripts/lib/lang-mechanics.test.mjs',
   'scripts/lib/translation-pairs.test.mjs',
+  'scripts/lib/repo-standard.test.mjs',
   'scripts/lib/main-module-guard.test.mjs',
   'scripts/lib/release-shape.test.mjs',
   'scripts/lib/asset-upload-mode.test.mjs',
