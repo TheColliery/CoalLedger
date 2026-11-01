@@ -61,6 +61,7 @@
   // this to "unspaced" globally on his own machine; a repo's own project
   // file never should.
   "emDash": "off",
+  "translationPairs": [],
 
   // scanEverything (CWK-057, the owner's antivirus-scope law — one flock, one
   // colour with CoalMine's key of the same name, polarity and default). ON for

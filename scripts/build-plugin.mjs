@@ -64,6 +64,8 @@ export const SKILL_ENGINE_DIR = path.join('skills', 'doc-structure', 'lib');
 // its own self-contained engine copy, generated from the same single
 // source (`scripts/lib/emdash.mjs`), never a second hand-tracked file.
 export const DOC_QUALITY_ENGINE_DIR = path.join('skills', 'doc-quality', 'lib');
+// T-20 (order 29z): doc-consistency's translation-pair pass is the same shape, a self-contained engine in its skill folder.
+export const DOC_CONSISTENCY_ENGINE_DIR = path.join('skills', 'doc-consistency', 'lib');
 export const GENERATED = new Map([
   // CWK-137: repo-fs.mjs (the bounded, kind-gated repo-path reader) rides beside
   // md-checks.mjs the same way md-ast.mjs already does -- md-checks.mjs's own
@@ -84,6 +86,12 @@ export const GENERATED = new Map([
   // this one is imported by BOTH siblings in this dir, which is fine, since
   // neither imports the OTHER, only this shared leaf.
   [path.join(DOC_QUALITY_ENGINE_DIR, 'repo-fs.mjs'), path.join('scripts', 'lib', 'repo-fs.mjs')],
+  // T-20: translation-pairs.mjs imports repo-fs.mjs (kind-gated reads) and git-env.mjs (the git spawn's env), so both
+  // ride beside it in the skill folder, each copied from its one source.
+  ...['translation-pairs.mjs', 'repo-fs.mjs', 'git-env.mjs'].map((f) => [
+    path.join(DOC_CONSISTENCY_ENGINE_DIR, f),
+    path.join('scripts', 'lib', f),
+  ]),
 ]);
 
 const isTest = (p) => /\.test\.[cm]?js$/.test(p);
@@ -119,7 +127,7 @@ const isTest = (p) => /\.test\.[cm]?js$/.test(p);
 // The test runner (wave-run.mjs, stdout-sync.mjs, machine-reading.mjs adopted by blob id from the .github canon, and this room's test-plan.mjs, 09a) is likewise a development tool
 // that scripts/test.mjs calls and nothing installed does; it replaces test-spawn.mjs (08b), which was build-only for the same reason.
 // agy-probe.mjs (order 29c) is the same kind of tool: only scripts/agy-validate.test.mjs imports it, to probe the agy CLI from the test.
-const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs', 'release-shape.mjs', 'asset-upload-mode.mjs', 'release-prune.mjs', 'secret-scan.mjs', 'test-plan.mjs', 'wave-run.mjs', 'stdout-sync.mjs', 'machine-reading.mjs', 'git-env-census.mjs', 'git-env-census.vectors.mjs', 'git-env-pins.mjs', 'front-door-links.mjs', 'agy-probe.mjs']);
+const BUILD_ONLY_LIB_NAMES = new Set(['desc-cap.mjs', 'claude-ai-trim.mjs', 'pointer-check.mjs', 'emdash.mjs', 'lang-mechanics.mjs', 'release-shape.mjs', 'asset-upload-mode.mjs', 'release-prune.mjs', 'secret-scan.mjs', 'test-plan.mjs', 'wave-run.mjs', 'stdout-sync.mjs', 'machine-reading.mjs', 'git-env-census.mjs', 'git-env-census.vectors.mjs', 'git-env-pins.mjs', 'front-door-links.mjs', 'agy-probe.mjs', 'translation-pairs.mjs']);
 const isBuildOnlyLib = (p) => BUILD_ONLY_LIB_NAMES.has(path.basename(p));
 const isDistExcluded = (p) => isTest(p) || isBuildOnlyLib(p);
 
