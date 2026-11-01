@@ -1,7 +1,7 @@
 ---
 name: doc-consistency
 description: >-
-  Docs-health contradiction scan—docs that disagree with EACH OTHER: the same fact stated two ways in two places, terminology drift (one thing under several names, or one name for several things), copy-paste blocks that were updated in one home and not the other, and cross-LANGUAGE drift (a doc and its counterpart in another language no longer say the same thing). Catches CONTRADICTORY doc sets. Triggers on: "/doc-consistency", "doc-consistency", "docs contradict", "terminology drift", "are the translations in sync". Semantic (paid, consent-gated—comparing meaning across files is judgment, not pattern-matching). Severity judged by context, never mechanical; CONFIRMED contradictions and SUSPECTED tensions reported separately.
+  Docs-health contradiction scan—docs that disagree with EACH OTHER: the same fact stated two ways in two places, terminology drift (one thing under several names, or one name for several things), copy-paste blocks that were updated in one home and not the other, and cross-LANGUAGE drift (a doc and its counterpart in another language no longer say the same thing). Catches CONTRADICTORY doc sets. Triggers on: "/doc-consistency", "doc-consistency", "docs contradict", "terminology drift", "are the translations in sync". A mechanical layer (~free) checks declared translation pairs (`translationPairs`); the three drift classes are semantic (paid, consent-gated—comparing meaning across files is judgment, not pattern-matching). Severity judged by context, never mechanical; CONFIRMED contradictions and SUSPECTED tensions reported separately.
 ---
 
 # Doc-Consistency
@@ -12,7 +12,7 @@ Find places where the doc set disagrees with itself. Report CONFIRMED contradict
 
 ## Parameters
 - **SCOPE:** a named doc set (default when given) | all docs touching a named topic | whole repo docs—`.md`/`.mdx`/`.markdown`/`.rst`/`.txt`/`.adoc`/`.asciidoc`/`.org` (confirm first if > 20 files).
-- **TIER:** semantic only—this canary is Full-tier (paid, always consent-gated). There is no meaningful mechanical layer: two sentences can contradict with zero textual overlap.
+- **TIER:** two layers. **Mechanical (~free):** declared translation pairs only (Method 2b). **Semantic (Full, paid, always consent-gated):** the three drift classes below. Two sentences can contradict with zero textual overlap, so they stay judgment, never pattern-matching.
 
 ## What counts (three drift classes)
 | class | looks like |
@@ -24,6 +24,11 @@ Find places where the doc set disagrees with itself. Report CONFIRMED contradict
 ## Method
 1. **Inventory:** extract the facts and defined terms each in-scope doc asserts (skip opinions; technical terms stay verbatim—a term is only "drifted" when the CONCEPT diverges, not when prose around it varies).
 2. **Cross-compare** the inventory; pair up disagreements. For cross-language pairs, compare MEANING (a free translation is fine; a contradicting one is drift).
+   - **2b. Declared translation pairs (mechanical, ~free, SUSPECTED-only).** Pairs come only from `translationPairs` (`.coalledger.json`, global + project merge). Empty (factory default `[]`): skip this step, report nothing, never guess pairs from file names. Otherwise the engine ships INSIDE this skill folder at `./lib/`. Substitute your context's skill base dir for `<skill base dir>` and run exactly: `cd "<skill base dir>" && node ./lib/translation-pairs.mjs --json --root="<project root>" --pair="<source=counterpart>" ...`, one `--pair` per element. The `cd` is REQUIRED (`./lib/` resolves against the skill folder, never your project cwd). `--root` is the absolute project folder; pair sides are relative to it, forward slashes, no `..`.
+     - Checks (all `SUSPECTED`): `pair-invalid` (no `=`, an empty side, a backslash, an absolute path or a `..` segment; nothing is read) · `pair-source-missing` and `translation-missing` (a side is not a plain file under the root: missing, or refused by the link rule) · `translation-older` (the counterpart's last commit is before its source's) · `translation-undated` (no git record: no git, not a repository, or untracked or never committed; it means undated, never older).
+     - Dates are each file's last git committer date (`git log -1 --format=%cI`), never mtime.
+     - `--json` prints `{ "findings": [...] }`. Exit 0 whenever the run completes, findings included; exit 2 on a usage error.
+     - Which side is right stays out of this step (Escalation boundary).
 3. **Which side is right is NOT this canary's call**—report the pair and, where a source of truth is obvious, note it; resolving truth is doc-grounding's job (offer to run it on the pair).
 4. **Severity by CONTEXT** (never a fixed map), then honor `severityFloor`: contradictory instructions readers may follow = HIGH-CRITICAL; contradictory descriptions = MEDIUM; naming inconsistency = LOW. `scanEverything: true` bypasses the floor this run—report everything down to `low`—and say so: state that `severityFloor` was bypassed, never that every scope cut was bypassed (this canary has none to bypass).
 
@@ -33,7 +38,7 @@ Adjudicating WHICH of two contradicting claims is true = doc-grounding (fetch/re
 ## Grants & denials (CLASSIFY-BLOCK)
 | class | step it powers | grant | on denial |
 |---|---|---|---|
-| read | inventory facts/terms across the doc set, incl. cross-language pairs | `Read`·`Grep`·`Glob` | refuse that file, report it unscanned—never a false clean bill |
+| read | inventory facts/terms across the doc set, incl. cross-language pairs | `Read`·`Grep`·`Glob` (·`Bash`—the translation-pair engine runs via `node ./lib/translation-pairs.mjs`, Method 2b; `Read`/`Grep`/`Glob` cannot execute it) | refuse that file, report it unscanned—never a false clean bill |
 | write | Align to a chosen side (after the user picks) | `Write`·`Edit` (·`Bash`—checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
 
 A denial reaches the WORKER as a visible message and propagates NO further—not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.

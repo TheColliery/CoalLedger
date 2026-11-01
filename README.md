@@ -41,9 +41,9 @@ Seven canaries, one distinct failure mode each:
 | # | Canary | Catches | Layer |
 |---|---|---|---|
 | 1 | `doc-grounding` | **WRONG**—claims ≠ their source of truth (code · data · original text · reality); verified real-time, multi-source; offline degrades to `⚠️ unverified` | semantic + mechanical recompute |
-| 2 | `doc-standard` | **INCOMPLETE**—missing vs the doc kind's standard (required sections, undocumented public surface) | semantic + mechanical |
+| 2 | `doc-standard` | **INCOMPLETE**—missing vs the doc kind's standard (required sections, undocumented public surface); the repository scope adds license, contributing guide, vulnerability-reporting route and release notes | semantic + mechanical (repository pass) |
 | 3 | `doc-rot` | **STALE**—old versions/dates/badges, dead TODOs, superseded instructions | mechanical age-markers + semantic |
-| 4 | `doc-consistency` | **CONTRADICTORY**—docs disagreeing, terminology drift, cross-language drift | semantic |
+| 4 | `doc-consistency` | **CONTRADICTORY**—docs disagreeing, terminology drift, cross-language drift; the mechanical layer checks only the translation pairs you declare (`translationPairs`) | mechanical (declared pairs) + semantic |
 | 5 | `doc-structure` | **BROKEN**—links/anchors/headings/tables/refs/image-alt, via the AST engine | mechanical |
 | 6 | `doc-quality` | **UNREADABLE / MALFORMED**—bloat, unclear prose, language mechanics (typo · grammar · spelling · orthography) | semantic + mechanical |
 | 7 | `doc-leak` (config-gated) | **LEAKED**—prose-level sensitive content in a public-facing doc; token-shaped secrets stay gitleaks' job | semantic, SUSPECTED-only |
@@ -52,13 +52,13 @@ Two tiers, one discipline:
 
 - **Quick** = the mechanical layers—deterministic, ~free, report-only.
 - **Full** = the semantic layers—model judgment, paid, always a separate consent.
-- **Where a mechanical layer exists, detection is deterministic; severity never is** (two canaries—`doc-consistency`, `doc-leak`—are semantic-only, no mechanical layer at all). A broken link in an archive is LOW; the same link in an install step is CRITICAL—every finding is judged in context, and CONFIRMED findings are reported separately from SUSPECTED ones (anti-cry-wolf).
+- **Where a mechanical layer exists, detection is deterministic; severity never is** (one canary, `doc-leak`, is semantic-only; `doc-consistency`'s mechanical layer covers only its declared translation pairs). A broken link in an archive is LOW; the same link in an install step is CRITICAL—every finding is judged in context, and CONFIRMED findings are reported separately from SUSPECTED ones (anti-cry-wolf).
 - **Fixes are choice-gated.** Every report ends in a menu (apply safe fixes / let me pick / report only); a live doc is never auto-edited.
 
 > [!IMPORTANT]
 > CoalLedger checks docs-**HEALTH**, not content correctness. It verifies only what it can fetch or recompute; a claim needing formal verification — a proof, high-precision math, an error-not-allowed decision — escalates to [CoalBoard](https://github.com/TheColliery/CoalBoard). And the AST engine's honest ceiling is **CommonMark+GFM fidelity, not "100% GitHub-pixel fidelity"** — known host-specific quirks are flagged as limits, not silently guessed.
 
-Multilingual by construction: the mechanical layers are language-agnostic—never an English keyword—by structure, position, and meaning; `doc-structure` reads that structure off its AST, the other mechanical layers off an agent's own read of the doc. The semantic layers work in the doc's own language, degrading to low-confidence flags—never false alarms—on a poorly-handled one. Cross-language drift between a doc and its translation is a first-class check.
+Multilingual by construction: the mechanical layers are language-agnostic—never an English keyword—by structure, position, and meaning; `doc-structure` reads that structure off its AST, the engines a skill's Method names run their own checks (`doc-quality` em-dash and script mechanics, `doc-consistency` translation pairs, `doc-standard` repository scope), and the rest read off an agent's own read of the doc. The semantic layers work in the doc's own language, degrading to low-confidence flags—never false alarms—on a poorly-handled one. Cross-language drift between a doc and its translation is a first-class check.
 
 ### Docs memory-drift reminder
 
@@ -123,6 +123,7 @@ The keys:
 | `publicMode` | `false` | Treat this project's docs as public-facing (raises leak/grounding stakes in severity context) |
 | `docsDriftNudge` | `true` | The off-switch for the quiet [docs memory-drift reminder](#docs-memory-drift-reminder); set `false` to silence it |
 | `emDash` | `off` | doc-quality's em-dash typography rule: `unspaced` = the house form `word—word`, so a spaced em-dash is the finding · `spaced` = the inverse · `off` (factory default) = the rule does not run at all—a house choice, never forced on your repo |
+| `translationPairs` | `[]` | doc-consistency's mechanical layer: each pair `"source=counterpart"`, paths relative to the project root (e.g. `"README.md=README.th.md"`); empty = the layer reports nothing |
 | `updateMode` | `ask` | Self-update behavior at session start (`ask` \| `auto` \| `remind` \| `off`) |
 | `updateCheckDays` | `14` | Days between self-update checks/reminders |
 

@@ -2,6 +2,17 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.1] - 2026-11-02
+
+Translation pairs and a repository scope get mechanical checks
+
+doc-consistency now checks the translation pairs you declare, and doc-standard checks the repository itself. Both report file facts as suspected or confirmed findings; neither decides which side of a pair is right.
+
+### Added
+- doc-consistency's mechanical layer for declared translation pairs: a counterpart or source that is missing, or a counterpart last committed before its source, from the git record (commit `0322cbe1f330bcbe55d0e66f96ed4c11c7aa6ac9`). Every finding is suspected.
+- doc-standard's repository-scope pass: a LICENSE, a CONTRIBUTING file, a vulnerability-reporting route and a release-notes file that is not raw `git log` output, each keyed on the OpenSSF Best Practices passing criterion it answers (commit `c3db307fad1349443daa0c9e751381f33ee67c92`).
+- The `translationPairs` config key (default `[]`): declares each pair as `"source=counterpart"`; empty means the pair check reports nothing.
+
 ## [0.16.0-beta.4] - 2026-11-02
 
 Doc readers name the file link they read; controls that can fail
