@@ -2,7 +2,14 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
-## [Unreleased]
+## [0.16.0-beta.3] - 2026-11-01
+
+Named docs read under a literal root, refusing links on their path
+
+The doc-quality and doc-structure skills now read each doc you name under the project folder they pass as the root. A link inside that folder, at the doc or at a folder between it and the doc, is refused, and a link above the folder is not walked, so a project that sits under a linked folder still reads its own docs. A file a doc links to is still read, for its anchors only.
+
+### Security
+- **The doc-quality and doc-structure engines read a named doc under a literal root and refuse a link at the doc or at any folder above it inside that root.** The `--root` option on the three engines (the emdash scan, the lang-mechanics check and the md-checks command line) names that root, and the two skills now pass it. With no `--root`, a link anywhere on the doc's path is refused. A file a doc links to is still read with no containment, for its anchors. The two BUILD commits are `848529b5bd1dc8090a09608cc9b7fa10759e97ad` and `9684d2ee08f9ca61b732b303aaf731a6fdfb95ba` — test: scripts/lib/doc-read-root.test.mjs
 
 ### Fixed
 - The plugin build refuses a link at the dist root (`plugin/`) itself, before it removes anything, and the dist check names it (commit `284667c0bbeb89cb57173d03d523c9114d81f3e1`).
