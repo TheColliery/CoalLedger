@@ -429,8 +429,9 @@ export function checkText(text, opts = {}) {
 export function checkFile(file, opts = {}) {
   if (isLegalPath(file)) return [];
   // T-17: a doc this CLI is pointed at may sit in a cloned repository; it is read bounded, kind-gated and under a
-  // literal root (repo-fs.mjs docReadRoot): a link at the file or at a folder between that root and the file is
-  // refused. opts.root is the project folder (the CLI's --root); without it the filesystem root of the path is the root.
+  // literal root (repo-fs.mjs docReadRoot): a link at a folder between that root and the file, a file link that
+  // leaves its own folder, or a file outside the root is refused; a file link that stays inside its own folder is
+  // read. opts.root is the project folder (the CLI's --root); without it the filesystem root of the path is the root.
   const base = docReadRoot(file, opts.root);
   const text = readRepoFileBounded(file, base, MAX_DOC_BYTES);
   if (text === null) throw docReadError(file, base, MAX_DOC_BYTES);

@@ -515,8 +515,9 @@ if (isMainModule(import.meta.url)) {
       // T-17: a doc named on the command line may sit in a cloned repository. It is read kind-gated (a FIFO or
       // device is refused before it is opened), bounded at the I/O ceiling (4 MB) rather than this file's own 512 KB
       // MAX_DOC_BYTES (a real over-512 KB doc still reaches checkDocument and comes back as a `doc-too-large`
-      // finding), and under a literal root (repo-fs.mjs docReadRoot): a link at the file or at a folder between that
-      // root and the file is refused. --root is the project folder; without it the filesystem root of the path is the root.
+      // finding), and under a literal root (repo-fs.mjs docReadRoot): a link at a folder between that root and the file,
+      // a file link that leaves its own folder, or a file outside the root is refused; a file link that stays inside its
+      // own folder is read. --root is the project folder; without it the filesystem root of the path is the root.
       const base = docReadRoot(f, root);
       src = readRepoFileBounded(f, base, IO_CEILING_BYTES);
       if (src === null) throw docReadError(f, base, IO_CEILING_BYTES, 'I/O ceiling');

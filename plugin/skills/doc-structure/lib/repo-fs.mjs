@@ -154,10 +154,12 @@ export function readRepoFileBounded(file, root, maxBytes) {
 
 // T-17: the LITERAL root a doc the caller names is read under (node/runtime.md section 4: an allowlist pins the
 // literal location, and only the candidate is canonicalized, inside repoEntryKind). A caller that knows the project
-// folder passes it (the skills pass --root): a link ABOVE that folder is the user's own layout and is not walked, a
-// link at the file or at any folder inside it is refused, and a path outside it is refused. With no root, the
-// filesystem root of the file's own absolute path is pinned, so a link anywhere on that path is refused. Neither root
-// is realpathed here.
+// folder passes it (the skills pass --root): a link ABOVE that folder is the user's own layout and is not walked; a
+// link at any folder inside it, a file link that leaves its own folder, and a path outside it are refused, while a
+// file link that stays inside its own folder is read. With no root, the filesystem root of the file's own absolute
+// path is pinned, so a folder link anywhere on that path is refused. Neither root is realpathed here, so a root and a
+// doc that spell one folder two ways (a Windows short name and its long name, or macOS's /var and /private/var) do
+// not match and the doc is refused: the safe direction. Pass the root and the doc in one spelling.
 export function docReadRoot(file, root) {
   return root ? path.resolve(root) : path.parse(path.resolve(file)).root;
 }
@@ -166,7 +168,7 @@ export function docReadRoot(file, root) {
 export function docReadError(file, root, maxBytes, limitName = 'bound') {
   const kind = repoEntryKind(file, root);
   if (kind === 'missing') return new Error(`ENOENT: no such file, open '${file}'`);
-  return new Error(`refused: '${file}' is not a plain file reached from '${root}' through real folders only (kind: ${kind}), or it is over the ${maxBytes / 1048576} MB ${limitName}. A link at the file or at a folder above it, or a path outside that root, is refused; pass --root=<the project folder> to read a doc whose path runs through a linked folder above the project.`);
+  return new Error(`refused: '${file}' is not a plain file reached from '${root}' through real folders only (kind: ${kind}), or it is over the ${maxBytes / 1048576} MB ${limitName}. A link at a folder above it, a file link that leaves its own folder, or a path outside that root is refused; pass --root=<the project folder> to read a doc whose path runs through a linked folder above the project.`);
 }
 
 const FOLDER_FIX = 'make that path a real folder inside the project (remove the link or the file that sits there)';
