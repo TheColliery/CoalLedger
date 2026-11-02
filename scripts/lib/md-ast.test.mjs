@@ -408,10 +408,14 @@ test('CommonMark conformance: `--!>` does NOT end an HTML comment block (spec 0.
 });
 
 // 29a P2: the ATX heading match is linear; the heading text is unchanged at 128 KiB.
-test('an ATX heading of 128 KiB of inner spaces parses within 50 ms (best of 3) with its text intact', () => {
+// Budget 500 ms, sized against the venue (order 29aa bounce 3). Linear best of 3 on this input: 6.1 ms plain, 32.4 ms
+// under --experimental-test-coverage (local), 51.0 ms on the CI coverage leg (run 41371928632, which the old 50 ms
+// budget failed). The quadratic shape: the pre-fix parser (commit 6113610^) took 43,190 ms on this input (one run, heap
+// cap 2048 MB). 500 ms is 9.8x above the CI coverage leg and 86x below the quadratic run.
+test('an ATX heading of 128 KiB of inner spaces parses within 500 ms (best of 3) with its text intact', () => {
   const n = 128 * 1024 - 4;
   const src = '# a' + ' '.repeat(n) + 'b';
-  const BUDGET_MS = 50;
+  const BUDGET_MS = 500;
   const times = [];
   let text = '';
   for (let i = 0; i < 3; i++) {
