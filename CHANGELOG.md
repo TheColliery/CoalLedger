@@ -10,7 +10,7 @@ doc-consistency now checks the translation pairs you declare, and doc-standard c
 
 ### Added
 - doc-consistency's mechanical layer for declared translation pairs: a counterpart or source that is missing, or a counterpart last committed before its source, from the git record (commit `0322cbe1f330bcbe55d0e66f96ed4c11c7aa6ac9`). Every finding is suspected.
-- doc-standard's repository-scope pass: a LICENSE, a CONTRIBUTING file, a vulnerability-reporting route and a release-notes file that is not raw `git log` output, each keyed on the OpenSSF Best Practices passing criterion it answers (commit `c3db307fad1349443daa0c9e751381f33ee67c92`).
+- doc-standard's repository-scope pass: a licence file (`LICENSE`, `LICENSE-MIT`, or a REUSE `LICENSES/` folder), a CONTRIBUTING file, a vulnerability-reporting route with a single valid `Expires` in `security.txt`, and a release-notes file that is not raw `git log` output and can be read, each keyed on the OpenSSF Best Practices passing criterion it answers (commits `c3db307fad1349443daa0c9e751381f33ee67c92` and `0fd22abc5f82d473bf5eb4b6f814dd039111d843`).
 - The `translationPairs` config key (default `[]`): declares each pair as `"source=counterpart"`; empty means the pair check reports nothing.
 
 ## [0.16.0-beta.4] - 2026-11-02
