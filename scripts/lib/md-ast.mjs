@@ -184,7 +184,23 @@ function atxOf(rest) {
   return { hashes: i, content: rest.slice(j) };
 }
 const SETEXT_RE = /^(=+|-+)[ \t]*$/;
-const FENCE_OPEN_RE = /^(`{3,}|~{3,})[ \t]*(.*)$/;
+// A fence opener line: a run of three or more backticks or tildes, then the info string after its spaces or tabs. The
+// info may hold no CR, LF, U+2028 or U+2029 (the match this replaces used `.`, which matches none of them). Scanned, not
+// matched: the backtracking match was quadratic over a run followed by an interior CR.
+function fenceOpenOf(rest) {
+  const c0 = rest[0];
+  if (c0 !== '`' && c0 !== '~') return null;
+  let i = 1;
+  while (i < rest.length && rest[i] === c0) i++;
+  if (i < 3) return null;
+  let j = i;
+  while (j < rest.length && (rest.charCodeAt(j) === 32 || rest.charCodeAt(j) === 9)) j++;
+  for (let k = j; k < rest.length; k++) {
+    const c = rest.charCodeAt(k);
+    if (c === 10 || c === 13 || c === 0x2028 || c === 0x2029) return null;
+  }
+  return { char: c0, len: i, info: rest.slice(j) };
+}
 
 const HTML_BLOCK_TAGS = /^<\/?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:[ \t]|\/?>|$)/i;
 const HTML_TYPE7_RE = /^<\/?[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t]*=[ \t]*(?:[^ \t"'=<>`]+|'[^']*'|"[^"]*"))?)*[ \t]*\/?>[ \t]*$/;
@@ -673,15 +689,15 @@ export function parseMarkdown(src) {
       continue;
     }
 
-    const fence = FENCE_OPEN_RE.exec(rest);
-    if (fence && !(fence[1][0] === '`' && fence[2].includes('`'))) {
+    const fence = fenceOpenOf(rest);
+    if (fence && !(fence.char === '`' && fence.info.includes('`'))) {
       closeLeaf();
-      const info = unescapeMd(fence[2].trim());
+      const info = unescapeMd(fence.info.trim());
       const spaceIdx = info.search(/[ \t]/);
       leaf = {
         kind: 'fenced',
-        char: fence[1][0],
-        len: fence[1].length,
+        char: fence.char,
+        len: fence.len,
         indent,
         lang: info ? (spaceIdx === -1 ? info : info.slice(0, spaceIdx)) : null,
         meta: info && spaceIdx !== -1 ? info.slice(spaceIdx + 1).trim() : null,
@@ -801,7 +817,7 @@ export function parseMarkdown(src) {
     const rest = text.slice(s.p);
     if (rest[0] === '>') return true;
     if (atxOf(rest)) return true;
-    if (FENCE_OPEN_RE.test(rest)) return true;
+    if (fenceOpenOf(rest) !== null) return true;
     if (THEMATIC_RE.test(rest)) return true;
     if (htmlBlockStart(rest, true)) return true;
     const item = matchListItem(text, s.p, s.col);

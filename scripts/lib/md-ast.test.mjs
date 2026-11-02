@@ -472,6 +472,23 @@ test('T-34: a paragraph line with 64,000 inner spaces is trimmed in linear time 
   assert.ok(Math.min(...times) < budgetMs, `best of ${times.length} = ${Math.min(...times).toFixed(1)} ms, budget ${budgetMs} ms`);
 });
 
+// 29am M1 (T-39): the parser's fence opener is read by a scan, as the guard's is. The regex it replaces backtracked over a
+// fence run followed by an interior CR. Budget 250 ms; the old parse takes several seconds at 64,000 characters here.
+function fenceRunWitness(ch) {
+  const budgetMs = 250;
+  const src = ch.repeat(64000) + CR34 + 'x\n';
+  const times = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = process.hrtime.bigint();
+    parseMarkdown(src);
+    times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+    if (times[i] > 20 * budgetMs) break; // a run this far past the budget is a fail: stop now, so the assert names it
+  }
+  assert.ok(Math.min(...times) < budgetMs, `best of ${times.length} = ${Math.min(...times).toFixed(1)} ms, budget ${budgetMs} ms`);
+}
+test('T-39: a backtick run of 64,000 followed by an interior CR parses in linear time (best of 3 under 250 ms)', () => fenceRunWitness('`'));
+test('T-39: a tilde run of 64,000 followed by an interior CR parses in linear time (best of 3 under 250 ms)', () => fenceRunWitness('~'));
+
 // 29a P2: the ATX heading match is linear; the heading text is unchanged at 128 KiB.
 // Budget 500 ms, sized against the venue (order 29aa bounce 3). Linear best of 3 on this input: 6.1 ms plain, 32.4 ms
 // under --experimental-test-coverage (local), 51.0 ms on the CI coverage leg (run 41371928632, which the old 50 ms
