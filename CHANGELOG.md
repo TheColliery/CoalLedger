@@ -6,15 +6,17 @@ All notable changes to CoalLedger are documented here. Format: [Keep a Changelog
 
 Relative link targets only; nesting guard and scans in linear time
 
-Only relative link targets are resolved and checked now. A target that decodes to an absolute, network or device path is left unresolved, and the report lists it as unverified. The nesting guard closes a fence as the parser does, and three scans read in linear time.
+Only relative link targets are resolved and checked now. A target that decodes to an absolute, network or device path is left unresolved, and the report lists it as unverified. The nesting guard closes a fence as the parser does, and the scans read in linear time.
 
 ### Security
 - **A link target that decodes to an absolute, network or device path is no longer resolved or checked; only relative targets are (commit `1f2b91a694283602377c9166279bb2d769cbbdef`).** The target is judged after percent-decoding. A drive-absolute, drive-relative, rooted, network-path, or `\\?\` or `\\.\` device target gets no file check and no anchor read. Relative targets inside the document's tree are checked as before.
 
 ### Fixed
-- **The nesting guard closes a fence by the parser's own rule, so nesting past the limit is reported rather than hidden, and its fence opener runs in linear time (commit `833b28399b70308a7351c8e421776a100c32d4aa`).** A fence closes only on a run of the opener's character at least as long as the opener, followed by spaces or tabs alone; text after the run is code. A tab-led line is indented code, and a line holding a CR, U+2028 or U+2029 is not a fence line.
+- **The nesting guard closes a fence by the parser's own rule, so nesting past the limit is reported rather than hidden, including after a fence inside a list item, and its fence opener runs in linear time (commit `833b28399b70308a7351c8e421776a100c32d4aa`).** A fence closes only on a run of the opener's character at least as long as the opener, followed by spaces or tabs alone; text after the run is code. A tab-led line is indented code, and a line holding a CR, U+2028 or U+2029 is not a fence line.
 - **An ATX heading and a trailing-space trim at a line break run in linear time, with the same results (commit `faa93f5c9b0e943cbd1da002554ad69fe4baa21a`).** The heading is read by a scan of its hash run and its content, and the trim is an index loop over spaces. The hard-break rule is unchanged.
 - **The `Expires` read runs in linear time, and a release-notes file reached under two names is judged once (commit `e8696fa73102539f1e74b8252ca34fd6326dcf0e`).** The read is a prefix test and a trim. A file is judged by its device and inode, and a file whose identity cannot be read is reported as unreadable, never skipped.
+- **The parser reads a fence opener in linear time (commit `2d6b0325c993f56e814c7b4e9bf97d6ee5c9b04a`).** A run of backticks or tildes followed by a CR is read by a scan, not a backtracking match. The parse tree is unchanged, and a CR inside an opener still does not open a fence.
+- **The nesting guard counts the markers after a fence opened in a list item, until the item ends (commit `3d0309e57ad6a6c0cb4c68a882bbcb681d4c31a7`).** A closer indented inside the item is no longer read as a new fence, so nesting after it is not hidden. The trade: when the guard cannot tell whether a list item's fence is still open, it counts the markers rather than skipping them, so a code block inside a list item that holds deep quote markers can be reported as too nested (`doc-too-nested`).
 
 ## [0.17.0-beta.1] - 2026-11-02
 
