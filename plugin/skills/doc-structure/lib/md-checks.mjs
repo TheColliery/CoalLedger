@@ -215,14 +215,33 @@ function fenceLineOf(line) {
   return { ch, len: j - i, info };
 }
 const CONTAINER_OPENER_RE = /[ \t]{0,3}(?:>[ \t]?|[-+*][ \t]|[0-9]{1,9}[.)][ \t])/y; // sticky — advances lastIndex on match, never zero-length
+// A list marker and its spacing. A list item whose content opens a fence starts a region the guard cannot place (M2): the
+// parser reads that fence's closer inside the item, so the guard counts markers from there (fail toward counting) until
+// a column-0 line ends the item. Counting over-reports only where a fence inside a list item holds quote markers.
+const LIST_ITEM_RE = /^[ \t]{0,3}(?:[-+*]|[0-9]{1,9}[.)])[ \t]+/;
+// The indent of a line in columns: a tab moves to the next multiple of four, as the parser counts it.
+function leadingColumns(line) {
+  let c = 0;
+  for (let k = 0; k < line.length; k++) {
+    const ch = line.charCodeAt(k);
+    if (ch === 32) c++;
+    else if (ch === 9) c += 4 - (c % 4);
+    else break;
+  }
+  return c;
+}
 function maxContainerDepth(src) {
   let max = 0;
   let fenceChar = null;
   let fenceLen = 0;
+  let listFence = false;
+  let listContentCol = 0; // the column where the list item's content starts (its marker and spacing)
   for (const raw of src.split('\n')) {
     // The parser's splitLines strips one trailing CR per line (md-ast.mjs), so the guard reads a CRLF opener the same way: fenceLineOf refuses an info string with a CR.
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-    const fl = fenceLineOf(line);
+    // A non-blank line indented less than the item's content column ends the item, and with it the region.
+    if (listFence && !/^[ \t]*$/.test(line) && leadingColumns(line) < listContentCol) listFence = false;
+    const fl = listFence ? null : fenceLineOf(line);
     if (fenceChar) {
       // The parser closes a fence only on a run of its character, at least as long as the opener's, then nothing but spaces or tabs.
       if (fl && fl.ch === fenceChar && fl.len >= fenceLen && /^[ \t]*$/.test(fl.info)) { fenceChar = null; fenceLen = 0; }
@@ -238,6 +257,12 @@ function maxContainerDepth(src) {
       if (depth > MAX_CONTAINER_DEPTH) return depth; // short-circuit: no need to keep counting once over cap
     }
     if (depth > max) max = depth;
+    // a list item whose content opens a fence (the same opener rule as above) starts the region described at LIST_ITEM_RE
+    const item = LIST_ITEM_RE.exec(line);
+    if (item && !listFence) {
+      const fi = fenceLineOf(line.slice(item[0].length));
+      if (fi && !(fi.ch === '`' && fi.info.includes('`'))) { listFence = true; listContentCol = item[0].length; }
+    }
   }
   return max;
 }

@@ -388,6 +388,42 @@ test('T-33(b): a long backtick run followed by an interior CR is scanned in line
   assert.ok(Math.min(...times) < budgetMs, `best of ${times.length} = ${Math.min(...times).toFixed(1)} ms, budget ${budgetMs} ms`);
 });
 
+// M2 (order 29am bounce 1): a fence opened after a list marker is not a fence the guard can place. Its indented closer is
+// not a new opener, and nothing after it is hidden. Each expectation is the parser's own depth over 200 for the shape
+// (the reviewer's agreement harness, 12 of 6,000 disagreed before this change).
+const DEEP210 = '> '.repeat(210) + 'q\n';
+function flaggedAfter(lines) {
+  return checkDocument(lines.join('\n') + '\n' + DEEP210).some((x) => x.check === 'doc-too-nested');
+}
+
+test('M2: a list-item fence whose indented closer is followed by 210 quote levels is flagged (the parser sees them)', () => {
+  assert.ok(flaggedAfter(['- ```', '   ```']));
+});
+
+test('M2: the same list-item fence with a line of text before the quotes is flagged', () => {
+  assert.ok(flaggedAfter(['- ```', '   ```', 'a']));
+});
+
+test('M2: a backtick run in a line before the list item does not change the flag', () => {
+  assert.ok(flaggedAfter(['`` `', '- ```', '   ```']));
+});
+
+test('M2: an indented tab-led or four-space fence line inside the list item is still flagged', () => {
+  assert.ok(flaggedAfter(['- ```', '   ```', '  \t```', '    ```']));
+});
+
+test('M2: a column-0 fence after the list item is tracked, and the quotes inside it are code (not flagged)', () => {
+  assert.ok(!flaggedAfter(['- ```', '   ```', '```\r']));
+});
+
+test('M2: a line indented less than the item content column ends the item: a one-space fence is a new top-level fence (not flagged)', () => {
+  assert.ok(!flaggedAfter(['- ```', ' ```']));
+});
+
+test('M2: a tab-led closer at the content column stays inside the item (flagged)', () => {
+  assert.ok(flaggedAfter(['- ```', '\t```', 'a']));
+});
+
 test('U13/F1: the CLI batch survives a crafted doc between two real files — no lost findings, no empty stdout', () => {
   const dir = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'cl-f1-'));
   try {
