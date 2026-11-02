@@ -352,6 +352,42 @@ test('U13/F1 M1 (findings-back): a `>`-heavy fenced code block does not cry-wolf
   assert.ok(findings.some((x) => x.check === 'file-missing'), 'the real finding after the fence must not be dropped');
 });
 
+// T-33 (order 29am): the nesting guard closes a fence as the parser does: a run of the opener's character, at least as
+// long, then only spaces and tabs. A line with text after its run is code, not a closer. A tab-led line is indented code.
+const DEEP_QUOTES = '> '.repeat(400) + 'q\n';
+
+test('T-33: a fence line with text after its run does not close the fence, so the quotes after it are still counted', () => {
+  assert.ok(checkDocument('```\n``` x\n```\n' + DEEP_QUOTES).some((x) => x.check === 'doc-too-nested'));
+  assert.ok(checkDocument(DEEP_QUOTES).some((x) => x.check === 'doc-too-nested'), 'control: the same quotes with no fence');
+});
+
+test('T-33: a tab-led fence line is indented code, not a fence, so the quotes after it are counted', () => {
+  assert.ok(checkDocument('\t```\n' + DEEP_QUOTES).some((x) => x.check === 'doc-too-nested'));
+});
+
+test('T-33: a longer run closes the fence, a trailing tab does too, and a shorter run does not', () => {
+  assert.ok(checkDocument('```\n````\n' + DEEP_QUOTES).some((x) => x.check === 'doc-too-nested'), 'a longer closer closes');
+  assert.ok(checkDocument('```\n```\t\n' + DEEP_QUOTES).some((x) => x.check === 'doc-too-nested'), 'a trailing-tab closer closes');
+  assert.ok(!checkDocument('````\n```\n' + DEEP_QUOTES).some((x) => x.check === 'doc-too-nested'), 'a shorter run is literal code');
+});
+
+// T-33(b): FENCE_OPEN_RE backtracked over a long backtick run when an interior CR stopped its tail. The line is first in
+// the document, and a 300-level quote line after it trips the depth guard, so the time measured is the fence scan alone
+// (the parser is not reached). Budget 250 ms; the old scan takes about 3.4 s at 48,000 backticks on the reviewer's box.
+test('T-33(b): a long backtick run followed by an interior CR is scanned in linear time (best of 3 under 250 ms)', () => {
+  const budgetMs = 250;
+  const src = '`'.repeat(48000) + '\rx\n' + '> '.repeat(300) + 'q\n';
+  const times = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = process.hrtime.bigint();
+    const f = checkDocument(src);
+    times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+    assert.ok(f.some((x) => x.check === 'doc-too-nested'));
+    if (times[i] > 20 * budgetMs) break; // a run this far past the budget is a fail: stop now, so the assert names it
+  }
+  assert.ok(Math.min(...times) < budgetMs, `best of ${times.length} = ${Math.min(...times).toFixed(1)} ms, budget ${budgetMs} ms`);
+});
+
 test('U13/F1: the CLI batch survives a crafted doc between two real files — no lost findings, no empty stdout', () => {
   const dir = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'cl-f1-'));
   try {

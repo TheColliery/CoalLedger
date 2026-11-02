@@ -177,7 +177,7 @@ const MAX_DOC_BYTES = 512 * 1024; // 512 KB
 // crosses the cap — the pathological case (huge N) is now the FASTEST
 // case, not the slowest.
 //
-// Known limit (honest ceiling, findings-back LOW-1): FENCE_OPEN_RE is
+// Known limit (honest ceiling, findings-back LOW-1): fenceLineOf is
 // start-anchored, so a fence nested INSIDE a container (e.g. a fenced block
 // opened after a leading `> `) is never tracked as a fence — its contents
 // still get scanned as container markers. A container-nested fence holding
@@ -190,23 +190,47 @@ const MAX_DOC_BYTES = 512 * 1024; // 512 KB
 // needs real container-state tracking pre-parse, which is the parser's own
 // job and defeats the point of a cheap O(lines) scan.
 const MAX_CONTAINER_DEPTH = 200; // defensible per-doc: a real 12-level email-quote thread scans 0 findings in 0ms; 200 is ~17x that headroom, and the crash floor this guard backstops sits far higher (~4,000-5,000 markers) — the number is chosen for realistic-document headroom, not to chase either floor (see the try/catch backstop below for the crash axis; this guard's own job is the CPU-time axis, whose floor is materially LOWER — measured live: 278ms already at 3,000 markers on the pre-fix bypass path)
-const FENCE_OPEN_RE = /^[ \t]{0,3}(`{3,}|~{3,})(.*)$/;
+// A fence line (opener or closer): at most three SPACES of indent (a tab is at least four columns, so a tab-led line is
+// indented code), then a run of one fence character of three or more, then the rest of the line as `info`. Scanned, not
+// matched, so the run is read once. The parser's `.` matches no CR and no U+2028/U+2029, so a line whose `info` holds one
+// is not a fence line at all: the guard does the same, or it would hide container markers the parser still sees.
+// True when the text holds a CR, U+2028 or U+2029: the characters the parser's `.` never matches.
+function hasLineBreakChar(text) {
+  for (let k = 0; k < text.length; k++) {
+    const c = text.charCodeAt(k);
+    if (c === 13 || c === 0x2028 || c === 0x2029) return true;
+  }
+  return false;
+}
+function fenceLineOf(line) {
+  let i = 0;
+  while (i < 3 && line.charCodeAt(i) === 32) i++;
+  const ch = line[i];
+  if (ch !== '`' && ch !== '~') return null;
+  let j = i;
+  while (line[j] === ch) j++;
+  if (j - i < 3) return null;
+  const info = line.slice(j);
+  if (hasLineBreakChar(info)) return null;
+  return { ch, len: j - i, info };
+}
 const CONTAINER_OPENER_RE = /[ \t]{0,3}(?:>[ \t]?|[-+*][ \t]|[0-9]{1,9}[.)][ \t])/y; // sticky — advances lastIndex on match, never zero-length
 function maxContainerDepth(src) {
   let max = 0;
   let fenceChar = null;
   let fenceLen = 0;
   for (const raw of src.split('\n')) {
-    // The parser's splitLines strips one trailing CR per line (md-ast.mjs), so the guard reads a CRLF opener the same way: FENCE_OPEN_RE's `.` never matches a CR.
+    // The parser's splitLines strips one trailing CR per line (md-ast.mjs), so the guard reads a CRLF opener the same way: fenceLineOf refuses an info string with a CR.
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-    const fm = FENCE_OPEN_RE.exec(line);
+    const fl = fenceLineOf(line);
     if (fenceChar) {
-      if (fm && fm[1][0] === fenceChar && fm[1].length >= fenceLen) { fenceChar = null; fenceLen = 0; }
+      // The parser closes a fence only on a run of its character, at least as long as the opener's, then nothing but spaces or tabs.
+      if (fl && fl.ch === fenceChar && fl.len >= fenceLen && /^[ \t]*$/.test(fl.info)) { fenceChar = null; fenceLen = 0; }
       continue; // inside a fence: `>` etc. here is literal code text, never a container marker
     }
     // A backtick opener whose info string holds a backtick is not a fence (the parser's own rule): its line is counted like any other.
-    const isFenceOpener = fm && !(fm[1][0] === '`' && fm[2].includes('`'));
-    if (isFenceOpener) { fenceChar = fm[1][0]; fenceLen = fm[1].length; continue; } // opening fence line itself isn't scanned either
+    const isFenceOpener = fl && !(fl.ch === '`' && fl.info.includes('`'));
+    if (isFenceOpener) { fenceChar = fl.ch; fenceLen = fl.len; continue; } // opening fence line itself isn't scanned either
     CONTAINER_OPENER_RE.lastIndex = 0;
     let depth = 0;
     while (CONTAINER_OPENER_RE.test(line)) {
