@@ -218,6 +218,13 @@ function maxContainerDepth(src) {
   return max;
 }
 
+// The decoded target leaves the document's tree: drive-absolute or drive-relative (C:x), rooted (\x, /x), UNC or
+// network (\\server, //server), and the \\?\ and \\.\ device forms. path.win32 covers the rooted and UNC cases on any host.
+function isNonRelativeTarget(rel) {
+  return path.win32.isAbsolute(rel) || path.posix.isAbsolute(rel) || /^[A-Za-z]:/.test(rel)
+    || rel.startsWith('\\\\?\\') || rel.startsWith('\\\\.\\');
+}
+
 export function checkDocument(src, opts = {}) {
   const filePath = opts.filePath ? path.resolve(opts.filePath) : null;
   const fileExists = opts.fileExists || ((p) => { try { return fs.existsSync(p); } catch { return false; } });
@@ -401,6 +408,8 @@ export function checkDocument(src, opts = {}) {
     const qIdx = rel.indexOf('?');
     if (qIdx !== -1) rel = rel.slice(0, qIdx);
     rel = safeDecode(rel);
+    // a target that decodes to an absolute, network or device path is not resolved; only relative targets inside the document's tree are checked
+    if (isNonRelativeTarget(rel)) return;
     if (!rel) { if (frag != null) checkAnchor(node, frag, anchors, ''); return; } // "#... " handled; "?x#y" self
     const abs = path.resolve(path.dirname(filePath), rel);
     if (!fileExists(abs)) {

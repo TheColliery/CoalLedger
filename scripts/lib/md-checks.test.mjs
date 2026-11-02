@@ -85,6 +85,52 @@ test('fileExists is injectable (hermetic file checks)', () => {
   assert.strictEqual(seen.length, 2);
 });
 
+// T-29 (order 29am): a link target that DECODES to an absolute, network or device path is never resolved. The check runs
+// on the decoded text: the raw URL passes every raw-string test.
+const LEAVES_TREE = ['%5C%5Cs%5Cx.md', '%2F%2Fs/y.md', 'C%3A%5Cx.md', 'C%3Ax.md', '%5C%5C%3F%5CC:%5Cx.md'];
+
+test('a percent-decoded network-path link target is never resolved: no fileExists call, no finding', () => {
+  const seen = [];
+  const findings = checkDocument('[a](%5C%5Cserver.example.invalid%5Cshare%5Cx.md) [b](%2F%2Fserver.example.invalid/share/y.md)\n', {
+    filePath: path.join(FIX, 'virtual.md'),
+    fileExists: (p) => { seen.push(p); return false; },
+  });
+  assert.deepStrictEqual(seen.filter((p) => p.includes('server.example.invalid')), []);
+  assert.deepStrictEqual(findings.filter((f) => f.check === 'file-missing'), []);
+});
+
+for (const target of LEAVES_TREE) {
+  test(`a link target decoding to a non-relative path is not resolved: ${target}`, () => {
+    const seen = [];
+    const findings = checkDocument(`[a](${target})\n`, {
+      filePath: path.join(FIX, 'virtual.md'),
+      fileExists: (p) => { seen.push(p); return false; },
+    });
+    assert.strictEqual(seen.length, 0, `fileExists called with ${JSON.stringify(seen)}`);
+    assert.deepStrictEqual(findings, []);
+  });
+}
+
+test('relative link targets inside the tree are still resolved and checked (every form)', () => {
+  const seen = [];
+  const findings = checkDocument('[a](./a.md) [b](../b.md) [c](sub/c.md#frag) [d](d%20e.md) [e](%E0%B8%81.md)\n', {
+    filePath: path.join(FIX, 'virtual.md'),
+    fileExists: (p) => { seen.push(p); return true; },
+  });
+  for (const tail of ['a.md', 'b.md', path.join('sub', 'c.md'), 'd e.md', 'ก.md']) {
+    assert.ok(seen.some((p) => p.endsWith(tail)), `resolved ${tail}`);
+  }
+  assert.deepStrictEqual(findings, []);
+});
+
+test('a missing relative link target still gives file-missing', () => {
+  const findings = checkDocument('[x](./missing.md)\n', {
+    filePath: path.join(FIX, 'virtual.md'),
+    fileExists: () => false,
+  });
+  assert.deepStrictEqual(findings.map((f) => f.check), ['file-missing']);
+});
+
 test('cross-file anchors read the target through the injectable readFile', () => {
   const findings = checkDocument('[ok](./t.md#real) [bad](./t.md#fake)\n', {
     filePath: path.join(FIX, 'virtual.md'),
