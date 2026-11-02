@@ -38,7 +38,7 @@ const CANARIES = [
   { name: 'doc-grounding', line: '- doc-grounding (semantic + mechanical recompute): doc claims vs their source of truth (code · data · original text · reality); offline degrades to "⚠️ unverified", never a guess.' },
   { name: 'doc-standard', line: '- doc-standard (semantic + mechanical): missing/incomplete vs the doc kind\'s standard (required sections, undocumented public surface).' },
   { name: 'doc-rot', line: '- doc-rot (mechanical age-markers + semantic): stale versions/dates/badges, dead TODOs, superseded instructions.' },
-  { name: 'doc-consistency', line: '- doc-consistency (semantic): docs contradicting each other, terminology drift, cross-language drift.' },
+  { name: 'doc-consistency', line: '- doc-consistency (mechanical + semantic): declared translation pairs (translationPairs) missing or older; docs contradicting each other, terminology drift, cross-language drift.' },
   { name: 'doc-quality', line: '- doc-quality (semantic + mechanical): bloat, unclear prose, language mechanics (typo/grammar/spelling/orthography).' },
   { name: 'doc-leak', gated: 'docLeak', line: '- doc-leak (semantic, SUSPECTED-only — the human judges): prose-level sensitive content in a public-facing doc (internal URLs, personal data, unpublished plans). Token-shaped secrets stay gitleaks\' job.' },
 ];

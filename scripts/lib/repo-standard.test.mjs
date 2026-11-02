@@ -133,6 +133,51 @@ test('a default git log entry (commit line then Author line) is a raw log', (t) 
   assert.ok(checks(findings(d)).includes('release-notes-raw-log'));
 });
 
+// INSPECT r41 MED-1: the licence check accepts the forms the licence ecosystem uses (one file per licence, REUSE LICENSES/).
+test('a per-licence LICENSE-MIT file at the root satisfies the licence check', (t) => {
+  const d = clean(t); fs.rmSync(path.join(d, 'LICENSE')); put(d, 'LICENSE-MIT', 'MIT License\n');
+  assert.ok(!checks(findings(d)).includes('license-missing'));
+});
+
+test('a REUSE LICENSES/ folder holding a plain file satisfies the licence check', (t) => {
+  const d = clean(t); fs.rmSync(path.join(d, 'LICENSE')); put(d, 'LICENSES/MIT.txt', 'MIT License\n');
+  assert.ok(!checks(findings(d)).includes('license-missing'));
+});
+
+test('an empty LICENSES/ folder is not a licence: license-missing still fires', (t) => {
+  const d = clean(t); fs.rmSync(path.join(d, 'LICENSE')); fs.mkdirSync(path.join(d, 'LICENSES'));
+  assert.deepEqual(checks(findings(d)), ['license-missing']);
+});
+
+// INSPECT r41 MED-2: a date between --now and today is judged by --now. A mutant that reads the real clock flips it.
+test('an Expires between --now and the real clock is judged by --now: no finding before it, securitytxt-expired after it', (t) => {
+  const d = clean(t); put(d, '.well-known/security.txt', SECURITY_TXT('2026-09-01T00:00:00Z'));
+  const before = run([`--root=${d}`, '--json', '--now=2026-08-01T00:00:00Z']);
+  assert.equal(before.status, 0, before.stderr);
+  assert.ok(!checks(JSON.parse(before.stdout).findings).includes('securitytxt-expired'), 'before the date: no finding');
+  const after = run([`--root=${d}`, '--json', '--now=2026-10-01T00:00:00Z']);
+  assert.equal(after.status, 0, after.stderr);
+  assert.deepEqual(checks(JSON.parse(after.stdout).findings), ['securitytxt-expired'], 'after the date: securitytxt-expired');
+});
+
+// INSPECT r41 LOW-1: RFC 9116 section 2.5.5 forbids a second Expires line.
+test('two Expires lines are securitytxt-expired with the repeat reason', (t) => {
+  const d = clean(t);
+  put(d, '.well-known/security.txt', `Contact: mailto:security@example.invalid\nExpires: ${FUTURE}\nExpires: 2031-01-01T00:00:00Z\n`);
+  const f = findings(d).filter((x) => x.check === 'securitytxt-expired');
+  assert.equal(f.length, 1);
+  assert.equal(f[0].reason, '.well-known/security.txt: Expires appears more than once (RFC 9116 section 2.5.5)');
+});
+
+// INSPECT r41 LOW-1: a release-notes file over the read bound is a finding, never a silent skip.
+test('a release-notes file over the read bound gives release-notes-unreadable, SUSPECTED, never silence', (t) => {
+  const d = clean(t); put(d, 'CHANGELOG.md', 'x'.repeat(4 * 1024 * 1024 + 1));
+  const f = findings(d).filter((x) => x.check === 'release-notes-unreadable');
+  assert.equal(f.length, 1);
+  assert.equal(f[0].verdict, 'SUSPECTED');
+  assert.equal(f[0].file, 'CHANGELOG.md');
+});
+
 test('--root missing exits 2 with a usage line', () => {
   const r = run([`--now=${NOW}`, '--json']);
   assert.equal(r.status, 2, r.stdout);

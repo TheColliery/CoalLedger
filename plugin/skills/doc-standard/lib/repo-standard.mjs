@@ -15,7 +15,9 @@ import { repoEntryKind, readRepoFileBounded, MAX_DOC_BYTES } from './repo-fs.mjs
 // The criterion ids the engine can emit; the test checks each one against the CoalGob checklist's headings.
 export const CRITERIA = ['license_location', 'contribution', 'vulnerability_report_process', 'release_notes'];
 
-const LICENSE_RE = /^(LICENSE|LICENCE|COPYING)(\.md|\.txt)?$/i;
+// A licence file, or one licence per file (LICENSE-MIT, LICENCE-APACHE.txt): a naming convention GitHub also applies,
+// not filesystem identity.
+const LICENSE_RE = /^(LICENSE|LICENCE|COPYING)(\.md|\.txt)?$|^(LICENSE|LICENCE)-.+$/i;
 const CONTRIBUTING_RE = /^CONTRIBUTING(\.md|\.rst|\.txt)?$/i;
 const SECURITY_RE = /^SECURITY(\.md|\.rst|\.txt)?$/i;
 const SECURITY_TXT_RE = /^security\.txt$/i;
@@ -33,10 +35,12 @@ function presentIn(root, dir, re) {
 // security.txt: its Expires field. RFC 9116 section 2.5.5 makes Expires REQUIRED. Returns { ms } or { reason }.
 function expiresOf(text) {
   if (text === null) return { reason: 'the file could not be read as a plain bounded file' };
-  const line = text.split(/\r?\n/).map((l) => l.match(/^Expires:\s*(.*\S)\s*$/i)).find(Boolean);
-  if (!line) return { reason: 'no Expires field (RFC 9116 section 2.5.5 requires one)' };
-  const ms = Date.parse(line[1]);
-  if (Number.isNaN(ms)) return { reason: `Expires is not a date: ${JSON.stringify(line[1])}` };
+  const lines = text.split(/\r?\n/).map((l) => l.match(/^Expires:\s*(.*\S)\s*$/i)).filter(Boolean);
+  if (lines.length > 1) return { reason: 'Expires appears more than once (RFC 9116 section 2.5.5)' };
+  if (!lines.length) return { reason: 'no Expires field (RFC 9116 section 2.5.5 requires one)' };
+  // shortcut: Date.parse accepts more than RFC 3339, so a lax date reads as valid; tighten to the RFC 3339 grammar if a field report shows one.
+  const ms = Date.parse(lines[0][1]);
+  if (Number.isNaN(ms)) return { reason: `Expires is not a date: ${JSON.stringify(lines[0][1])}` };
   return { ms };
 }
 
@@ -62,7 +66,8 @@ function rawLogLine(lines) {
 export function checkRepository(root, nowMs) {
   const out = [];
 
-  if (presentIn(root, '', LICENSE_RE).length === 0) {
+  // REUSE keeps licence texts in LICENSES/: a folder holding at least one plain file is a licence.
+  if (presentIn(root, '', LICENSE_RE).length === 0 && presentIn(root, 'LICENSES', /./).length === 0) {
     out.push({ check: 'license-missing', criterion: 'license_location', verdict: 'CONFIRMED',
       reason: 'no LICENSE, LICENCE or COPYING file at the root' });
   }
@@ -92,11 +97,16 @@ export function checkRepository(root, nowMs) {
       file: stxt[0], reason: `.well-known/security.txt: ${why}` });
   }
 
-  // No release-notes file gives no finding: the criterion allows N/A when a project has no releases.
+  // This pass judges the shape of a release-notes file that exists; a project with none is not checked here. The
+  // criterion's own N/A is narrower (software that is not reused AND is delivered continuously), and this pass does not decide it.
   for (const dir of PLACES) {
     for (const rel of presentIn(root, dir, RELEASE_NOTES_RE)) {
       const text = readRepoFileBounded(path.join(root, rel), root, MAX_DOC_BYTES);
-      if (text === null) continue;
+      if (text === null) {
+        out.push({ check: 'release-notes-unreadable', criterion: 'release_notes', verdict: 'SUSPECTED', file: rel,
+          reason: `${rel} could not be read under the ${MAX_DOC_BYTES / 1048576} MB bound (over it, or unreadable), so its shape is not judged` });
+        continue;
+      }
       const at = rawLogLine(text.split(/\r?\n/));
       if (at >= 0) {
         out.push({ check: 'release-notes-raw-log', criterion: 'release_notes', verdict: 'SUSPECTED',
