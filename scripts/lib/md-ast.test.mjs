@@ -407,6 +407,71 @@ test('CommonMark conformance: `--!>` does NOT end an HTML comment block (spec 0.
   assert.deepStrictEqual(blocks('<!-- Foo\n\nbar\n   baz -->\nokay\n'), ['html', 'paragraph']);
 });
 
+// 29am T-34: the ATX heading and the trailing-space trim are read by scans, not backtracking matches. Every result here is
+// the parser's output before the change, and the scans must keep it. CR and TAB are built from char codes.
+const CR34 = String.fromCharCode(13);
+const TAB34 = String.fromCharCode(9);
+const NL34 = String.fromCharCode(10);
+function headingOf(src) {
+  let out = 'none';
+  walk(parseMarkdown(src), (n) => { if (n.type === 'heading') out = `${n.depth}:${textContent(n)}`; });
+  return out;
+}
+function breaksOf(src) {
+  let c = 0;
+  walk(parseMarkdown(src), (n) => { if (n.type === 'break') c++; });
+  return c;
+}
+
+test('T-34: ATX heading results are unchanged by the scan (depth, text, and the non-heading cases)', () => {
+  const cases = [
+    ['# a\n', '1:a'], ['#\n', '1:'], ['# \n', '1:'], ['#' + TAB34 + '\n', '1:'], ['#' + TAB34 + 'x\n', '1:x'],
+    ['# a #\n', '1:a'], ['# a##\n', '1:a##'], ['# a#\n', '1:a#'], ['#a\n', 'none'], ['####### x\n', 'none'],
+    ['# a   \n', '1:a'], ['# a' + TAB34 + TAB34 + '\n', '1:a'], ['# a # b\n', '1:a # b'], ['# #\n', '1:'],
+    ['### ##\n', '3:'], ['#    ' + CR34 + 'x\n', 'none'], ['# a' + CR34 + 'b\n', 'none'], ['  # x\n', '1:x'],
+    ['    # x\n', 'none'], ['#' + String.fromCharCode(160) + 'x\n', 'none'],
+  ];
+  for (const [src, want] of cases) assert.strictEqual(headingOf(src), want, JSON.stringify(src));
+});
+
+test('T-34: trailing-space trim keeps the hard-break rule: two or more spaces break, one space does not', () => {
+  assert.strictEqual(breaksOf('a \n' + 'b\n'), 0);
+  assert.strictEqual(breaksOf('a  ' + NL34 + 'b\n'), 1);
+  assert.strictEqual(breaksOf('a   ' + NL34 + 'b\n'), 1);
+  assert.strictEqual(parseMarkdown('a' + TAB34 + TAB34 + NL34 + 'b\n').children[0].children.map((c) => c.value).join(''), 'a' + TAB34 + TAB34 + NL34 + 'b', 'tabs are not trimmed');
+});
+
+// T-34 timing witnesses (order 29am): the old shapes are quadratic. Measured on the reviewer's box before the change:
+// the ATX heading with an interior CR takes about 3.4 s at 64,000 spaces, the 64,000-space paragraph line about 4 s
+// (a regex over the whole buffer, once per call). A 250 ms budget is at least 10x below both; linear is a few ms.
+test('T-34: an ATX heading with 64,000 spaces and an interior CR is scanned in linear time (best of 3 under 250 ms)', () => {
+  const budgetMs = 250;
+  const src = '#' + ' '.repeat(64000) + CR34 + 'x\n';
+  const times = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = process.hrtime.bigint();
+    assert.strictEqual(headingOf(src), 'none');
+    times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+    if (times[i] > 20 * budgetMs) break;
+  }
+  assert.ok(Math.min(...times) < budgetMs, `best of ${times.length} = ${Math.min(...times).toFixed(1)} ms, budget ${budgetMs} ms`);
+});
+
+test('T-34: a paragraph line with 64,000 inner spaces is trimmed in linear time (best of 3 under 250 ms)', () => {
+  const budgetMs = 250;
+  // a second line is needed: the trim runs at a line break, and the last line's newline is not one
+  const src = 'a' + ' '.repeat(64000) + 'b\nc\n';
+  const times = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = process.hrtime.bigint();
+    const text = textContent(parseMarkdown(src).children[0]);
+    times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+    assert.strictEqual(text, 'a' + ' '.repeat(64000) + 'b\nc');
+    if (times[i] > 20 * budgetMs) break;
+  }
+  assert.ok(Math.min(...times) < budgetMs, `best of ${times.length} = ${Math.min(...times).toFixed(1)} ms, budget ${budgetMs} ms`);
+});
+
 // 29a P2: the ATX heading match is linear; the heading text is unchanged at 128 KiB.
 // Budget 500 ms, sized against the venue (order 29aa bounce 3). Linear best of 3 on this input: 6.1 ms plain, 32.4 ms
 // under --experimental-test-coverage (local), 51.0 ms on the CI coverage leg (run 41371928632, which the old 50 ms

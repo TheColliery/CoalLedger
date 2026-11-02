@@ -166,7 +166,23 @@ export function walk(node, fn, ancestors = []) {
 // ---------------------------------------------------------------------------
 
 const THEMATIC_RE = /^([-_*])[ \t]*(?:\1[ \t]*){2,}$/;
-const ATX_RE = /^(#{1,6})(?:[ \t]+(.*))?$/;
+// An ATX heading line: one to six '#', then the end of the line, or one or more spaces or tabs and the rest as content.
+// Scanned, not matched: the backtracking match this replaces was quadratic over a long run of spaces. The content may
+// hold no CR, LF, U+2028 or U+2029, because the match it replaces used `.`, which matches none of them.
+function atxOf(rest) {
+  let i = 0;
+  while (i < rest.length && rest.charCodeAt(i) === 35) i++; // '#'
+  if (i < 1 || i > 6) return null;
+  if (i === rest.length) return { hashes: i, content: '' };
+  if (rest.charCodeAt(i) !== 32 && rest.charCodeAt(i) !== 9) return null;
+  let j = i;
+  while (j < rest.length && (rest.charCodeAt(j) === 32 || rest.charCodeAt(j) === 9)) j++;
+  for (let k = j; k < rest.length; k++) {
+    const c = rest.charCodeAt(k);
+    if (c === 10 || c === 13 || c === 0x2028 || c === 0x2029) return null;
+  }
+  return { hashes: i, content: rest.slice(j) };
+}
 const SETEXT_RE = /^(=+|-+)[ \t]*$/;
 const FENCE_OPEN_RE = /^(`{3,}|~{3,})[ \t]*(.*)$/;
 
@@ -626,10 +642,10 @@ export function parseMarkdown(src) {
       continue;
     }
 
-    const atx = ATX_RE.exec(rest);
+    const atx = atxOf(rest);
     if (atx) {
       closeLeaf();
-      let content = atx[2] || '';
+      let content = atx.content;
       // trailing spaces and tabs go (index loop, not a regex: the match must stay linear on long runs)
       let end = content.length;
       while (end > 0 && (content[end - 1] === ' ' || content[end - 1] === '\t')) end--;
@@ -644,11 +660,11 @@ export function parseMarkdown(src) {
       }
       if (/^#+$/.test(content)) content = '';
       // content offset: after the hashes + following whitespace
-      let cp = s.p + atx[1].length;
+      let cp = s.p + atx.hashes;
       while (cp < text.length && (text[cp] === ' ' || text[cp] === '\t')) cp++;
       appendNode({
         type: 'heading',
-        depth: atx[1].length,
+        depth: atx.hashes,
         children: [],
         _raw: { text: content, segs: [{ v: 0, src: L.start + cp, len: content.length }] },
         position: { start: pt(L.start + s.p), end: pt(L.end) },
@@ -784,7 +800,7 @@ export function parseMarkdown(src) {
     if (s.col - col >= 4) return false; // would be code, which cannot interrupt
     const rest = text.slice(s.p);
     if (rest[0] === '>') return true;
-    if (ATX_RE.test(rest)) return true;
+    if (atxOf(rest)) return true;
     if (FENCE_OPEN_RE.test(rest)) return true;
     if (THEMATIC_RE.test(rest)) return true;
     if (htmlBlockStart(rest, true)) return true;
@@ -909,7 +925,10 @@ function parseInlines(raw, definitions, pt) {
       continue;
     }
     if (c === '\n') {
-      const trimmed = buf.replace(/ +$/, '');
+      // trailing spaces only (not tabs), by an index loop: the regex form rescanned the whole buffer from every start position
+      let trimEnd = buf.length;
+      while (trimEnd > 0 && buf.charCodeAt(trimEnd - 1) === 32) trimEnd--;
+      const trimmed = trimEnd === buf.length ? buf : buf.slice(0, trimEnd);
       if (buf.length - trimmed.length >= 2) {
         buf = trimmed;
         flush(i);
