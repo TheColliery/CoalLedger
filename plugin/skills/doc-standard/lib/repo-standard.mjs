@@ -1,8 +1,9 @@
 // T-21 (order 29z): doc-standard's repository-scope pass, keyed on the OpenSSF Best Practices passing criteria.
 //
-// Four checks, each carrying the bare id of the passing criterion it answers (`criterion`). The presence checks and the
-// security.txt expiry are CONFIRMED: deterministic file facts. The raw-log check is SUSPECTED: a shape read off text.
-// Severity is the caller's call, never this engine's.
+// Four criteria, answered by six check ids: license-missing, contributing-missing, vuln-report-missing and
+// securitytxt-expired (CONFIRMED: deterministic file facts) · release-notes-raw-log and release-notes-unreadable
+// (SUSPECTED: a shape read off text, or a file the read bound would not let us judge). Each finding carries the bare
+// id of the passing criterion it answers (`criterion`). Severity is the caller's call, never this engine's.
 //
 // Name matching is case-insensitive over readdir names: a naming convention GitHub also applies, not filesystem
 // identity. A named entry counts only as a plain file, so a link that leaves the root never satisfies a criterion.
@@ -17,7 +18,7 @@ export const CRITERIA = ['license_location', 'contribution', 'vulnerability_repo
 
 // A licence file, or one licence per file (LICENSE-MIT, LICENCE-APACHE.txt): a naming convention GitHub also applies,
 // not filesystem identity.
-const LICENSE_RE = /^(LICENSE|LICENCE|COPYING)(\.md|\.txt)?$|^(LICENSE|LICENCE)-.+$/i;
+const LICENSE_RE = /^(LICENSE|LICENCE|COPYING)(\.md|\.rst|\.txt)?$|^(LICENSE|LICENCE)-.+$/i;
 const CONTRIBUTING_RE = /^CONTRIBUTING(\.md|\.rst|\.txt)?$/i;
 const SECURITY_RE = /^SECURITY(\.md|\.rst|\.txt)?$/i;
 const SECURITY_TXT_RE = /^security\.txt$/i;
@@ -69,7 +70,7 @@ export function checkRepository(root, nowMs) {
   // REUSE keeps licence texts in LICENSES/: a folder holding at least one plain file is a licence.
   if (presentIn(root, '', LICENSE_RE).length === 0 && presentIn(root, 'LICENSES', /./).length === 0) {
     out.push({ check: 'license-missing', criterion: 'license_location', verdict: 'CONFIRMED',
-      reason: 'no LICENSE, LICENCE or COPYING file at the root' });
+      reason: 'no licence at the root: a LICENSE, LICENCE or COPYING file (.md, .rst or .txt, or bare), a LICENSE-<name> file, or a LICENSES/ folder holding a file' });
   }
 
   if (PLACES.every((dir) => presentIn(root, dir, CONTRIBUTING_RE).length === 0)) {

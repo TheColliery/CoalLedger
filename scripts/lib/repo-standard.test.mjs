@@ -149,6 +149,12 @@ test('an empty LICENSES/ folder is not a licence: license-missing still fires', 
   assert.deepEqual(checks(findings(d)), ['license-missing']);
 });
 
+// INSPECT r42 LOW-A: the licence name takes the same extensions as CONTRIBUTING and SECURITY, so LICENSE.rst passes.
+test('a LICENSE.rst at the root satisfies the licence check', (t) => {
+  const d = clean(t); fs.renameSync(path.join(d, 'LICENSE'), path.join(d, 'LICENSE.rst'));
+  assert.deepEqual(findings(d), []);
+});
+
 // INSPECT r41 MED-2: a date between --now and today is judged by --now. A mutant that reads the real clock flips it.
 test('an Expires between --now and the real clock is judged by --now: no finding before it, securitytxt-expired after it', (t) => {
   const d = clean(t); put(d, '.well-known/security.txt', SECURITY_TXT('2026-09-01T00:00:00Z'));
