@@ -412,12 +412,33 @@ test('M2: an indented tab-led or four-space fence line inside the list item is s
   assert.ok(flaggedAfter(['- ```', '   ```', '  \t```', '    ```']));
 });
 
-test('M2: a column-0 fence after the list item is tracked, and the quotes inside it are code (not flagged)', () => {
-  assert.ok(!flaggedAfter(['- ```', '   ```', '```\r']));
+test('M2 (class L): a column-0 fence after a counted region is counted, not skipped: flagged (the parser reads it as code, an over-report kept on purpose)', () => {
+  assert.ok(flaggedAfter(['- ```', '   ```', '```\r']));
 });
 
-test('M2: a line indented less than the item content column ends the item: a one-space fence is a new top-level fence (not flagged)', () => {
-  assert.ok(!flaggedAfter(['- ```', ' ```']));
+// The reviewer's under-report (r46b, the harness's U+2028 document): a column-0 closer-like line after an indented fence.
+test('M2 r46b: a column-0 fence after an indented fence and a U+2028 line is counted (flagged)', () => {
+  assert.ok(flaggedAfter(['- ```', '```' + String.fromCharCode(32) + String.fromCharCode(8232), '   ```', '````']));
+});
+
+test('M2 (class L): a one-space fence after a list marker is counted (flagged): the parser reads it as top-level, so this is an over-report kept on purpose', () => {
+  assert.ok(flaggedAfter(['- ```', ' ```']));
+});
+
+// M2 r46b (class L): a fence indented under a list item is counted, not skipped, so the nesting after it is never hidden.
+test('M2 r46b: a list item, then a fence indented under it, then quote levels: flagged at every size', () => {
+  for (const n of [210, 1000]) {
+    const s = '- a\n  ```\n' + '> '.repeat(n) + 'q\n';
+    assert.ok(checkDocument(s).some((x) => x.check === 'doc-too-nested'), `n=${n}`);
+  }
+});
+
+test('M2 r46b neighbour: a tilde fence indented under a list item is counted (flagged)', () => {
+  assert.ok(flaggedAfter(['- a', '  ~~~']));
+});
+
+test('M2 r46b neighbour: a four-space list continuation, then a three-space closer, is counted (flagged)', () => {
+  assert.ok(flaggedAfter(['- a', '    ```', '   ```']));
 });
 
 test('M2: a tab-led closer at the content column stays inside the item (flagged)', () => {
