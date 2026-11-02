@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { CRITERIA } from './repo-standard.mjs';
+import { CRITERIA, checkRepository } from './repo-standard.mjs';
 import { SANDBOX_ENV } from '../test-sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -182,6 +182,57 @@ test('a release-notes file over the read bound gives release-notes-unreadable, S
   assert.equal(f.length, 1);
   assert.equal(f[0].verdict, 'SUSPECTED');
   assert.equal(f[0].file, 'CHANGELOG.md');
+});
+
+// T-37 (order 29am). The Expires line is read by a prefix test and a trim, not a backtracking match.
+const NOW_MS = Date.parse(NOW);
+function stxtReason(t, body) {
+  const d = clean(t);
+  put(d, '.well-known/security.txt', body);
+  const f = checkRepository(d, NOW_MS).filter((x) => x.check === 'securitytxt-expired');
+  return f.length ? f[0].reason : null;
+}
+
+test('T-37: the Expires line keeps its results: valid in any case and spacing, no field for an empty or CR-holding value', (t) => {
+  const CR = String.fromCharCode(13);
+  const TAB = String.fromCharCode(9);
+  const NOFIELD = '.well-known/security.txt: no Expires field (RFC 9116 section 2.5.5 requires one)';
+  assert.strictEqual(stxtReason(t, `Expires: ${FUTURE}   \n`), null);
+  assert.strictEqual(stxtReason(t, `expires:${TAB}${FUTURE}${TAB}${TAB}\n`), null);
+  assert.strictEqual(stxtReason(t, 'Expires:    \n'), NOFIELD);
+  assert.strictEqual(stxtReason(t, 'Expires:\n'), NOFIELD);
+  assert.strictEqual(stxtReason(t, `Expires: a${CR}b\n`), NOFIELD);
+  assert.strictEqual(stxtReason(t, 'Expires: nope\n'), '.well-known/security.txt: Expires is not a date: "nope"');
+});
+
+test('T-37: an Expires line of 64,000 spaces is read in linear time (best of 3 under 250 ms)', (t) => {
+  const budgetMs = 250;
+  const d = clean(t);
+  put(d, '.well-known/security.txt', 'Expires:' + ' '.repeat(64000) + '\n');
+  const times = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = process.hrtime.bigint();
+    checkRepository(d, NOW_MS);
+    times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+    if (times[i] > 20 * budgetMs) break; // a run this far past the budget is a fail: stop now, so the assert names it
+  }
+  assert.ok(Math.min(...times) < budgetMs, `best of ${times.length} = ${Math.min(...times).toFixed(1)} ms, budget ${budgetMs} ms`);
+});
+
+// T-37: one file reached under two names (a hard link in docs/ to the root CHANGELOG.md) is judged once. A link component
+// is refused by the walk, so the second name must be a hard link: a second path to the same file, not a link to a folder.
+test('T-37: a release-notes file reached under two names is judged once', (t) => {
+  const d = clean(t);
+  put(d, 'CHANGELOG.md', ONELINE.join('\n') + '\n');
+  fs.mkdirSync(path.join(d, 'docs'));
+  try {
+    fs.linkSync(path.join(d, 'CHANGELOG.md'), path.join(d, 'docs', 'CHANGELOG.md'));
+  } catch {
+    t.skip('this volume refuses a hard link (capability probe): the dedupe has no second name to test');
+    return;
+  }
+  const f = checkRepository(d, NOW_MS).filter((x) => x.check === 'release-notes-raw-log');
+  assert.strictEqual(f.length, 1, `judged ${f.length} times`);
 });
 
 test('--root missing exits 2 with a usage line', () => {

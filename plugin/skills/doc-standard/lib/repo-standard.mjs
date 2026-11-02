@@ -33,15 +33,46 @@ function presentIn(root, dir, re) {
   return names.filter((n) => re.test(n) && repoEntryKind(path.join(root, dir, n), root) === 'file').map((n) => path.join(dir, n));
 }
 
+// True when the text holds a CR, LF, U+2028 or U+2029: the characters the match this replaced never matched with `.`.
+function hasLineBreakChar(text) {
+  for (let k = 0; k < text.length; k++) {
+    const c = text.charCodeAt(k);
+    if (c === 13 || c === 10 || c === 0x2028 || c === 0x2029) return true;
+  }
+  return false;
+}
+
+// The value of one Expires line: the text after the field name, trimmed. A prefix test and a trim, not a backtracking match
+// (the match this replaced was quadratic over a long run of spaces). An empty value, or one holding a line break, is no value.
+const EXPIRES_PREFIX_RE = /^expires:/i;
+function expiresValueOf(line) {
+  if (!EXPIRES_PREFIX_RE.test(line)) return null;
+  const value = line.slice('Expires:'.length).trim();
+  if (value === '' || hasLineBreakChar(value)) return null;
+  return value;
+}
+
+// The identity of a file, not its name: two names of one file (a hard link) share a device and an inode. A realpath is the
+// key only where the volume reports no inode, and there a hard link is not caught.
+function fileIdentity(abs) {
+  try {
+    const st = fs.statSync(abs, { bigint: true });
+    if (st.ino !== 0n) return `ino:${st.dev}:${st.ino}`;
+    return `path:${fs.realpathSync.native(abs)}`;
+  } catch {
+    return null;
+  }
+}
+
 // security.txt: its Expires field. RFC 9116 section 2.5.5 makes Expires REQUIRED. Returns { ms } or { reason }.
 function expiresOf(text) {
   if (text === null) return { reason: 'the file could not be read as a plain bounded file' };
-  const lines = text.split(/\r?\n/).map((l) => l.match(/^Expires:\s*(.*\S)\s*$/i)).filter(Boolean);
+  const lines = text.split(/\r?\n/).map(expiresValueOf).filter((v) => v !== null);
   if (lines.length > 1) return { reason: 'Expires appears more than once (RFC 9116 section 2.5.5)' };
   if (!lines.length) return { reason: 'no Expires field (RFC 9116 section 2.5.5 requires one)' };
   // shortcut: Date.parse accepts more than RFC 3339, so a lax date reads as valid; tighten to the RFC 3339 grammar if a field report shows one.
-  const ms = Date.parse(lines[0][1]);
-  if (Number.isNaN(ms)) return { reason: `Expires is not a date: ${JSON.stringify(lines[0][1])}` };
+  const ms = Date.parse(lines[0]);
+  if (Number.isNaN(ms)) return { reason: `Expires is not a date: ${JSON.stringify(lines[0])}` };
   return { ms };
 }
 
@@ -100,8 +131,18 @@ export function checkRepository(root, nowMs) {
 
   // This pass judges the shape of a release-notes file that exists; a project with none is not checked here. The
   // criterion's own N/A is narrower (software that is not reused AND is delivered continuously), and this pass does not decide it.
+  // One file under two names is judged once. An identity that cannot be read is a finding, never a silent skip.
+  const judged = new Set();
   for (const dir of PLACES) {
     for (const rel of presentIn(root, dir, RELEASE_NOTES_RE)) {
+      const id = fileIdentity(path.join(root, rel));
+      if (id === null) {
+        out.push({ check: 'release-notes-unreadable', criterion: 'release_notes', verdict: 'SUSPECTED', file: rel,
+          reason: `${rel} could not be identified, so it is not judged (fail closed)` });
+        continue;
+      }
+      if (judged.has(id)) continue;
+      judged.add(id);
       const text = readRepoFileBounded(path.join(root, rel), root, MAX_DOC_BYTES);
       if (text === null) {
         out.push({ check: 'release-notes-unreadable', criterion: 'release_notes', verdict: 'SUSPECTED', file: rel,
