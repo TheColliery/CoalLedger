@@ -1,3 +1,4 @@
+// Canon template: .github templates/overlay-coal-skill/scripts/lib/config-schema.mjs (the {{TOOL}} template at f1c9a4d). This room's file holds its own keys and flags.
 // Single source of truth for every .coalledger.json key (SKILL-REPO-PATTERN
 // Layer 3). Flat key list like CoalMine/CoalWash. verify.mjs validates the
 // factory template against it; every runtime read goes through clampedRead so

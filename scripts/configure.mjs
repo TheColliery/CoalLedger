@@ -1,3 +1,4 @@
+// Canon template: .github templates/overlay-coal-skill/scripts/configure.mjs (the {{TOOL}} template at f1c9a4d). This room's file holds its own keys and flags.
 // CoalLedger configurator — edit .coalledger.json from the command line.
 // Flags, parsing, validation, and help all come from one table
 // (scripts/lib/config-schema.mjs, shared with verify.mjs): a key added there

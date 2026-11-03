@@ -1,3 +1,4 @@
+// Canon template: .github templates/overlay-coal-skill/scripts/lib/config-keys.mjs (the {{TOOL}} template at f1c9a4d). This room's file holds its own keys and flags.
 // CWK-060 — documentation-vs-schema drift gate, ported from CoalMine's CWK-059
 // (scripts/lib/config-keys.mjs). Every config key NAMED on a user-facing
 // surface must RESOLVE in config-schema.mjs, or be declared.
