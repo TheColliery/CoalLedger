@@ -34,9 +34,15 @@ test('extractChangelogEntry: version mismatch (tag cut without updating CHANGELO
   assert.throws(() => extractChangelogEntry(CL, '3.20.1'), (e) => e instanceof ChangelogShapeError && /pushed tag is v3\.20\.1/.test(e.message));
 });
 
-test('extractChangelogEntry: [Unreleased] top entry fails loud (RED before this rule existed)', () => {
-  const cl = '## [Unreleased]\n\nsomething\n';
-  assert.throws(() => extractChangelogEntry(cl, '1.0.0'), (e) => e instanceof ChangelogShapeError && /Unreleased/.test(e.message));
+// 14h (item 14, courier 10; CoalLedger PR #20 #8): the standard `## [Unreleased]` heading carries no date, so it used to throw from the DATE check, whose message merely quotes the heading;
+// the test matched /Unreleased/, which that message holds, so it stayed green with the [Unreleased] branch deleted. The test now holds the branch's own message, for the standard and the dated heading.
+test('extractChangelogEntry: [Unreleased] top entry fails loud with the rule\'s own message, dated or not -- RED before 14h (10 #8)', () => {
+  for (const heading of ['## [Unreleased]', '## [unreleased]', '## [Unreleased] - 2026-10-14', '##[Unreleased]']) {
+    const cl = `${heading}\n\nsomething\n`;
+    assert.throws(() => extractChangelogEntry(cl, '1.0.0'), (e) => e instanceof ChangelogShapeError && /top entry is still \[Unreleased\] -- the CHANGELOG entry is written and finalized BEFORE the tag/.test(e.message), heading);
+  }
+  // control: a top heading that is neither Unreleased nor dated keeps the date message
+  assert.throws(() => extractChangelogEntry('## [1.0.0]\n\nsomething\n', '1.0.0'), (e) => e instanceof ChangelogShapeError && /is not "## \[X\.Y\.Z\] - YYYY-MM-DD"/.test(e.message));
 });
 
 test('extractChangelogEntry: no version heading at all fails loud, not a crash', () => {
@@ -260,4 +266,18 @@ test('mirroredTitleOverflow counts UTF-16 units (the conservative count: an astr
   const name = 'v1.0.0 - ' + emoji.repeat(100);
   assert.equal(Array.from(mirroredTitle('R', 'v1.0.0', name)).length < 200, true);
   assert.ok(mirroredTitleOverflow('R', 'v1.0.0', name) !== null, '100 emoji are 200 units: held, never risked');
+});
+
+test('extractChangelogEntry: a summary line carrying a control character is refused by name, never printed or posted -- RED before 2026-11-03a', () => {
+  // Built from code points so no escape travels through a tool: ESC (C0), a lone CR (C0), DEL, and CSI (C1).
+  for (const cp of [0x1b, 0x0d, 0x7f, 0x9b]) {
+    const bad = String.fromCharCode(cp);
+    const text = `# Changelog\n\n## [1.2.3] - 2026-11-03\n\nA summary with a ${bad}[31m hidden control.\n\n### Fixed\n- Thing.\n`;
+    assert.throws(() => extractChangelogEntry(text, '1.2.3'), (e) => e instanceof ChangelogShapeError && /control character/.test(e.message) && !e.message.includes(bad), `code point ${cp} is refused, and the message never echoes it`);
+  }
+  // A tab is a C0 character too: refused the same way.
+  assert.throws(() => extractChangelogEntry('## [1.2.3] - 2026-11-03\n\nA\tsummary.\n\n### Fixed\n- x.\n', '1.2.3'), ChangelogShapeError);
+  // An ordinary summary (Thai and an em dash included) still passes.
+  const ok = extractChangelogEntry('## [1.2.3] - 2026-11-03\n\nสรุป: a summary \u2014 fine.\n\n### Fixed\n- x.\n', '1.2.3');
+  assert.equal(ok.summary, 'สรุป: a summary \u2014 fine.');
 });

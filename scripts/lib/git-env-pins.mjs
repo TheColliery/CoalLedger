@@ -12,7 +12,7 @@ export const ROOM_GIT_ENV_PINS = [
   },
   {
     rel: 'scripts/secret-gate.mjs',
-    blob: '856956a1cca6f716e5507f6c23ac90ed34cbbe5f',
+    blob: '6b452f2f8667805876cc2f33a74123bb6f0acf45',
     why: 'the canon secret gate, byte equal to the .github canon: it keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design (commit mode reads the commit\'s own index, which a hook names through that variable), so its gitEnv() copies process.env minus the other GIT_ names; the census refuses its two spawns (lines 57 and 60) and the canon pins the same blob',
   },
 ];
