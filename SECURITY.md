@@ -10,6 +10,10 @@ Report a security issue in this repo through GitHub's private vulnerability repo
 - [GHSA-3f6r-pch4-c5gw](https://github.com/TheColliery/CoalLedger/security/advisories/GHSA-3f6r-pch4-c5gw): the Markdown parser took quadratic time on an ATX heading with a long run of inner spaces; fixed in 0.15.0-beta.8.
 - [GHSA-2g64-323x-pmmf](https://github.com/TheColliery/CoalLedger/security/advisories/GHSA-2g64-323x-pmmf): the language check took quadratic time on a line of unclosed HTML tags; fixed in 0.15.0-beta.8.
 - [GHSA-49r4-w222-4hmw](https://github.com/TheColliery/CoalLedger/security/advisories/GHSA-49r4-w222-4hmw): the config reader took quadratic time on a project config with unclosed comments or strings; fixed in 0.15.0-beta.8.
+- [GHSA-254w-jjf2-hpmc](https://github.com/TheColliery/CoalLedger/security/advisories/GHSA-254w-jjf2-hpmc): the link check now refuses, before any filesystem call, a link target that decodes to an absolute, network, drive-relative or device path; fixed in 0.17.0-beta.2.
+- [GHSA-gmqp-9mmj-9grj](https://github.com/TheColliery/CoalLedger/security/advisories/GHSA-gmqp-9mmj-9grj): the nesting guard now closes a code fence by the parser's rule, and both read a fence opener in linear time; fixed in 0.17.0-beta.2.
+- [GHSA-fj6h-7j3p-hg33](https://github.com/TheColliery/CoalLedger/security/advisories/GHSA-fj6h-7j3p-hg33): the Markdown parser now scans a heading line, and a line before a soft line break, in linear time, whatever the run of spaces; fixed in 0.17.0-beta.2.
+- [GHSA-gw8r-hf86-hcwv](https://github.com/TheColliery/CoalLedger/security/advisories/GHSA-gw8r-hf86-hcwv): the doc-standard repository pass now reads a `security.txt` `Expires` line in linear time; fixed in 0.17.0-beta.2.
 
 ## Commit & Tag Signatures
 
