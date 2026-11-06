@@ -2,6 +2,15 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.5] - 2026-11-07
+
+doc skills ask the engine for a private run list path first
+
+The doc skills now run each engine's `--list-path` before they write the run list. The engine makes one private folder for the list (mode 0700) and prints the exact path, and the agent writes the list there. Nothing to configure. A folder or list that is a link, belongs to another user or is open to others is refused, with a message that names the file.
+
+### Security
+- **The run list lives in a private per-user folder and is read through no link (commit `ab5c71f8b5c78ddba53628b20a3edd125ce4cebc`).** The engine reads the list without following a link and checks owner, type and size on the open file.
+
 ## [0.17.0-beta.4] - 2026-11-06
 
 doc skills take their paths from a run list in the temp folder
