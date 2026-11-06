@@ -2,13 +2,17 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
-## [Unreleased]
+## [0.17.0-beta.3] - 2026-11-06
 
-### Changed
-- The doc skills now read their config through the engines, and no skill command carries a config value or a path with a shell metacharacter. This hardens how the skills read their config.
-- **doc-consistency:** the translation-pair engine reads `translationPairs` from the config cascade itself, and the skill passes no pair. The skill folder now also carries `lib/config-load.mjs`, `lib/config-schema.mjs` and `lib/jsonc.mjs` (commit `ac7b7a6`).
-- **doc-quality:** the em-dash engine reads `emDash` from the config cascade itself, and the skill passes no `--mode`. The skill folder now also carries `lib/config-load.mjs`, `lib/config-schema.mjs` and `lib/jsonc.mjs` (commit `ac7b7a6`).
-- **doc-consistency, doc-quality, doc-standard, doc-structure:** a project folder or doc path holding a shell metacharacter is not put on a command line; the skill reports that file unscanned. The wording lands in the commit that adds this entry.
+doc skills read config in their engines, never on a command line
+
+The doc skills now read their config through their own engines, and no skill command carries a config value. This hardens how the skills read their config. A project folder or doc path holding a shell metacharacter is reported unscanned rather than put on a command line; move such a file to a path without those characters to have it checked. `--pair` and `--mode` stay as flags for direct use.
+
+### Security
+- **doc-consistency: the translation-pair engine reads `translationPairs` itself (commit `ac7b7a640627d77a054c889e4863906993f89e95`).** The skill passes no pair on its command line; its folder now carries `lib/config-load.mjs`, `lib/config-schema.mjs` and `lib/jsonc.mjs`.
+- **doc-quality: the em-dash engine reads `emDash` itself (commit `ac7b7a640627d77a054c889e4863906993f89e95`).** The skill passes no `--mode`; its folder now carries `lib/config-load.mjs`, `lib/config-schema.mjs` and `lib/jsonc.mjs`.
+- **doc-consistency, doc-quality, doc-standard and doc-structure: a project folder or doc path holding a shell metacharacter is not put on a command line (commit `299130d015ae80a14c019e3b44abd4c157748934`).** The skill reports that file or pass unscanned.
+- **doc-quality and doc-structure: the doc path slot on the command lines is double-quoted (commit `26d35df3373bd8a31b8e80457b5fe3da0553e0e5`),** so a file name with a space stays one argument.
 
 ## [0.17.0-beta.2] - 2026-11-03
 
