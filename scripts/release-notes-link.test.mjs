@@ -24,16 +24,14 @@ const sandboxEnv = (dir) => ({
   HOME: dir, USERPROFILE: dir, TEMP: dir, TMP: dir, TMPDIR: dir, GIT_CEILING_DIRECTORIES: path.dirname(dir), GIT_CONFIG_NOSYSTEM: '1',
 });
 
-// A preload: the first lstat of CHANGELOG.md (the check) reports the real plain file; every later one (after the open) reports a link.
-// That is the race the post-open check exists for: the name turns into a link between the check and the read.
-function raceLstat(dir) {
-  const file = path.join(dir, 'race-lstat.mjs');
+// A preload: every lstat of CHANGELOG.md reports a link. The canon makes one lstat of the name, AFTER the open (no check before it), so the
+// post-open comparison is the check that refuses it: a name that is a link once it is read is refused with the link message, never read.
+function linkLstat(dir) {
+  const file = path.join(dir, 'link-lstat.mjs');
   fs.writeFileSync(file, [
     "import fs from 'node:fs';",
     'const real = fs.lstatSync;',
-    'let seen = 0;',
-    "fs.lstatSync = (p, o) => { const st = real(p, o); if (String(p) !== 'CHANGELOG.md') return st; seen += 1;",
-    "  if (seen === 1) return st;",
+    "fs.lstatSync = (p, o) => { const st = real(p, o); if (String(p) !== 'CHANGELOG.md') return st;",
     "  return new Proxy(st, { get(t, k) { if (k === 'isSymbolicLink') return () => true; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });",
     '};',
     '',
@@ -41,13 +39,13 @@ function raceLstat(dir) {
   return pathToFileURL(file).href;
 }
 
-// The same race on the fallback branch: a name that becomes a link after the check is refused with the link message, never read.
-test('a CHANGELOG.md that becomes a link after the check is refused with the link message, never read (runs only where no-follow is absent)', { skip: fs.constants.O_NOFOLLOW !== undefined ? 'this platform refuses a link at the open itself (O_NOFOLLOW)' : false }, (t) => {
+// The fallback branch (no O_NOFOLLOW): a name that reads as a link after the open is refused with the link message, never read.
+test('a CHANGELOG.md that reads as a link after the open is refused with the link message, never read (runs only where no-follow is absent)', { skip: fs.constants.O_NOFOLLOW !== undefined ? 'this platform refuses a link at the open itself (O_NOFOLLOW)' : false }, (t) => {
   const dir = sandbox(t);
   const work = path.join(dir, 'work');
   fs.mkdirSync(work);
   fs.writeFileSync(path.join(work, 'CHANGELOG.md'), '## [9.9.9] - 2026-01-01\n\nSecretOutsideText.\n');
-  const r = spawnSync(process.execPath, ['--import', raceLstat(dir), SCRIPT, '--check', '--repo', 'CoalLedger'], { cwd: work, encoding: 'utf8', env: sandboxEnv(dir), timeout: 60000, killSignal: 'SIGKILL' });
+  const r = spawnSync(process.execPath, ['--import', linkLstat(dir), SCRIPT, '--check', '--repo', 'CoalLedger'], { cwd: work, encoding: 'utf8', env: sandboxEnv(dir), timeout: 60000, killSignal: 'SIGKILL' });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stderr, /CHANGELOG\.md is not a regular file/, r.stderr);
   assert.equal((r.stdout + r.stderr).includes('SecretOutsideText'), false, 'the link target was read');

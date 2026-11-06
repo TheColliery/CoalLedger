@@ -25,35 +25,25 @@ const USAGE = 'usage: node scripts/release-notes.mjs            (derive mode: th
   + '  exit 0 done · 1 refused or a failed check · 64 usage error';
 
 // The CHANGELOG is the tag's own file, so it is read only as a regular file (a link or a device in its place is refused by name) and only under a byte
-// bound (ours: 8 MiB, twenty times the longest CHANGELOG of the flock), checked before the read and again on the open descriptor.
+// bound (ours: 8 MiB, twenty times the longest CHANGELOG of the flock). The file is OPENED first and every check reads the open descriptor: a stat of
+// the name before the open leaves a window in which the entry can be swapped between the check and the read. The open itself refuses a link where the
+// platform can (O_NOFOLLOW) and never waits on a pipe (O_NONBLOCK). After the open, the descriptor must be the file the name names NOW (CoalLedger's
+// CodeQL #29 hardening, brought into the canon 2026-11-07): a name that is a link is refused with the link message, on every platform, and a name that
+// holds another file (a different dev or ino, the open followed a link the name no longer holds, or the entry was swapped) is refused before any read.
+// Both checks can only refuse, never pick another file. shortcut: a filesystem that reports ino 0 gives both sides 0 and cannot tell files apart there.
 const MAX_CHANGELOG_BYTES = 8388608;
+const OPEN_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
 function readChangelog() {
   const name = 'CHANGELOG.md';
-  const refuse = (why) => { throw new Error(`${name} ${why}`); };
   const notRegular = 'is not a regular file (a link or a device is refused, never followed)';
-  // The open is the first act on the name: O_NOFOLLOW refuses a link at the open itself (ELOOP), and O_NONBLOCK keeps a FIFO from blocking it.
-  // Where O_NOFOLLOW does not exist (Windows), an lstat refusal of a link stays in front of the open, the only check there is.
-  const noFollow = fs.constants.O_NOFOLLOW;
-  if (!noFollow && fs.lstatSync(name).isSymbolicLink()) refuse(notRegular);
+  const refuse = (why) => { throw new Error(`${name} ${why}`); };
   let fd;
+  try { fd = fs.openSync(name, OPEN_FLAGS); } catch (e) { if (e && e.code === 'ELOOP') refuse(notRegular); throw e; }
   try {
-    fd = fs.openSync(name, fs.constants.O_RDONLY | (noFollow || 0) | (fs.constants.O_NONBLOCK || 0));
-  } catch (e) {
-    if (e.code === 'ELOOP') refuse(notRegular);
-    throw e;
-  }
-  try {
-    const open = fs.fstatSync(fd);
-    if (!noFollow) {
-      // Without no-follow the open followed whatever the name held, so the descriptor must be the file the name names now: a link, or another
-      // file (a different dev or ino), is refused before any read. shortcut: a filesystem that reports ino 0 gives both sides 0 and cannot tell files apart.
-      // A name that is a link now gets the link message (the same one every platform gives); another file gets the swap message.
-      const named = fs.lstatSync(name, { bigint: true });
-      const via = fs.fstatSync(fd, { bigint: true });
-      if (named.isSymbolicLink()) refuse(notRegular);
-      if (named.dev !== via.dev || named.ino !== via.ino) refuse('changed between the check and the read: refused, never read');
-    }
-    if (!open.isFile()) refuse(notRegular);
+    const open = fs.fstatSync(fd, { bigint: true });
+    const named = fs.lstatSync(name, { bigint: true });
+    if (!open.isFile() || named.isSymbolicLink()) refuse(notRegular);
+    if (named.dev !== open.dev || named.ino !== open.ino) refuse('changed between the check and the read: refused, never read');
     if (open.size > MAX_CHANGELOG_BYTES) refuse(`is ${open.size} bytes, past the byte bound of ${MAX_CHANGELOG_BYTES}: refused before it is read`);
     return fs.readFileSync(fd, 'utf8');
   } finally { fs.closeSync(fd); }
