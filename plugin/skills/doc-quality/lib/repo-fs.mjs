@@ -330,7 +330,7 @@ export function writeRepoFile(target, content, root) {
 
 // The run list: a skill command names no project root and no doc path; the agent writes both to this file with its file tool
 // before the command runs, and each engine reads them here. It lives in the system temp folder, the one namespace an agent's
-// own Write reaches: a protected path such as ~/.claude is prompted and refused, which left a stale list in r57.
+// own Write reaches: a protected path such as ~/.claude is prompted and refused.
 // shortcut: two sessions sharing this one file can overwrite each other's list between the write and the run; a per-session
 // name would need the session id, which no skill command carries.
 export function runListPath() {
