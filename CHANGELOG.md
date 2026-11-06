@@ -6,10 +6,11 @@ All notable changes to CoalLedger are documented here. Format: [Keep a Changelog
 
 doc skills ask the engine for a private run list path first
 
-The doc skills now run each engine's `--list-path` before they write the run list. The engine makes one private folder for the list (mode 0700) and prints the exact path, and the agent writes the list there. Nothing to configure. A folder or list that is a link, belongs to another user or is open to others is refused, with a message that names the file.
+The doc skills now run each engine's `--list-path` before they write the run list. The engine makes one private folder for the list (mode 0700) and prints the exact path, and the agent writes the list there. Nothing to configure. A folder that is a link, belongs to another user or is open to others is refused, and a list that is a link or belongs to another user is refused; each refusal names the file. `--list-path` also removes an earlier list, so a list the agent failed to write never answers for the run.
 
 ### Security
-- **The run list lives in a private per-user folder and is read through no link (commit `ab5c71f8b5c78ddba53628b20a3edd125ce4cebc`).** The engine reads the list without following a link and checks owner, type and size on the open file.
+- **The run list lives in a private per-user folder and is read through no link (commit `ab5c71f8b5c78ddba53628b20a3edd125ce4cebc`).** The engine reads the list without following a link and checks owner, type and size on the open file; the file's permission bits are not checked.
+- **`--list-path` removes an earlier run list, so a list the agent failed to write never answers for the run (commit `d600f12ae38b39b1b71c30d1862274b2ac779f74`).**
 
 ## [0.17.0-beta.4] - 2026-11-06
 
