@@ -491,7 +491,8 @@ if (isMainModule(import.meta.url)) {
     console.error('usage: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] [--list | --root=<dir>] <file.md> [more.md ...]');
     process.exitCode = 1;
   } else {
-    if (listed && !opts.json) console.log(runListLine(runList));
+    // Under --json, stdout is the array alone; the run list line is a diagnostic, so it goes to stderr.
+    if (listed && runList) (opts.json ? console.error : console.log)(runListLine(runList));
     const out = [];
     let total = 0;
     for (const f of files) {

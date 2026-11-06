@@ -119,6 +119,21 @@ test('md-checks --list names the run list root and doc count on its first line, 
   const first = r.stdout.split(/\r?\n/)[0];
   assert.ok(first.includes(p) && first.includes('(1 doc)'), r.stdout);
 });
+// The array engines keep stdout a JSON array under --list --json; the run list line goes to stderr as a diagnostic.
+test('md-checks --list --json keeps stdout a JSON array and names the run list root and count on stderr', (t) => {
+  const { p, doc } = project(t, 'md-checks');
+  writeRunList(p, [doc]);
+  const r = spawnSync(process.execPath, [engineFile('md-checks'), '--json', '--list'], { encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL', env: SANDBOX_ENV, cwd: p });
+  assert.ok(Array.isArray(JSON.parse(r.stdout)), r.stdout);
+  assert.ok(r.stderr.includes(`run list: ${p} (1 doc)`), r.stderr);
+});
+test('lang-mechanics --list --json keeps stdout a JSON array and names the run list root and count on stderr', (t) => {
+  const { p, doc } = project(t, 'lang-mechanics');
+  writeRunList(p, [doc]);
+  const r = spawnSync(process.execPath, [engineFile('lang-mechanics'), '--json', '--list'], { encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL', env: SANDBOX_ENV, cwd: p });
+  assert.ok(Array.isArray(JSON.parse(r.stdout)), r.stdout);
+  assert.ok(r.stderr.includes(`run list: ${p} (1 doc)`), r.stderr);
+});
 test('repo-standard --json --list carries the run list root and doc count as a runList field', (t) => {
   const { p } = project(t, 'repo-standard');
   writeRunList(p, []);

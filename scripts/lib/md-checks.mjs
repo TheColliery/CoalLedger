@@ -567,7 +567,8 @@ if (isMainModule(import.meta.url)) {
     console.error('usage: node md-checks.mjs [--json] [--list | --root=<dir> <file.md> [more.md ...]]');
     process.exitCode = 1;
   }
-  if (listed && runList && !json) console.log(runListLine(runList));
+  // Under --json, stdout is the array alone; the run list line is a diagnostic, so it goes to stderr.
+  if (listed && runList) (json ? console.error : console.log)(runListLine(runList));
   const out = [];
   let total = 0;
   for (const f of files) {
