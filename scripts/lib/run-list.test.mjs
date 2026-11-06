@@ -53,6 +53,13 @@ test('a missing run list names the file and asks for it to be written first', as
   assert.throws(() => readRunList(file), (e) => /write it first/.test(e.message) && e.message.includes(file));
 });
 
+test('the missing-run-list message names --list-path as the way to get the exact path', async (t) => {
+  const d = fixture(t);
+  const file = path.join(d, 'run.json');
+  const { readRunList } = await repoFs();
+  assert.throws(() => readRunList(file), (e) => /--list-path/.test(e.message));
+});
+
 test('a run list over the config bound is refused, never truncated', async (t) => {
   const d = fixture(t);
   const file = path.join(d, 'run.json');

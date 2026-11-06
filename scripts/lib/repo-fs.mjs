@@ -331,8 +331,9 @@ export function writeRepoFile(target, content, root) {
 // The run list: a skill command names no project root and no doc path; the agent writes both to this file with its file tool
 // before the command runs, and each engine reads them here. It lives in the system temp folder, the one namespace an agent's
 // own Write reaches: a protected path such as ~/.claude is prompted and refused.
-// shortcut: two sessions sharing this one file can overwrite each other's list between the write and the run; a per-session
-// name would need the session id, which no skill command carries.
+// shortcut: two sessions sharing this one file can overwrite each other's list between the write and the run, and a second
+// session's --list-path removes the first's list, which then fails as missing; a per-session name would need the session id,
+// which no skill command carries.
 // The folder only its own user can write: coalledger-<uid> where the platform reports a uid, coalledger where it does not.
 export function runListFolder() {
   const uid = process.getuid?.();
@@ -355,8 +356,6 @@ function runListError(message) {
   e.code = 'RUN_LIST';
   return e;
 }
-// Reads the run list through the bounded reader (kind gate, size ceiling, never truncated), validates its shape, and returns
-// { root, docs }. Every refusal is a human message naming the rule and the file; a raw parse error never reaches the caller.
 // Refuses a folder that is a link, is owned by another user, or is open to group or other bits (a platform with a uid only).
 // Returns false when the folder is absent, true when the user may use it.
 export function checkRunListFolder(dir) {
@@ -382,7 +381,21 @@ export function ensureRunListFolder() {
     }
     checkRunListFolder(dir);
   }
+  clearStaleList(runListPath());
   return runListPath();
+}
+// A list from an earlier request must not answer for this one, so a refused or skipped write leaves no list. A link is removed,
+// never followed; a folder at the name is refused.
+function clearStaleList(file) {
+  let st;
+  try { st = fs.lstatSync(file); } catch (e) {
+    if (e.code === 'ENOENT') return;
+    throw runListError(`the run list at ${file} could not be inspected (${e.code})`);
+  }
+  if (st.isDirectory() && !st.isSymbolicLink()) throw runListError(`the run list at ${file} is a folder; remove it and run this command again`);
+  try { fs.unlinkSync(file); } catch (e) {
+    if (e.code !== 'ENOENT') throw runListError(`the run list at ${file} could not be removed (${e.code})`);
+  }
 }
 // For an engine's CLI: prints the list path alone on stdout, or refuses on stderr with exit 2. True when the flag was given.
 export function listPathCli(argv = process.argv.slice(2)) {
@@ -420,11 +433,13 @@ function readRunListText(file) {
     return got === st.size ? buf.toString('utf8') : null;
   } finally { try { fs.closeSync(fd); } catch {} }
 }
+// Reads the run list through the bounded reader (kind gate, size ceiling, never truncated), validates its shape, and returns
+// { root, docs }. Every refusal is a human message naming the rule and the file; a raw parse error never reaches the caller.
 export function readRunList(file = runListPath()) {
   checkRunListFolder(path.dirname(file));
   const text = readRunListText(file);
   if (text === null) {
-    throw runListError(`no readable run list at ${file} (missing, not a plain file, or over 1 MiB): write it first with your file tool at exactly that path, as {"root": "<absolute project folder>", "docs": ["<absolute doc path>", ...]}, then run this command again`);
+    throw runListError(`no readable run list at ${file} (missing, not a plain file, or over 1 MiB): write it first at the exact path --list-path prints (run the engine with --list-path to get it), as {"root": "<absolute project folder>", "docs": ["<absolute doc path>", ...]}, then run this command again`);
   }
   let obj;
   try { obj = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text); } catch { throw runListError(`the run list at ${file} is not JSON`); }

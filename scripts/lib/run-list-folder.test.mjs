@@ -105,3 +105,40 @@ test('emdash --list-path prints the run list path alone on stdout and exits 0', 
 test('lang-mechanics --list-path prints the run list path alone on stdout and exits 0', (t) => listPathLeg('lang-mechanics', t));
 test('translation-pairs --list-path prints the run list path alone on stdout and exits 0', (t) => listPathLeg('translation-pairs', t));
 test('repo-standard --list-path prints the run list path alone on stdout and exits 0', (t) => listPathLeg('repo-standard', t));
+
+test('a list written before the last --list-path request is cleared by it, so a refused write leaves a missing list, never the old one', (t) => {
+  const { base, env } = sandbox(t);
+  const victim = path.join(base, 'victim');
+  fs.mkdirSync(victim);
+  const doc = path.join(victim, 'a.md');
+  fs.writeFileSync(doc, '# A\n\n[broken](nope.md)\n');
+  const first = run('md-checks', ['--list-path'], env);
+  assert.equal(first.status, 0, first.stderr);
+  fs.writeFileSync(first.stdout.trimEnd(), JSON.stringify({ root: victim, docs: [doc] }));
+  const again = run('md-checks', ['--list-path'], env);
+  assert.equal(again.status, 0, again.stderr);
+  const r = run('md-checks', ['--json', '--list'], env);
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /no readable run list/);
+  assert.equal(r.stdout.includes('nope.md'), false, r.stdout);
+});
+
+test('a plain file at the run list folder name is refused as not a folder', (t) => {
+  const { tmp, env } = sandbox(t);
+  fs.writeFileSync(path.join(tmp, folderName(realUid)), 'not a folder\n');
+  const r = run('md-checks', ['--list-path'], env);
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /is not a folder/);
+});
+
+test('a folder that becomes a link between the check and the make is refused by the re-check after the make', (t) => {
+  const { base, tmp, env } = sandbox(t);
+  const folder = path.join(tmp, folderName(realUid));
+  const attacker = path.join(base, 'attacker');
+  fs.mkdirSync(attacker);
+  const pre = path.join(base, 'race.mjs');
+  fs.writeFileSync(pre, `import fs from 'node:fs';\nconst realMkdir = fs.mkdirSync;\nfs.mkdirSync = (p, o) => {\n  if (p === ${JSON.stringify(folder)}) fs.symlinkSync(${JSON.stringify(attacker)}, p, 'junction');\n  return realMkdir(p, o);\n};\n`);
+  const r = spawnSync(process.execPath, ['--import', pathToFileURL(pre).href, path.join(here, 'md-checks.mjs'), '--list-path'], { encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL', env, cwd: here });
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /is a link/);
+});
