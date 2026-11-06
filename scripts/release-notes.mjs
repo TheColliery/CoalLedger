@@ -47,9 +47,11 @@ function readChangelog() {
     if (!noFollow) {
       // Without no-follow the open followed whatever the name held, so the descriptor must be the file the name names now: a link, or another
       // file (a different dev or ino), is refused before any read. shortcut: a filesystem that reports ino 0 gives both sides 0 and cannot tell files apart.
+      // A name that is a link now gets the link message (the same one every platform gives); another file gets the swap message.
       const named = fs.lstatSync(name, { bigint: true });
       const via = fs.fstatSync(fd, { bigint: true });
-      if (named.isSymbolicLink() || named.dev !== via.dev || named.ino !== via.ino) refuse('changed between the check and the read: refused, never read');
+      if (named.isSymbolicLink()) refuse(notRegular);
+      if (named.dev !== via.dev || named.ino !== via.ino) refuse('changed between the check and the read: refused, never read');
     }
     if (!open.isFile()) refuse(notRegular);
     if (open.size > MAX_CHANGELOG_BYTES) refuse(`is ${open.size} bytes, past the byte bound of ${MAX_CHANGELOG_BYTES}: refused before it is read`);

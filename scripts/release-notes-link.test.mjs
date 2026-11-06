@@ -24,19 +24,34 @@ const sandboxEnv = (dir) => ({
   HOME: dir, USERPROFILE: dir, TEMP: dir, TMP: dir, TMPDIR: dir, GIT_CEILING_DIRECTORIES: path.dirname(dir), GIT_CONFIG_NOSYSTEM: '1',
 });
 
-// A preload: fs.lstatSync reports CHANGELOG.md as a plain file whatever it is, so a check-then-open reads through a link.
-function lyingLstat(dir) {
-  const file = path.join(dir, 'lying-lstat.mjs');
+// A preload: the first lstat of CHANGELOG.md (the check) reports the real plain file; every later one (after the open) reports a link.
+// That is the race the post-open check exists for: the name turns into a link between the check and the read.
+function raceLstat(dir) {
+  const file = path.join(dir, 'race-lstat.mjs');
   fs.writeFileSync(file, [
     "import fs from 'node:fs';",
     'const real = fs.lstatSync;',
-    "fs.lstatSync = (p, o) => { const st = real(p, o); if (String(p) === 'CHANGELOG.md') {",
-    "  return new Proxy(st, { get(t, k) { if (k === 'isSymbolicLink') return () => false; if (k === 'isFile') return () => true; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });",
-    '} return st; };',
+    'let seen = 0;',
+    "fs.lstatSync = (p, o) => { const st = real(p, o); if (String(p) !== 'CHANGELOG.md') return st; seen += 1;",
+    "  if (seen === 1) return st;",
+    "  return new Proxy(st, { get(t, k) { if (k === 'isSymbolicLink') return () => true; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });",
+    '};',
     '',
   ].join('\n'));
   return pathToFileURL(file).href;
 }
+
+// The same race on the fallback branch: a name that becomes a link after the check is refused with the link message, never read.
+test('a CHANGELOG.md that becomes a link after the check is refused with the link message, never read (runs only where no-follow is absent)', { skip: fs.constants.O_NOFOLLOW !== undefined ? 'this platform refuses a link at the open itself (O_NOFOLLOW)' : false }, (t) => {
+  const dir = sandbox(t);
+  const work = path.join(dir, 'work');
+  fs.mkdirSync(work);
+  fs.writeFileSync(path.join(work, 'CHANGELOG.md'), '## [9.9.9] - 2026-01-01\n\nSecretOutsideText.\n');
+  const r = spawnSync(process.execPath, ['--import', raceLstat(dir), SCRIPT, '--check', '--repo', 'CoalLedger'], { cwd: work, encoding: 'utf8', env: sandboxEnv(dir), timeout: 60000, killSignal: 'SIGKILL' });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /CHANGELOG\.md is not a regular file/, r.stderr);
+  assert.equal((r.stdout + r.stderr).includes('SecretOutsideText'), false, 'the link target was read');
+});
 
 // A preload: fs.lstatSync reports CHANGELOG.md as the decoy file, so the name looks like a file other than the one the open reaches.
 function swapLstat(dir) {
@@ -82,7 +97,9 @@ test('a CHANGELOG.md that is a link is refused by name and its target is never r
   const work = path.join(dir, 'work');
   fs.mkdirSync(work);
   try { fs.symlinkSync(outside, path.join(work, 'CHANGELOG.md'), 'file'); } catch (e) { t.skip(`this volume cannot make a file link (${e.code})`); return; }
-  const r = spawnSync(process.execPath, ['--import', lyingLstat(dir), SCRIPT, '--check', '--repo', 'CoalLedger'], { cwd: work, encoding: 'utf8', env: sandboxEnv(dir), timeout: 60000, killSignal: 'SIGKILL' });
+  // No preload: the link is real, so the lstat in front of the open (Windows) or the open itself (POSIX) refuses it. The same
+  // link message comes out on every platform.
+  const r = spawnSync(process.execPath, [SCRIPT, '--check', '--repo', 'CoalLedger'], { cwd: work, encoding: 'utf8', env: sandboxEnv(dir), timeout: 60000, killSignal: 'SIGKILL' });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stderr, /CHANGELOG\.md is not a regular file/, r.stderr);
   assert.equal((r.stdout + r.stderr).includes('SecretOutsideText'), false, 'the link target was read');
