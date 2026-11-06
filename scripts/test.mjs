@@ -54,6 +54,7 @@ const TESTS = [
   'scripts/secret-scan.test.mjs',
   'scripts/secret-gate.test.mjs',
   'scripts/release-notes.test.mjs',
+  'scripts/release-notes-link.test.mjs',
   'scripts/verify-release-shape.test.mjs',
   'scripts/decide-upload.test.mjs',
   'scripts/prune-release-zips.test.mjs',
