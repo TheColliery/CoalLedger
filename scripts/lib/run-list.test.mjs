@@ -78,7 +78,8 @@ test('a folder at the run-list path is refused as not a plain file', async (t) =
 
 test('the default run list lives in the system temp folder, where the agent\'s own Write reaches it', async () => {
   const { runListPath } = await repoFs();
-  assert.equal(runListPath(), path.join(os.tmpdir(), 'coalledger', 'run.json'));
+  const folder = process.getuid ? `coalledger-${process.getuid()}` : 'coalledger';
+  assert.equal(runListPath(), path.join(os.tmpdir(), folder, 'run.json'));
 });
 
 test('a run list whose owner is another user is refused, judged by the uid it is given', async () => {
