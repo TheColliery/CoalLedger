@@ -174,11 +174,12 @@ test('a config value holding a command substitution is read as data: no shell ru
 test('the command the built doc-consistency SKILL.md names reads the project config, with no value pasted into it', (t) => {
   const d = repo(t);
   configPairs(d, ['a.md=b.md']);
-  fs.mkdirSync(path.join(SANDBOX_ENV.TMP, 'coalledger'), { recursive: true });
-  fs.writeFileSync(path.join(SANDBOX_ENV.TMP, 'coalledger', 'run.json'), JSON.stringify({ root: d, docs: [] }));
+  const folder = path.join(SANDBOX_ENV.TMP, process.getuid ? `coalledger-${process.getuid()}` : 'coalledger');
+  fs.mkdirSync(folder, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(folder, 'run.json'), JSON.stringify({ root: d, docs: [] }));
   const skillDir = path.join(here, '..', '..', 'plugin', 'skills', 'doc-consistency');
   const md = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
-  const span = /`(cd "<skill base dir>" && node \.\/lib\/translation-pairs\.mjs[^`]*)`/.exec(md);
+  const span = /`(cd "<skill base dir>" && node \.\/lib\/translation-pairs\.mjs[^`]*--list(?![-\w])[^`]*)`/.exec(md);
   assert.ok(span, 'the SKILL names the engine command in one code span');
   const cmd = span[1]
     .split('<skill base dir>').join(skillDir.split(path.sep).join('/'))

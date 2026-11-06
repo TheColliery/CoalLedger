@@ -95,7 +95,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseMarkdown, walk, textContent, makeSlugger, githubSlug } from './md-ast.mjs';
-import { readRepoFileBounded, docReadRoot, docReadError, readRunList, runListLine, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, docReadRoot, docReadError, readRunList, runListLine, listPathCli, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 // A real anchor id/name only — the negative lookbehind for a word-char or hyphen
@@ -552,7 +552,7 @@ function readListOrReport() {
   try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
 }
 
-if (isMainModule(import.meta.url)) {
+if (isMainModule(import.meta.url) && !listPathCli()) {
   const args = process.argv.slice(2);
   const json = args.includes('--json');
   const listed = args.includes('--list');

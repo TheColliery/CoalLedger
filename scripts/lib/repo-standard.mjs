@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { repoEntryKind, readRepoFileBounded, readRunList, runListLine, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { repoEntryKind, readRepoFileBounded, readRunList, runListLine, listPathCli, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 // The criterion ids the engine can emit; the test checks each one against the CoalGob checklist's headings.
 export const CRITERIA = ['license_location', 'contribution', 'vulnerability_report_process', 'release_notes'];
@@ -174,7 +174,7 @@ function readListOrReport() {
   try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
 }
 
-if (isMainModule(import.meta.url)) {
+if (isMainModule(import.meta.url) && !listPathCli()) {
   const args = process.argv.slice(2);
   const rootArg = args.find((a) => a.startsWith('--root='));
   const nowArg = args.find((a) => a.startsWith('--now='));

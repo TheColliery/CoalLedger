@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { repoEntryKind, readRunList, runListLine } from './repo-fs.mjs';
+import { repoEntryKind, readRunList, runListLine, listPathCli } from './repo-fs.mjs';
 import { gitEnv } from './git-env.mjs';
 import { loadMergedConfig } from './config-load.mjs';
 import { clampedRead } from './config-schema.mjs';
@@ -102,7 +102,7 @@ function readListOrReport() {
   try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
 }
 
-if (isMainModule(import.meta.url)) {
+if (isMainModule(import.meta.url) && !listPathCli()) {
   const args = process.argv.slice(2);
   const rootArg = args.find((a) => a.startsWith('--root='));
   const listed = args.includes('--list');

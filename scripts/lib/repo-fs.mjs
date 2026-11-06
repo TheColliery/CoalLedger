@@ -333,8 +333,13 @@ export function writeRepoFile(target, content, root) {
 // own Write reaches: a protected path such as ~/.claude is prompted and refused.
 // shortcut: two sessions sharing this one file can overwrite each other's list between the write and the run; a per-session
 // name would need the session id, which no skill command carries.
+// The folder only its own user can write: coalledger-<uid> where the platform reports a uid, coalledger where it does not.
+export function runListFolder() {
+  const uid = process.getuid?.();
+  return path.join(os.tmpdir(), uid === undefined ? 'coalledger' : `coalledger-${uid}`);
+}
 export function runListPath() {
-  return path.join(os.tmpdir(), 'coalledger', 'run.json');
+  return path.join(runListFolder(), 'run.json');
 }
 // True when the file's owner is a different user. The uid is passed in, so a platform that reports none (Windows) refuses nothing.
 export function refusesOwner(st, uid) {
@@ -352,15 +357,74 @@ function runListError(message) {
 }
 // Reads the run list through the bounded reader (kind gate, size ceiling, never truncated), validates its shape, and returns
 // { root, docs }. Every refusal is a human message naming the rule and the file; a raw parse error never reaches the caller.
+// Refuses a folder that is a link, is owned by another user, or is open to group or other bits (a platform with a uid only).
+// Returns false when the folder is absent, true when the user may use it.
+export function checkRunListFolder(dir) {
+  const uid = process.getuid?.();
+  let st;
+  try { st = fs.lstatSync(dir); } catch (e) {
+    if (e.code === 'ENOENT') return false;
+    throw runListError(`the run list folder ${dir} could not be inspected (${e.code})`);
+  }
+  if (st.isSymbolicLink()) throw runListError(`the run list folder ${dir} is a link; remove the link and run this command again`);
+  if (!st.isDirectory()) throw runListError(`the run list folder ${dir} is not a folder; remove it and run this command again`);
+  if (uid !== undefined && refusesOwner(st, uid)) throw runListError(`the run list folder ${dir} belongs to another user; remove it and run this command again`);
+  if (uid !== undefined && (st.mode & 0o077) !== 0) throw runListError(`the run list folder ${dir} is open to others; remove it and run this command again`);
+  return true;
+}
+// --list-path: makes the folder (one level, mode 0700; the temp folder above it already exists), checks it again after the make,
+// and returns the list path. It reads nothing and refuses rather than reading through anything.
+export function ensureRunListFolder() {
+  const dir = runListFolder();
+  if (!checkRunListFolder(dir)) {
+    try { fs.mkdirSync(dir, { mode: 0o700 }); } catch (e) {
+      if (e.code !== 'EEXIST') throw runListError(`the run list folder ${dir} could not be made (${e.code})`);
+    }
+    checkRunListFolder(dir);
+  }
+  return runListPath();
+}
+// For an engine's CLI: prints the list path alone on stdout, or refuses on stderr with exit 2. True when the flag was given.
+export function listPathCli(argv = process.argv.slice(2)) {
+  if (!argv.includes('--list-path')) return false;
+  try { console.log(ensureRunListFolder()); } catch (e) { console.error(e.message); process.exitCode = 2; }
+  return true;
+}
+// Reads the list file without following a link: O_NOFOLLOW where the platform has it, else an lstat first. Owner, type and size
+// come from the open descriptor, so the bytes parsed are the bytes checked. Null when missing, not a plain file or over the
+// bound; a link or another user's file throws.
+function readRunListText(file) {
+  const uid = process.getuid?.();
+  const noFollow = fs.constants.O_NOFOLLOW;
+  if (!noFollow) {
+    let l = null;
+    try { l = fs.lstatSync(file); } catch { return null; }
+    if (l.isSymbolicLink()) throw runListError(`the run list at ${file} is a link; remove the link and run this command again`);
+  }
+  let fd;
+  try { fd = fs.openSync(file, fs.constants.O_RDONLY | (noFollow || 0) | (fs.constants.O_NONBLOCK || 0)); } catch (e) {
+    if (e.code === 'ELOOP') throw runListError(`the run list at ${file} is a link; remove the link and run this command again`);
+    return null;
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size > MAX_CONFIG_BYTES) return null;
+    if (refusesOwner(st, uid)) throw runListError(`the run list at ${file} belongs to another user; write it again as yourself, then run this command again`);
+    const buf = Buffer.alloc(st.size);
+    let got = 0;
+    while (got < st.size) {
+      const n = fs.readSync(fd, buf, got, st.size - got, got);
+      if (n <= 0) break;
+      got += n;
+    }
+    return got === st.size ? buf.toString('utf8') : null;
+  } finally { try { fs.closeSync(fd); } catch {} }
+}
 export function readRunList(file = runListPath()) {
-  const text = readRepoFileBounded(file, null, MAX_CONFIG_BYTES);
+  checkRunListFolder(path.dirname(file));
+  const text = readRunListText(file);
   if (text === null) {
     throw runListError(`no readable run list at ${file} (missing, not a plain file, or over 1 MiB): write it first with your file tool at exactly that path, as {"root": "<absolute project folder>", "docs": ["<absolute doc path>", ...]}, then run this command again`);
-  }
-  let owner = null;
-  try { owner = fs.statSync(file); } catch { owner = null; }
-  if (owner && refusesOwner(owner, process.getuid?.())) {
-    throw runListError(`the run list at ${file} belongs to another user; write it again as yourself, then run this command again`);
   }
   let obj;
   try { obj = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text); } catch { throw runListError(`the run list at ${file} is not JSON`); }

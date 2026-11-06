@@ -24,10 +24,10 @@ const ENGINES = [
   { skill: 'doc-standard', engine: 'repo-standard', docs: false, args: ['--json', '--now=2026-11-06T00:00:00Z'] },
 ];
 
-const runListFile = () => path.join(SANDBOX_ENV.TMP, 'coalledger', 'run.json');
+const runListFile = () => path.join(SANDBOX_ENV.TMP, process.getuid ? `coalledger-${process.getuid()}` : 'coalledger', 'run.json');
 
 function writeRunList(root, docs) {
-  fs.mkdirSync(path.dirname(runListFile()), { recursive: true });
+  fs.mkdirSync(path.dirname(runListFile()), { recursive: true, mode: 0o700 });
   fs.writeFileSync(runListFile(), JSON.stringify({ root, docs }));
 }
 
@@ -82,7 +82,7 @@ function shipped(i, t) {
   const { p, doc, base } = project(t, engine);
   writeRunList(p, docs ? [doc] : []);
   const md = fs.readFileSync(path.join(ROOT, 'plugin', 'skills', skill, 'SKILL.md'), 'utf8');
-  const span = new RegExp('`(cd "<skill base dir>" && node \\./lib/' + engine + '\\.mjs[^`]*)`').exec(md);
+  const span = new RegExp('`(cd "<skill base dir>" && node \\./lib/' + engine + '\\.mjs[^`]*--list(?![-\\w])[^`]*)`').exec(md);
   assert.ok(span, `${skill} names the ${engine} command in one code span`);
   assert.doesNotMatch(span[1], /<project root>|<absolute-file\.md>/, 'the command line carries no project root and no doc path');
   const copy = path.join(base, 'skill');

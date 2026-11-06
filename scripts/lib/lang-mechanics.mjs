@@ -80,7 +80,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRepoFileBounded, docReadRoot, docReadError, readRunList, runListLine, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, docReadRoot, docReadError, readRunList, runListLine, listPathCli, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 // ---------------------------------------------------------------------------
 // Script ranges (CWK-101-DESIGN §2) -- detection by CODEPOINT, never by a
@@ -471,7 +471,7 @@ function readListOrReport() {
   try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
 }
 
-if (isMainModule(import.meta.url)) {
+if (isMainModule(import.meta.url) && !listPathCli()) {
   const args = process.argv.slice(2);
   const opts = { plain: args.includes('--plain'), json: args.includes('--json') };
   const scriptIdx = args.findIndex((a) => a === '--script');

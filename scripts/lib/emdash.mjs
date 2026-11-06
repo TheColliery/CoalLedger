@@ -87,7 +87,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRepoFileBounded, docReadRoot, docReadError, readRunList, runListLine, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, docReadRoot, docReadError, readRunList, runListLine, listPathCli, MAX_DOC_BYTES } from './repo-fs.mjs';
 import { loadMergedConfig } from './config-load.mjs';
 import { clampedRead } from './config-schema.mjs';
 
@@ -374,7 +374,7 @@ function readListOrReport() {
 }
 // With no --mode the rule is the project's `emDash` (read through the config cascade by this engine, so a SKILL never
 // pastes it onto a shell line). --mode stays as a flag for tests and direct use.
-if (isMainModule(import.meta.url)) {
+if (isMainModule(import.meta.url) && !listPathCli()) {
   const args = process.argv.slice(2);
   if (args.includes('--selftest')) {
     const fails = selfTest();
