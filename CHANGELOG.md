@@ -2,11 +2,17 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
-## [Unreleased]
+## [0.17.0-beta.4] - 2026-11-06
+
+doc skills take their paths from a run list in the temp folder
+
+The doc skills no longer put a path on a command line. The agent writes the project folder and the doc paths to `coalledger/run.json` in the system temp folder, and the engine reads them there. Nothing to configure. A run list owned by another user is refused with a message naming the file. The engines name the run list's root and doc count on every `--list` run, on stdout or, under `--json` for the array engines, on stderr. Two sessions sharing that one file can overwrite each other's list between the write and the run.
 
 ### Security
-- **The doc skills take their paths from a run list, not the command line (commit `3a3af3638ff280bbdcbc84e928509bbea5ce09d2`).** The agent writes the project folder and the doc paths to `~/.claude/coal/coalledger/run.json` (under `CLAUDE_CONFIG_DIR` when that is set), and the engine reads them there, so no path is placed on a command line. This hardens how the skills take their paths. Two sessions sharing that one file can overwrite each other's list between the write and the run.
-- **New write: the run list.** The skills write `~/.claude/coal/coalledger/run.json` (commit `3a3af3638ff280bbdcbc84e928509bbea5ce09d2`); the README and SECURITY.md write lists name it.
+- **The doc skills take their paths from a run list, not the command line (commit `3a3af3638ff280bbdcbc84e928509bbea5ce09d2`).** No path is placed on a command line; the engine reads the list as data.
+- **The skill prose and the README and SECURITY.md write lists name the run list (commit `5b4f3aa7029d75819b9bde8f375b513dabf2161c`).**
+- **The run list moves to the system temp folder and the engines refuse a list owned by another user (commit `233d7fe3802de0fea18503d984c8b38d3b5ad1cc`).**
+- **The array-shaped engines print the run list line on stderr under `--json` (commit `be253ef735601f47f08cca830c73de5f40b2c93d`), so stdout stays one JSON array.**
 
 ## [0.17.0-beta.3] - 2026-11-06
 
