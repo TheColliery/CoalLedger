@@ -25,14 +25,15 @@ git tag -v "$(git describe --tags --abbrev=0)"
 <!-- version-transition: SkillSpector scan—the re-scan is automatic when this room's version is bumped (gated by a baseline diff), not a maintainer command; a genuinely new attack surface is a second trigger, by hand. Bump the version/score/date/commit below only after a real re-scan. Replace this section on a re-scan; never append. -->
 ## Independent Scanning—NVIDIA SkillSpector
 
-Last scan: CoalLedger **v0.17.0-beta.3** dist (`plugin/`, tag `v0.17.0-beta.3`, commit `70ea48b`), on **2026-11-06** (18:33 +07:00), with [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) self-reported version **v2.13.4** (package source revision `54824463814a0be01360792523ec7245a69190fc`), static stage (`--no-llm`). **Score 87/100 (CRITICAL), 20 findings, 0 real.** Against the v0.17.0-beta.2 scan, 7 fingerprints are new and 1 is gone; six of the seven are the same lines copied into the skill folders, and the seventh is the MP3 placeholder, whose text changed. The score moved from 79 (HIGH) with the scanner update and those copies together; this read does not separate them. Each class, read at `70ea48b`:
+Last scan: CoalLedger **v0.17.0-beta.5** dist (`plugin/`, the release at commit `8a11661`), on **2026-11-06** (19:02 UTC), with [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) self-reported version **v2.13.4** (package source revision `54824463814a0be01360792523ec7245a69190fc`), static stage (`--no-llm`). **Score 100/100 (CRITICAL), 25 findings, 0 real.** Each class, read at the scanned tree:
 
 - **RA1 Self-Modification ×15:** the update check is a local stamp the hook schedules. The agent verifies online and offers `claude plugin update`.
+- **RA2 Rogue Agent, Session Persistence ×5:** a comment in each copy of the run-list reader names `~/.claude` as a protected path; the reader writes nothing there.
 - **MP3 Memory Manipulation ×1:** a placeholder the agent fills from its own context, not a memory write.
 - **EA2 Autonomous Decision Making ×3:** code comments listing config keys that carry no consent, spend or outward axis.
 - **BH1 Bundled hooks ×1:** the three declared hooks, each fail-silent, no network, no child process.
 
-Coverage was **partial**: 21 of 43 files fully inspected, 22 partial (21 at the parser's span limit, `hooks/hooks.json` opaque). Two analyzers ran degraded: bundled execution surface, and static patterns for tool misuse. The scan file, `skillspector-20261106T113105Z.json`, is kept locally and gitignored. Earlier scans are in this file's git history (`git log -- SECURITY.md`), and scanning is event-driven.
+Coverage was **partial**: 21 of 43 files fully inspected, 22 partial. The scan file, `skillspector-20261106T190215Z.json`, is kept locally and gitignored. Earlier scans are in this file's git history (`git log -- SECURITY.md`), and scanning is event-driven.
 
 ## Structural Safety
 
