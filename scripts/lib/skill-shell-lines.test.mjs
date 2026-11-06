@@ -19,7 +19,9 @@ const RUNNERS = 'node|npx|npm|pnpm|yarn|bun|deno|python3?|pip3?|uvx?|bash|sh|zsh
 const COMMAND = new RegExp(`(^|[\\s;&|(])(${RUNNERS})(\\.exe)?\\s`);
 const KEYS = CONFIG_SCHEMA.map((s) => s.key);
 
-// Each allowed placeholder names a value the agent takes from its own context, never a value read from a config file.
+// Each allowed placeholder is a value the agent takes from the working context or from the repository, never from a config
+// file: the skill folder and the clock come from the agent's own context; a doc path is repository-written, and the project
+// folder is the user's clone path. Both repository-side values are quoted wherever they appear.
 export const ALLOWED = new Set([
   '<skill base dir>', // the skill folder the agent cds into; its own load context
   '<project root>', // the absolute project folder the agent is working in (the user's clone path)
@@ -28,6 +30,8 @@ export const ALLOWED = new Set([
   '<ask|auto|remind|off>', // commands/update.md: the user's own pick from these four fixed words, never read from config
 ]);
 const PATH_SLOTS = ['<skill base dir>', '<project root>', '<absolute-file.md>'];
+// A bracket notation that names paths ("[more absolute paths ...]") is a path slot too: the shell reads its words unless quoted.
+const BARE_NOTATION = /\[[^\]"]*\bpaths?\b[^\]"]*\.\.\.\]/g;
 const SLOT_PATTERNS = [
   /<[A-Za-z][^<>`\n]*>/g, // <value>
   /\{\{?[A-Za-z_][\w. -]*\}?\}/g, // {value}, {{value}}
@@ -80,6 +84,9 @@ export function scanShellLines(text) {
     for (const [at, slot] of slots) {
       if (!ALLOWED.has(slot)) findings.push({ line: span.line, placeholder: slot, why: 'slot' });
       else if (PATH_SLOTS.includes(slot) && !inDoubleQuotes(span.text, at)) findings.push({ line: span.line, placeholder: slot, why: 'unquoted-path' });
+    }
+    for (const m of span.text.matchAll(BARE_NOTATION)) {
+      if (!inDoubleQuotes(span.text, m.index)) findings.push({ line: span.line, placeholder: m[0], why: 'unquoted-path' });
     }
     const named = KEYS.filter((k) => new RegExp(`\\b${k}\\b`).test(span.text));
     const onlyPicks = slots.size > 0 && [...slots.values()].every((s) => ALLOWED.has(s) && s.includes('|'));
@@ -149,7 +156,8 @@ const PLANTS = {
   'shell variable slot': 'Run `node ./lib/x.mjs --mode=$EMDASH` with the configured value.',
   'brace slot': 'Run `node ./lib/x.mjs --pair={pair}` now.',
   'upper-case value slot': 'Run `node ./lib/x.mjs --mode=VALUE`, pasting the configured emDash for VALUE.',
-  'allowed slot fed from config prose': 'Run `node ./lib/x.mjs <absolute-file.md>`, pasting each configured translationPairs side for it.',
+  'allowed slot fed from config prose': 'Run `node ./lib/x.mjs "<absolute-file.md>"`, pasting each configured translationPairs side for it.',
+  'bare bracket notation after a quoted slot': 'Run `cd "<skill base dir>" && node ./lib/x.mjs --root="<project root>" "<absolute-file.md>" [more absolute paths ...]` now.',
   'npx runner': 'Run `npx foo --pair=<pair>` now.',
   'python runner': 'Run `python3 x.py --pair=<pair>` now.',
   'double-backtick span (control)': 'Run ``node ./lib/x.mjs --pair=<pair>`` now.',
@@ -162,6 +170,10 @@ for (const [name, text] of Object.entries(PLANTS)) {
 
 test('a quoted path slot and an allowlisted name pass', () => {
   assert.deepEqual(scanShellLines('Run `cd "<skill base dir>" && node ./lib/x.mjs --root="<project root>" "<absolute-file.md>"` now.'), []);
+});
+
+test('a bracket notation naming paths passes once its path is quoted', () => {
+  assert.deepEqual(scanShellLines('Run `cd "<skill base dir>" && node ./lib/x.mjs --root="<project root>" "<absolute-file.md>" ["<absolute-file.md>" ...]` now.'), []);
 });
 
 test('an unquoted path slot is refused: a file name with a space splits into arguments', () => {
@@ -179,7 +191,7 @@ test('a fixed word-list pick beside a config key passes (the update.md shape)', 
   assert.deepEqual(scanShellLines('Run `node scripts/configure.mjs --updateMode <ask|auto|remind|off>` now.'), []);
 });
 
-// Path slots that the shell splits when unquoted, read on the shipped tree (item 1 of r52).
+// Path slots that the shell splits when unquoted, read on the shipped tree (item 1 of r52; bounce 2: the bracket notation too).
 function unquotedPathSlots(text) {
   const out = [];
   for (const span of commandSpans(text)) {
@@ -187,6 +199,9 @@ function unquotedPathSlots(text) {
       for (let at = span.text.indexOf(slot); at >= 0; at = span.text.indexOf(slot, at + 1)) {
         if (!inDoubleQuotes(span.text, at)) out.push({ line: span.line, slot });
       }
+    }
+    for (const m of span.text.matchAll(BARE_NOTATION)) {
+      if (!inDoubleQuotes(span.text, m.index)) out.push({ line: span.line, slot: m[0] });
     }
   }
   return out;
