@@ -1,6 +1,6 @@
-// T-47 (order 29cl): each engine reads its project root and doc paths from the run list when given --list, and the shipped
-// skill line that runs it names neither. A doc whose name carries a shell substitution is read as data: no marker appears,
-// whether the engine is run directly or through the command line the built SKILL.md names. Sandboxed HOME and USERPROFILE;
+// Each engine reads its project root and doc paths from the run list when given --list, and the shipped skill line that
+// runs it names neither. A doc whose name carries a shell substitution is read as data: no marker appears, whether the
+// engine is run directly or through the command line the built SKILL.md names. Sandboxed HOME, USERPROFILE and TEMP;
 // every folder is made under the resolved temp root and removed by the test that made it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,7 +24,7 @@ const ENGINES = [
   { skill: 'doc-standard', engine: 'repo-standard', docs: false, args: ['--json', '--now=2026-11-06T00:00:00Z'] },
 ];
 
-const runListFile = () => path.join(SANDBOX_ENV.HOME, '.claude', 'coal', 'coalledger', 'run.json');
+const runListFile = () => path.join(SANDBOX_ENV.TMP, 'coalledger', 'run.json');
 
 function writeRunList(root, docs) {
   fs.mkdirSync(path.dirname(runListFile()), { recursive: true });
@@ -56,7 +56,14 @@ function equivalence(i, t) {
   const control = spawnSync(process.execPath, [engineFile(engine), ...args, `--root=${p}`, ...(docs ? [doc] : [])], { encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL', env: SANDBOX_ENV, cwd: p });
   const listed = spawnSync(process.execPath, [engineFile(engine), ...args, '--list'], { encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL', env: SANDBOX_ENV, cwd: p });
   assert.equal(listed.status, control.status, listed.stderr);
-  assert.equal(listed.stdout, control.stdout);
+  // --list adds its run-list line (text) or runList field (JSON); the explicit-path control has neither, so both are set aside.
+  if (args.includes('--json')) {
+    const o = JSON.parse(listed.stdout);
+    if (o && !Array.isArray(o)) delete o.runList;
+    assert.deepEqual(o, JSON.parse(control.stdout));
+  } else {
+    assert.equal(listed.stdout.replace(/^run list: [^\n]*\n/, ''), control.stdout);
+  }
   assert.equal(fs.existsSync(path.join(p, `MARK-${engine}`)), false, 'a shell ran the doc name');
 }
 
@@ -105,3 +112,16 @@ test('the command the built doc-consistency SKILL.md names for translation-pairs
 test('repo-standard --list reads the root from the run list and reports what the explicit-path run reports', (t) => equivalence(4, t));
 test('repo-standard --list with a relative root exits 2 and names the absolute rule', (t) => refusal(4, t));
 test('the command the built doc-standard SKILL.md names for repo-standard reads the run list, and a doc name is data', (t) => shipped(4, t));
+test('md-checks --list names the run list root and doc count on its first line, before the findings', (t) => {
+  const { p, doc } = project(t, 'md-checks');
+  writeRunList(p, [doc]);
+  const r = spawnSync(process.execPath, [engineFile('md-checks'), '--list'], { encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL', env: SANDBOX_ENV, cwd: p });
+  const first = r.stdout.split(/\r?\n/)[0];
+  assert.ok(first.includes(p) && first.includes('(1 doc)'), r.stdout);
+});
+test('repo-standard --json --list carries the run list root and doc count as a runList field', (t) => {
+  const { p } = project(t, 'repo-standard');
+  writeRunList(p, []);
+  const r = spawnSync(process.execPath, [engineFile('repo-standard'), '--json', '--list'], { encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL', env: SANDBOX_ENV, cwd: p });
+  assert.deepEqual(JSON.parse(r.stdout).runList, { root: p, docs: 0 }, r.stdout);
+});

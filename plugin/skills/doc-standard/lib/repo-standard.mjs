@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { repoEntryKind, readRepoFileBounded, readRunList, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { repoEntryKind, readRepoFileBounded, readRunList, runListLine, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 // The criterion ids the engine can emit; the test checks each one against the CoalGob checklist's headings.
 export const CRITERIA = ['license_location', 'contribution', 'vulnerability_report_process', 'release_notes'];
@@ -170,7 +170,6 @@ function isMainModule(url) {
 
 // CLI: node repo-standard.mjs --root=<project root> [--json] [--now=<ISO>]
 // Exit 0 whenever the run completed, findings included; exit 2 on a usage error. Never process.exit().
-// T-47: the run list (repo-fs.mjs readRunList), or null after printing the refusal; the caller's exit code is then 2.
 function readListOrReport() {
   try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
 }
@@ -180,7 +179,6 @@ if (isMainModule(import.meta.url)) {
   const rootArg = args.find((a) => a.startsWith('--root='));
   const nowArg = args.find((a) => a.startsWith('--now='));
   const nowMs = nowArg ? Date.parse(nowArg.slice('--now='.length)) : Date.now();
-  // --list takes the project root from the run list; the command line names it not (T-47).
   const listed = args.includes('--list');
   const runList = listed ? readListOrReport() : null;
   if (listed && rootArg) {
@@ -198,8 +196,10 @@ if (isMainModule(import.meta.url)) {
     const root = path.resolve(listed ? runList.root : rootArg.slice('--root='.length)); // used literally, never realpathed (the 29w class)
     const findings = checkRepository(root, nowMs);
     if (args.includes('--json')) {
-      console.log(JSON.stringify({ findings }, null, 2));
+      const body = listed ? { findings, runList: { root: runList.root, docs: runList.docs.length } } : { findings };
+      console.log(JSON.stringify(body, null, 2));
     } else {
+      if (listed) console.log(runListLine(runList));
       for (const f of findings) {
         console.log(`${f.verdict} ${JSON.stringify(f.check)} ${JSON.stringify(f.criterion)} ${JSON.stringify(f.reason)}`
           + ` file=${JSON.stringify(f.file ?? null)} line=${JSON.stringify(f.line ?? null)}`);

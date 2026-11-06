@@ -1,6 +1,3 @@
-// T-47 (order 29cl): the run list is the one place a skill command reads the project root and the doc paths from. The agent
-// writes it with its file tool before the command runs; the command line carries no name, so a repository-written name never
-// meets a shell. These tests pin the reader: its shape rule, its refusals, and the path it reads by default.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -72,8 +69,19 @@ test('a folder at the run-list path is refused as not a plain file', async (t) =
   assert.throws(() => readRunList(file), /write it first/);
 });
 
-test('the default run list lives under claudeBaseDir in the coal namespace', async () => {
-  const { runListPath, claudeBaseDir } = await repoFs();
-  const home = path.join(os.tmpdir(), 'home-for-test');
-  assert.equal(runListPath(home), path.join(claudeBaseDir(home), 'coal', 'coalledger', 'run.json'));
+test('the default run list lives in the system temp folder, where the agent\'s own Write reaches it', async () => {
+  const { runListPath } = await repoFs();
+  assert.equal(runListPath(), path.join(os.tmpdir(), 'coalledger', 'run.json'));
+});
+
+test('a run list whose owner is another user is refused, judged by the uid it is given', async () => {
+  const { refusesOwner } = await repoFs();
+  assert.equal(refusesOwner({ uid: 1000 }, 999), true);
+  assert.equal(refusesOwner({ uid: 999 }, 999), false);
+  assert.equal(refusesOwner({ uid: 1000 }, undefined), false, 'a platform with no uid refuses nothing');
+});
+
+test('the current user owns a run list they just wrote (skipped visibly where the platform reports no uid)', { skip: typeof process.getuid !== 'function' ? 'this platform reports no uid (Windows)' : false }, async () => {
+  const { refusesOwner } = await repoFs();
+  assert.equal(refusesOwner({ uid: process.getuid() }, process.getuid()), false);
 });

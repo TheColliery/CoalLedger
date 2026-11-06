@@ -174,9 +174,8 @@ test('a config value holding a command substitution is read as data: no shell ru
 test('the command the built doc-consistency SKILL.md names reads the project config, with no value pasted into it', (t) => {
   const d = repo(t);
   configPairs(d, ['a.md=b.md']);
-  // The run list carries the root (T-47): the skill line names no root, so the list is what the command reads it from.
-  fs.mkdirSync(path.join(SANDBOX_ENV.HOME, '.claude', 'coal', 'coalledger'), { recursive: true });
-  fs.writeFileSync(path.join(SANDBOX_ENV.HOME, '.claude', 'coal', 'coalledger', 'run.json'), JSON.stringify({ root: d, docs: [] }));
+  fs.mkdirSync(path.join(SANDBOX_ENV.TMP, 'coalledger'), { recursive: true });
+  fs.writeFileSync(path.join(SANDBOX_ENV.TMP, 'coalledger', 'run.json'), JSON.stringify({ root: d, docs: [] }));
   const skillDir = path.join(here, '..', '..', 'plugin', 'skills', 'doc-consistency');
   const md = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
   const span = /`(cd "<skill base dir>" && node \.\/lib\/translation-pairs\.mjs[^`]*)`/.exec(md);

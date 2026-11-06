@@ -328,17 +328,22 @@ export function writeRepoFile(target, content, root) {
   }
 }
 
-// T-47 (order 29cl): the run list. A skill command names no project root and no doc path: the agent writes both to this file
-// with its file tool before the command runs, and each engine reads them here. A repository-written name then never reaches
-// a shell, because it never reaches a command line. The path is the coal namespace under claudeBaseDir(), one fixed file.
+// The run list: a skill command names no project root and no doc path; the agent writes both to this file with its file tool
+// before the command runs, and each engine reads them here. It lives in the system temp folder, the one namespace an agent's
+// own Write reaches: a protected path such as ~/.claude is prompted and refused, which left a stale list in r57.
 // shortcut: two sessions sharing this one file can overwrite each other's list between the write and the run; a per-session
 // name would need the session id, which no skill command carries.
-export function claudeBaseDir(home = os.homedir()) {
-  const c = process.env.CLAUDE_CONFIG_DIR;
-  return (c && c.split(',')[0].trim()) || path.join(home, '.claude');
+export function runListPath() {
+  return path.join(os.tmpdir(), 'coalledger', 'run.json');
 }
-export function runListPath(home = os.homedir()) {
-  return path.join(claudeBaseDir(home), 'coal', 'coalledger', 'run.json');
+// True when the file's owner is a different user. The uid is passed in, so a platform that reports none (Windows) refuses nothing.
+export function refusesOwner(st, uid) {
+  return uid !== undefined && st.uid !== uid;
+}
+// The first line of a --list run: the root and the doc count, so a stale list shows before the findings.
+export function runListLine(runList) {
+  const n = runList.docs.length;
+  return `run list: ${runList.root} (${n} doc${n === 1 ? '' : 's'})`;
 }
 function runListError(message) {
   const e = new Error(message);
@@ -350,7 +355,12 @@ function runListError(message) {
 export function readRunList(file = runListPath()) {
   const text = readRepoFileBounded(file, null, MAX_CONFIG_BYTES);
   if (text === null) {
-    throw runListError(`no readable run list at ${file} (missing, not a plain file, or over 1 MiB): write it first with your file tool as {"root": "<absolute project folder>", "docs": ["<absolute doc path>", ...]}, then run this command again`);
+    throw runListError(`no readable run list at ${file} (missing, not a plain file, or over 1 MiB): write it first with your file tool at exactly that path, as {"root": "<absolute project folder>", "docs": ["<absolute doc path>", ...]}, then run this command again`);
+  }
+  let owner = null;
+  try { owner = fs.statSync(file); } catch { owner = null; }
+  if (owner && refusesOwner(owner, process.getuid?.())) {
+    throw runListError(`the run list at ${file} belongs to another user; write it again as yourself, then run this command again`);
   }
   let obj;
   try { obj = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text); } catch { throw runListError(`the run list at ${file} is not JSON`); }

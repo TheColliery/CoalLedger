@@ -21,8 +21,8 @@ const KEYS = CONFIG_SCHEMA.map((s) => s.key);
 
 // Each allowed placeholder is a value the agent takes from its own context, never from a config file or from the
 // repository: the skill folder is the agent's own load context, the clock is supplied by the agent, and the fixed word list
-// is the user's pick. A project root or a doc path is never a slot on a command line (T-47): the agent writes it to the run
-// list, and the engine reads it from there.
+// is the user's pick. A project root or a doc path is never a slot on a command line: the agent writes it to the run list,
+// and the engine reads it from there.
 export const ALLOWED = new Set([
   '<skill base dir>', // the skill folder the agent cds into; its own load context
   '<ISO date>', // a clock value the agent supplies (doc-standard --now)

@@ -87,7 +87,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRepoFileBounded, docReadRoot, docReadError, readRunList, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, docReadRoot, docReadError, readRunList, runListLine, MAX_DOC_BYTES } from './repo-fs.mjs';
 import { loadMergedConfig } from './config-load.mjs';
 import { clampedRead } from './config-schema.mjs';
 
@@ -369,7 +369,6 @@ function isMainModule(url) {
 }
 
 // CLI: node emdash.mjs [--selftest] [--mode=unspaced|spaced|off] [--root=<dir>] <file...>
-// T-47: the run list (repo-fs.mjs readRunList), or null after printing the refusal; the caller's exit code is then 2.
 function readListOrReport() {
   try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
 }
@@ -389,11 +388,11 @@ if (isMainModule(import.meta.url)) {
   }
   const modeArg = args.find((a) => a.startsWith('--mode='));
   const rootArg = args.find((a) => a.startsWith('--root='));
-  // --list takes the root and the doc paths from the run list; the command line names neither (T-47).
   const listed = args.includes('--list');
   const runList = listed ? readListOrReport() : null;
   const root = listed ? runList?.root : (rootArg ? rootArg.slice('--root='.length) : undefined);
   const files = listed ? (runList?.docs ?? []) : args.filter((a) => !a.startsWith('--'));
+  if (listed && runList) console.log(runListLine(runList));
   // No --root: the config is read from the working folder (a bare run; the SKILL always passes --root or --list).
   const mode = modeArg ? modeArg.slice('--mode='.length) : clampedRead(loadMergedConfig({ cwd: root ?? process.cwd() }), 'emDash');
   if (listed && rootArg) {

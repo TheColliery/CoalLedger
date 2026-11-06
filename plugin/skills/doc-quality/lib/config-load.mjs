@@ -14,11 +14,13 @@ import path from 'node:path';
 import os from 'node:os';
 import { parseJsonc } from './jsonc.mjs';
 import { CONFIG_SCHEMA, validateValue } from './config-schema.mjs';
-import { readRepoFileBounded, repoEntryKind, MAX_CONFIG_BYTES, claudeBaseDir } from './repo-fs.mjs';
+import { readRepoFileBounded, repoEntryKind, MAX_CONFIG_BYTES } from './repo-fs.mjs';
 
-// claudeBaseDir lives in repo-fs.mjs (the leaf every skill copy carries, so the run list can name it without importing this
-// file); re-exported here for the callers that already import it from the config cascade.
-export { claudeBaseDir };
+// The base folder of the user's Claude config: CLAUDE_CONFIG_DIR's first entry, else ~/.claude.
+export function claudeBaseDir(home = os.homedir()) {
+  const c = process.env.CLAUDE_CONFIG_DIR;
+  return (c && c.split(',')[0].trim()) || path.join(home, '.claude');
+}
 export function globalConfigPath(home = os.homedir()) {
   return path.join(claudeBaseDir(home), '.coalledger.json');
 }

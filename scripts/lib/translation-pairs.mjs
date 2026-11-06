@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { repoEntryKind, readRunList } from './repo-fs.mjs';
+import { repoEntryKind, readRunList, runListLine } from './repo-fs.mjs';
 import { gitEnv } from './git-env.mjs';
 import { loadMergedConfig } from './config-load.mjs';
 import { clampedRead } from './config-schema.mjs';
@@ -98,7 +98,6 @@ function isMainModule(url) {
 // The pairs come from the project config (`translationPairs`, read through the one cascade) unless --pair flags are
 // given. The flag is for tests and direct use: a SKILL never pastes a config value onto its command line (a cloned
 // repository writes that config). Exit 0 whenever the run completed, findings included; exit 2 on a usage error. Never process.exit().
-// T-47: the run list (repo-fs.mjs readRunList), or null after printing the refusal; the caller's exit code is then 2.
 function readListOrReport() {
   try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
 }
@@ -106,7 +105,6 @@ function readListOrReport() {
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const rootArg = args.find((a) => a.startsWith('--root='));
-  // --list takes the project root from the run list; the command line names it not (T-47).
   const listed = args.includes('--list');
   const runList = listed ? readListOrReport() : null;
   if (listed && rootArg) {
@@ -123,8 +121,10 @@ if (isMainModule(import.meta.url)) {
     const pairs = flagged.length ? flagged : clampedRead(loadMergedConfig({ cwd: root }), 'translationPairs');
     const findings = checkTranslationPairs(root, pairs);
     if (args.includes('--json')) {
-      console.log(JSON.stringify({ findings }, null, 2));
+      const body = listed ? { findings, runList: { root: runList.root, docs: runList.docs.length } } : { findings };
+      console.log(JSON.stringify(body, null, 2));
     } else {
+      if (listed) console.log(runListLine(runList));
       for (const f of findings) {
         console.log(`${f.verdict} ${JSON.stringify(f.check)} ${JSON.stringify(f.rule)} ${JSON.stringify(f.reason)}`
           + ` source=${JSON.stringify(f.source)} counterpart=${JSON.stringify(f.counterpart)}`
