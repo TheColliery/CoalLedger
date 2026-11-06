@@ -2,6 +2,15 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.6] - 2026-11-07
+
+the Antigravity conductor keeps its marker in your private folder
+
+The Antigravity conductor's once-per-session marker now lives in the same private per-user folder the run list uses (`coalledger-<uid>` in the system temp folder). The conductor writes the marker only into a folder that is yours and not open to others, and stays silent on a link. Nothing to configure.
+
+### Security
+- **The Antigravity conductor's marker lives in a folder only you own (commit `ce67bf91d5e5344e015c86ae84b5eaafd3c13bf4`).** On a shared temp folder another account could previously have made the marker's name first; the conductor now refuses a folder that is a link, belongs to another user or is open to others.
+
 ## [0.17.0-beta.5] - 2026-11-07
 
 doc skills ask the engine for a private run list path first
