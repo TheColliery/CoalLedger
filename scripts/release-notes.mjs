@@ -30,13 +30,21 @@ const MAX_CHANGELOG_BYTES = 8388608;
 function readChangelog() {
   const name = 'CHANGELOG.md';
   const refuse = (why) => { throw new Error(`${name} ${why}`); };
-  const st = fs.lstatSync(name);
-  if (!st.isFile()) refuse('is not a regular file (a link or a device is refused, never followed)');
-  if (st.size > MAX_CHANGELOG_BYTES) refuse(`is ${st.size} bytes, past the byte bound of ${MAX_CHANGELOG_BYTES}: refused before it is read`);
-  const fd = fs.openSync(name, 'r');
+  const notRegular = 'is not a regular file (a link or a device is refused, never followed)';
+  // The open is the first act on the name: O_NOFOLLOW refuses a link at the open itself (ELOOP), and O_NONBLOCK keeps a FIFO from blocking it.
+  // Where O_NOFOLLOW does not exist (Windows), an lstat refusal of a link stays in front of the open, the only check there is.
+  const noFollow = fs.constants.O_NOFOLLOW;
+  if (!noFollow && fs.lstatSync(name).isSymbolicLink()) refuse(notRegular);
+  let fd;
+  try {
+    fd = fs.openSync(name, fs.constants.O_RDONLY | (noFollow || 0) | (fs.constants.O_NONBLOCK || 0));
+  } catch (e) {
+    if (e.code === 'ELOOP') refuse(notRegular);
+    throw e;
+  }
   try {
     const open = fs.fstatSync(fd);
-    if (!open.isFile()) refuse('is not a regular file (a link or a device is refused, never followed)');
+    if (!open.isFile()) refuse(notRegular);
     if (open.size > MAX_CHANGELOG_BYTES) refuse(`is ${open.size} bytes, past the byte bound of ${MAX_CHANGELOG_BYTES}: refused before it is read`);
     return fs.readFileSync(fd, 'utf8');
   } finally { fs.closeSync(fd); }
