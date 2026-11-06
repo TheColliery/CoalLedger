@@ -6,7 +6,7 @@
 // `PreInvocation` of a session instead. PreInvocation fires per MODEL CALL
 // (many times per user prompt), so an unguarded port would re-inject the
 // directive into EVERY model call (context spam + token burn). Guard: an
-// atomic once-per-session marker in os.tmpdir() (below).
+// atomic once-per-session marker in the per-user run folder (below).
 //
 // The offer text + config semantics come from ./coalledger-conductor.js
 // (require'd, never re-typed): ONE implementation for both platforms — the
@@ -41,7 +41,6 @@
 // the tmp marker.
 
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { buildOffers, languageLine, lib } = require('./coalledger-conductor.js');
 
@@ -80,16 +79,14 @@ async function main() {
 
   // Atomic once-per-session latch (CodeQL js/insecure-temporary-file /
   // js/file-system-race — the one-flock wx-create shape, CM/CF/CH 2026-07-14).
-  // The marker lives in a private per-tool subdir (mode 0o700 — closes the
-  // shared-/tmp exposure on Unix, a no-op on Windows) and is created with the
-  // `wx` flag (O_CREAT|O_EXCL): the write atomically FAILS with EEXIST if the
-  // path already exists in ANY form (a prior model call's marker, or a planted
-  // file/symlink) — killing the check-then-write TOCTOU race AND refusing a
-  // symlink target in one syscall. The subdir needs its own guard:
-  // mkdirSync(recursive) SILENTLY succeeds on a PRE-PLANTED symlink at
-  // markerDir (following it, the 0o700 mode NOT applied), so the wx marker
-  // would then write THROUGH it into an attacker's dir — lstatSync (does NOT
-  // follow) rejects a symlink subdir before the write.
+  // The marker is created with the `wx` flag (O_CREAT|O_EXCL): the write
+  // atomically FAILS with EEXIST if the path already exists in ANY form (a prior
+  // model call's marker, or a planted file/symlink) — killing the check-then-write
+  // TOCTOU race AND refusing a symlink target in one syscall. The folder needs its
+  // own guard, the one checkRunListFolder gives: mkdirSync SILENTLY succeeds on a
+  // folder that already exists (the 0o700 mode is NOT applied to it), so the
+  // folder is checked after the make — a link, another account's folder, or one
+  // open to others is refused before any marker is written.
   // FAIL-CLOSED (the CF/CM advisory-payload class, a NAMED divergence from
   // CoalHearth's shim which emits + a "may repeat" note): this payload is
   // ADVISORY — repeating it on every model call IS the spam this guard
@@ -100,13 +97,16 @@ async function main() {
   // ponytail: markers are session-scoped and OS-tmp-cleaner reaped; the Stop
   // hook that could collect them (coalledger-drift-stop.js) is CC-only and
   // never runs on AG — accumulation is bounded, same accepted ceiling as CoalFace.
-  const markerDir = path.join(os.tmpdir(), 'coalledger');
-  const marker = path.join(markerDir, `ag-conductor-${hashKey(key)}.marker`);
+  // The folder is the room's per-user folder (repo-fs.mjs runListFolder, the one the run list uses). mkdir's mode is NOT applied to a folder
+  // that already exists, so the folder is checked after the make: a link, a folder another account owns, or one open to group or other bits
+  // is refused (checkRunListFolder throws) and the emit is skipped. Where the platform reports no uid, only the link leg runs.
   try {
-    fs.mkdirSync(markerDir, { recursive: true, mode: 0o700 });
-    if (fs.lstatSync(markerDir).isSymbolicLink()) return; // dir-symlink residual -> fail-closed (see above)
-    fs.writeFileSync(marker, '', { flag: 'wx' });
-  } catch { return; } // EEXIST (already ran) OR any write failure -> fail-closed, no emit
+    const { runListFolder, checkRunListFolder } = await import(lib('repo-fs.mjs'));
+    const markerDir = runListFolder();
+    try { fs.mkdirSync(markerDir, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') return; }
+    if (!checkRunListFolder(markerDir)) return; // absent after the make -> fail-closed
+    fs.writeFileSync(path.join(markerDir, `ag-conductor-${hashKey(key)}.marker`), '', { flag: 'wx' });
+  } catch { return; } // refused folder, EEXIST (already ran), or any write failure -> fail-closed, no emit
 
   // AG does not guarantee the hook process's cwd is the workspace (documented:
   // hook cwd = the directory containing hooks.json); the payload names the

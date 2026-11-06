@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(here, '..', '..');
@@ -225,8 +225,26 @@ function agRun(cwd, home, tmp, stdinText) {
     timeout: 20000,
   });
 }
+// The marker folder is the room's per-user folder (repo-fs.mjs runListFolder): coalledger-<uid> where the platform has a uid.
+function markerFolderName() { return typeof process.getuid === 'function' ? `coalledger-${process.getuid()}` : 'coalledger'; }
+// A preload that makes the hook see another uid, so the owner branch runs on any platform that has a uid.
+function stubUid(dir, uid) {
+  const f = path.join(dir, `uid-${uid}.mjs`);
+  fs.writeFileSync(f, `process.getuid = () => ${uid};\n`);
+  return pathToFileURL(f).href;
+}
+function agRunWith(cwd, home, tmp, stdinText, preload) {
+  const args = preload ? ['--import', preload, AG_HOOK, 'PreInvocation'] : [AG_HOOK, 'PreInvocation'];
+  return spawnSync(process.execPath, args, {
+    cwd,
+    input: stdinText,
+    env: { ...process.env, HOME: home, USERPROFILE: home, TEMP: tmp, TMP: tmp, TMPDIR: tmp, CLAUDE_CONFIG_DIR: '' },
+    encoding: 'utf8',
+    timeout: 20000,
+  });
+}
 function markerFiles(tmp) {
-  const dir = path.join(tmp, 'coalledger');
+  const dir = path.join(tmp, markerFolderName());
   try { return fs.readdirSync(dir).filter((n) => n.endsWith('.marker')); } catch { return []; }
 }
 // Must mirror the hook's djb2 (test-only duplicate, for the plant test below).
@@ -368,8 +386,8 @@ test('AG: current-spec payload (conversationId + workspacePaths) -> config honor
 test('AG: pre-planted marker file (EEXIST) -> fail-closed, no emit', () => {
   const { home, proj, tmp } = agSandbox();
   try {
-    const markerDir = path.join(tmp, 'coalledger');
-    fs.mkdirSync(markerDir, { recursive: true });
+    const markerDir = path.join(tmp, markerFolderName());
+    fs.mkdirSync(markerDir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(markerDir, `ag-conductor-${djb2('s-plant')}.marker`), '');
     const r = agRun(proj, home, tmp, payload('s-plant', proj));
     assertGraceful(r);
@@ -385,6 +403,58 @@ test('AG: unwritable tmp (tmpdir points at a FILE) -> fail-closed silent, exit 0
     const r = agRun(proj, home, asFile, payload('s-nowrite', proj));
     assertGraceful(r);
     assert.strictEqual(r.stdout, '', 'marker cannot persist -> advisory payload skipped (fail-closed)');
+  } finally { clean(home, proj, tmp); }
+});
+
+// The marker folder is the user's own: a folder another account owns, one open to group or other bits, or a link is refused. The hook
+// then writes no marker and emits nothing (fail closed, silent). The control is the same run in the user's own private folder.
+const POSIX_UID = typeof process.getuid === 'function';
+test('AG: a marker folder another account owns is refused: no marker, no emit', { skip: POSIX_UID ? false : 'this platform reports no uid (Windows): the owner branch has no leg to run' }, () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    const folder = path.join(tmp, markerFolderName());
+    fs.mkdirSync(folder, { mode: 0o700 });
+    const r = agRunWith(proj, home, tmp, payload('s-owner', proj), stubUid(tmp, process.getuid() + 1));
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '', 'a folder another account owns is refused: no emit');
+    assert.strictEqual(markerFiles(tmp).length, 0, 'no marker written into the refused folder');
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: a marker folder open to group or other bits is refused: no marker, no emit', { skip: POSIX_UID ? false : 'this platform reports no uid (Windows): the mode check has no leg to run' }, () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    const folder = path.join(tmp, markerFolderName());
+    fs.mkdirSync(folder, { mode: 0o700 });
+    fs.chmodSync(folder, 0o777);
+    const r = agRun(proj, home, tmp, payload('s-open', proj));
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '', 'a folder open to others is refused: no emit');
+    assert.strictEqual(markerFiles(tmp).length, 0, 'no marker written into the open folder');
+  } finally { clean(home, proj, tmp); }
+});
+
+test('AG: a link at the marker folder is refused: no marker, no emit (skipped where this volume cannot make a folder link)', (t) => {
+  const { home, proj, tmp } = agSandbox();
+  const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-elsewhere-')));
+  try {
+    try { fs.symlinkSync(elsewhere, path.join(tmp, markerFolderName()), 'junction'); } catch (e) { t.skip(`this volume cannot make a folder link (${e.code})`); return; }
+    const r = agRun(proj, home, tmp, payload('s-link', proj));
+    assertGraceful(r);
+    assert.strictEqual(r.stdout, '', 'a link at the folder is refused: no emit');
+    assert.strictEqual(fs.readdirSync(elsewhere).filter((n) => n.endsWith('.marker')).length, 0, 'no marker written through the link');
+  } finally { clean(home, proj, tmp, elsewhere); }
+});
+
+test('AG: control — the user\'s own private marker folder lets the emit through and latches the marker', () => {
+  const { home, proj, tmp } = agSandbox();
+  try {
+    const folder = path.join(tmp, markerFolderName());
+    fs.mkdirSync(folder, { mode: 0o700 });
+    const r = agRun(proj, home, tmp, payload('s-own', proj));
+    assertGraceful(r);
+    assert.ok(agInject(r.stdout.trim()).includes('[CoalLedger]'), 'the offer rides the emit');
+    assert.strictEqual(markerFiles(tmp).length, 1, 'the marker is written into the private folder');
   } finally { clean(home, proj, tmp); }
 });
 
