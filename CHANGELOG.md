@@ -2,6 +2,14 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [Unreleased]
+
+### Changed
+- The doc skills now read their config through the engines, and no skill command carries a config value or a path with a shell metacharacter. This hardens how the skills read their config.
+- **doc-consistency:** the translation-pair engine reads `translationPairs` from the config cascade itself, and the skill passes no pair. The skill folder now also carries `lib/config-load.mjs`, `lib/config-schema.mjs` and `lib/jsonc.mjs` (commit `ac7b7a6`).
+- **doc-quality:** the em-dash engine reads `emDash` from the config cascade itself, and the skill passes no `--mode`. The skill folder now also carries `lib/config-load.mjs`, `lib/config-schema.mjs` and `lib/jsonc.mjs` (commit `ac7b7a6`).
+- **doc-consistency, doc-quality, doc-standard, doc-structure:** a project folder or doc path holding a shell metacharacter is not put on a command line; the skill reports that file unscanned. The wording lands in the commit that adds this entry.
+
 ## [0.17.0-beta.2] - 2026-11-03
 
 Relative link targets only; nesting guard and scans in linear time
