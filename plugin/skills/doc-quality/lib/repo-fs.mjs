@@ -24,6 +24,7 @@
 // (node/runtime.md §5) -- a repo-planted symlink there would write arbitrary config JSON
 // into whatever the link points at, the exact PoC-2 class CoalMine's own CWK-137 named.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 // Step 2 of the mirror sheet, re-measured HERE: the largest JSONC config this room
@@ -325,4 +326,38 @@ export function writeRepoFile(target, content, root) {
     }
     throw e;
   }
+}
+
+// T-47 (order 29cl): the run list. A skill command names no project root and no doc path: the agent writes both to this file
+// with its file tool before the command runs, and each engine reads them here. A repository-written name then never reaches
+// a shell, because it never reaches a command line. The path is the coal namespace under claudeBaseDir(), one fixed file.
+// shortcut: two sessions sharing this one file can overwrite each other's list between the write and the run; a per-session
+// name would need the session id, which no skill command carries.
+export function claudeBaseDir(home = os.homedir()) {
+  const c = process.env.CLAUDE_CONFIG_DIR;
+  return (c && c.split(',')[0].trim()) || path.join(home, '.claude');
+}
+export function runListPath(home = os.homedir()) {
+  return path.join(claudeBaseDir(home), 'coal', 'coalledger', 'run.json');
+}
+function runListError(message) {
+  const e = new Error(message);
+  e.code = 'RUN_LIST';
+  return e;
+}
+// Reads the run list through the bounded reader (kind gate, size ceiling, never truncated), validates its shape, and returns
+// { root, docs }. Every refusal is a human message naming the rule and the file; a raw parse error never reaches the caller.
+export function readRunList(file = runListPath()) {
+  const text = readRepoFileBounded(file, null, MAX_CONFIG_BYTES);
+  if (text === null) {
+    throw runListError(`no readable run list at ${file} (missing, not a plain file, or over 1 MiB): write it first with your file tool as {"root": "<absolute project folder>", "docs": ["<absolute doc path>", ...]}, then run this command again`);
+  }
+  let obj;
+  try { obj = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text); } catch { throw runListError(`the run list at ${file} is not JSON`); }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw runListError(`the run list at ${file} must be a JSON object`);
+  if (typeof obj.root !== 'string' || !path.isAbsolute(obj.root) || obj.root.includes('\0')) throw runListError(`the run list's "root" must be an absolute folder path`);
+  if (!Array.isArray(obj.docs) || !obj.docs.every((d) => typeof d === 'string' && path.isAbsolute(d) && !d.includes('\0'))) {
+    throw runListError(`the run list's "docs" must be a list of absolute doc paths`);
+  }
+  return { root: obj.root, docs: obj.docs };
 }

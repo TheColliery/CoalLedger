@@ -95,7 +95,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseMarkdown, walk, textContent, makeSlugger, githubSlug } from './md-ast.mjs';
-import { readRepoFileBounded, docReadRoot, docReadError, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, docReadRoot, docReadError, readRunList, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 // A real anchor id/name only — the negative lookbehind for a word-char or hyphen
@@ -548,14 +548,25 @@ function isMainModule(url) {
   }
 }
 
+// T-47: the run list (repo-fs.mjs readRunList), or null after printing the refusal; the caller's exit code is then 2.
+function readListOrReport() {
+  try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
+}
+
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const json = args.includes('--json');
+  const listed = args.includes('--list');
   const rootArg = args.find((a) => a.startsWith('--root='));
-  const root = rootArg ? rootArg.slice('--root='.length) : undefined;
-  const files = args.filter((a) => a !== '--json' && !a.startsWith('--root='));
-  if (!files.length) {
-    console.error('usage: node md-checks.mjs [--json] [--root=<dir>] <file.md> [more.md ...]');
+  // --list takes the root and the doc paths from the run list; the command line names neither (T-47).
+  const runList = listed ? readListOrReport() : null;
+  const root = listed ? runList?.root : (rootArg ? rootArg.slice('--root='.length) : undefined);
+  const files = listed ? (runList?.docs ?? []) : args.filter((a) => a !== '--json' && !a.startsWith('--root='));
+  if (listed && rootArg) {
+    console.error('usage: --list and --root=<dir> are two ways to give the root; use one');
+    process.exitCode = 2;
+  } else if (!files.length && !(listed && runList === null)) {
+    console.error('usage: node md-checks.mjs [--json] [--list | --root=<dir> <file.md> [more.md ...]]');
     process.exitCode = 1;
   }
   const out = [];

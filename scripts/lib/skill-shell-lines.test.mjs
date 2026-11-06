@@ -19,17 +19,16 @@ const RUNNERS = 'node|npx|npm|pnpm|yarn|bun|deno|python3?|pip3?|uvx?|bash|sh|zsh
 const COMMAND = new RegExp(`(^|[\\s;&|(])(${RUNNERS})(\\.exe)?\\s`);
 const KEYS = CONFIG_SCHEMA.map((s) => s.key);
 
-// Each allowed placeholder is a value the agent takes from the working context or from the repository, never from a config
-// file: the skill folder and the clock come from the agent's own context; a doc path is repository-written, and the project
-// folder is the user's clone path. Both repository-side values are quoted wherever they appear.
+// Each allowed placeholder is a value the agent takes from its own context, never from a config file or from the
+// repository: the skill folder is the agent's own load context, the clock is supplied by the agent, and the fixed word list
+// is the user's pick. A project root or a doc path is never a slot on a command line (T-47): the agent writes it to the run
+// list, and the engine reads it from there.
 export const ALLOWED = new Set([
   '<skill base dir>', // the skill folder the agent cds into; its own load context
-  '<project root>', // the absolute project folder the agent is working in (the user's clone path)
-  '<absolute-file.md>', // a doc path inside the project: repository-written, not agent context; quoted wherever it appears, so a space or a shell character in its name stays one argument
   '<ISO date>', // a clock value the agent supplies (doc-standard --now)
   '<ask|auto|remind|off>', // commands/update.md: the user's own pick from these four fixed words, never read from config
 ]);
-const PATH_SLOTS = ['<skill base dir>', '<project root>', '<absolute-file.md>'];
+const PATH_SLOTS = ['<skill base dir>'];
 // A bracket notation that names paths ("[more absolute paths ...]") is a path slot too: the shell reads its words unless quoted.
 const BARE_NOTATION = /\[[^\]"]*\bpaths?\b[^\]"]*\.\.\.\]/g;
 const SLOT_PATTERNS = [
@@ -122,7 +121,7 @@ test('the scanner refuses a config placeholder inside an inline command span', (
 });
 
 test('the scanner refuses a config placeholder on a fenced command line', () => {
-  const text = ['```', 'node ./lib/emdash.mjs --mode=<unspaced|spaced> --root="<project root>" "<absolute-file.md>"', '```'].join('\n');
+  const text = ['```', 'node ./lib/emdash.mjs --mode=<unspaced|spaced> --list', '```'].join('\n');
   assert.deepEqual(scanShellLines(text).map((f) => f.placeholder), ['<unspaced|spaced>']);
 });
 
@@ -130,9 +129,17 @@ test('a placeholder outside any command span is prose and is not read here', () 
   assert.deepEqual(scanShellLines('The value is `<source=counterpart>` in prose.'), []);
 });
 
-test('a command span carrying only allowlisted, quoted placeholders passes', () => {
-  const text = 'Run `cd "<skill base dir>" && node ./lib/md-checks.mjs --json --root="<project root>" "<absolute-file.md>"`.';
+test('a command span carrying only the allowlisted skill folder passes', () => {
+  const text = 'Run `cd "<skill base dir>" && node ./lib/md-checks.mjs --json --list`.';
   assert.deepEqual(scanShellLines(text), []);
+});
+
+test('a project root on a command line is refused: the agent writes it to the run list instead', () => {
+  assert.ok(scanShellLines('Run `cd "<skill base dir>" && node ./lib/x.mjs --root="<project root>" --list` now.').length >= 1);
+});
+
+test('a doc path on a command line is refused, quoted or not: it goes to the run list instead', () => {
+  assert.ok(scanShellLines('Run `cd "<skill base dir>" && node ./lib/x.mjs --json --list "<absolute-file.md>"` now.').length >= 1);
 });
 
 test('every command span shipped in plugin/ carries only allowlisted placeholders, and the walk saw spans', () => {
@@ -168,12 +175,12 @@ for (const [name, text] of Object.entries(PLANTS)) {
   });
 }
 
-test('a quoted path slot and an allowlisted name pass', () => {
-  assert.deepEqual(scanShellLines('Run `cd "<skill base dir>" && node ./lib/x.mjs --root="<project root>" "<absolute-file.md>"` now.'), []);
+test('a quoted skill folder and a list run pass', () => {
+  assert.deepEqual(scanShellLines('Run `cd "<skill base dir>" && node ./lib/x.mjs --json --list` now.'), []);
 });
 
-test('a bracket notation naming paths passes once its path is quoted', () => {
-  assert.deepEqual(scanShellLines('Run `cd "<skill base dir>" && node ./lib/x.mjs --root="<project root>" "<absolute-file.md>" ["<absolute-file.md>" ...]` now.'), []);
+test('a bracket notation naming paths passes once its words are quoted', () => {
+  assert.deepEqual(scanShellLines('Run `cd "<skill base dir>" && node ./lib/x.mjs --json --list ["more absolute paths" ...]` now.'), []);
 });
 
 test('an unquoted path slot is refused: a file name with a space splits into arguments', () => {

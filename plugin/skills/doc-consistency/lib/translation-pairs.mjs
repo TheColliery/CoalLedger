@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { repoEntryKind } from './repo-fs.mjs';
+import { repoEntryKind, readRunList } from './repo-fs.mjs';
 import { gitEnv } from './git-env.mjs';
 import { loadMergedConfig } from './config-load.mjs';
 import { clampedRead } from './config-schema.mjs';
@@ -98,14 +98,27 @@ function isMainModule(url) {
 // The pairs come from the project config (`translationPairs`, read through the one cascade) unless --pair flags are
 // given. The flag is for tests and direct use: a SKILL never pastes a config value onto its command line (a cloned
 // repository writes that config). Exit 0 whenever the run completed, findings included; exit 2 on a usage error. Never process.exit().
+// T-47: the run list (repo-fs.mjs readRunList), or null after printing the refusal; the caller's exit code is then 2.
+function readListOrReport() {
+  try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
+}
+
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const rootArg = args.find((a) => a.startsWith('--root='));
-  if (!rootArg || rootArg.length === '--root='.length) {
-    console.error('usage: node translation-pairs.mjs --root=<project root> [--json] [--pair=<source=counterpart> ...]');
+  // --list takes the project root from the run list; the command line names it not (T-47).
+  const listed = args.includes('--list');
+  const runList = listed ? readListOrReport() : null;
+  if (listed && rootArg) {
+    console.error('usage: --list and --root=<dir> are two ways to give the root; use one');
+    process.exitCode = 2;
+  } else if (listed && runList === null) {
+    // the refusal is printed and the exit code is 2
+  } else if (!listed && (!rootArg || rootArg.length === '--root='.length)) {
+    console.error('usage: node translation-pairs.mjs (--list | --root=<project root>) [--json] [--pair=<source=counterpart> ...]');
     process.exitCode = 2;
   } else {
-    const root = path.resolve(rootArg.slice('--root='.length)); // used literally, never realpathed (the 29w class)
+    const root = path.resolve(listed ? runList.root : rootArg.slice('--root='.length)); // used literally, never realpathed (the 29w class)
     const flagged = args.filter((a) => a.startsWith('--pair=')).map((a) => a.slice('--pair='.length));
     const pairs = flagged.length ? flagged : clampedRead(loadMergedConfig({ cwd: root }), 'translationPairs');
     const findings = checkTranslationPairs(root, pairs);

@@ -80,7 +80,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRepoFileBounded, docReadRoot, docReadError, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, docReadRoot, docReadError, readRunList, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 // ---------------------------------------------------------------------------
 // Script ranges (CWK-101-DESIGN §2) -- detection by CODEPOINT, never by a
@@ -467,6 +467,11 @@ function isMainModule(url) {
   }
 }
 
+// T-47: the run list (repo-fs.mjs readRunList), or null after printing the refusal; the caller's exit code is then 2.
+function readListOrReport() {
+  try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
+}
+
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const opts = { plain: args.includes('--plain'), json: args.includes('--json') };
@@ -474,9 +479,18 @@ if (isMainModule(import.meta.url)) {
   if (scriptIdx !== -1) opts.script = args[scriptIdx + 1];
   const rootArg = args.find((a) => a.startsWith('--root='));
   if (rootArg) opts.root = rootArg.slice('--root='.length);
-  const files = args.filter((a, i) => !a.startsWith('--') && (scriptIdx === -1 || i !== scriptIdx + 1));
-  if (!files.length) {
-    console.error('usage: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] [--root=<dir>] <file.md> [more.md ...]');
+  // --list takes the root and the doc paths from the run list; the command line names neither (T-47).
+  const listed = args.includes('--list');
+  const runList = listed ? readListOrReport() : null;
+  if (listed) opts.root = runList?.root;
+  const files = listed ? (runList?.docs ?? []) : args.filter((a, i) => !a.startsWith('--') && (scriptIdx === -1 || i !== scriptIdx + 1));
+  if (listed && rootArg) {
+    console.error('usage: --list and --root=<dir> are two ways to give the root; use one');
+    process.exitCode = 2;
+  } else if (listed && runList === null) {
+    // the refusal is printed and the exit code is 2
+  } else if (!files.length) {
+    console.error('usage: node lang-mechanics.mjs [--plain] [--json] [--script en|zh|ja|ko] [--list | --root=<dir>] <file.md> [more.md ...]');
     process.exitCode = 1;
   } else {
     const out = [];

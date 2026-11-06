@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { repoEntryKind, readRepoFileBounded, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { repoEntryKind, readRepoFileBounded, readRunList, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 // The criterion ids the engine can emit; the test checks each one against the CoalGob checklist's headings.
 export const CRITERIA = ['license_location', 'contribution', 'vulnerability_report_process', 'release_notes'];
@@ -170,19 +170,32 @@ function isMainModule(url) {
 
 // CLI: node repo-standard.mjs --root=<project root> [--json] [--now=<ISO>]
 // Exit 0 whenever the run completed, findings included; exit 2 on a usage error. Never process.exit().
+// T-47: the run list (repo-fs.mjs readRunList), or null after printing the refusal; the caller's exit code is then 2.
+function readListOrReport() {
+  try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
+}
+
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const rootArg = args.find((a) => a.startsWith('--root='));
   const nowArg = args.find((a) => a.startsWith('--now='));
   const nowMs = nowArg ? Date.parse(nowArg.slice('--now='.length)) : Date.now();
-  if (!rootArg || rootArg.length === '--root='.length) {
-    console.error('usage: node repo-standard.mjs --root=<project root> [--json] [--now=<ISO>]');
+  // --list takes the project root from the run list; the command line names it not (T-47).
+  const listed = args.includes('--list');
+  const runList = listed ? readListOrReport() : null;
+  if (listed && rootArg) {
+    console.error('usage: --list and --root=<dir> are two ways to give the root; use one');
+    process.exitCode = 2;
+  } else if (listed && runList === null) {
+    // the refusal is printed and the exit code is 2
+  } else if (!listed && (!rootArg || rootArg.length === '--root='.length)) {
+    console.error('usage: node repo-standard.mjs (--list | --root=<project root>) [--json] [--now=<ISO>]');
     process.exitCode = 2;
   } else if (Number.isNaN(nowMs)) {
     console.error(`usage: --now must be an ISO date (got ${JSON.stringify(nowArg)})`);
     process.exitCode = 2;
   } else {
-    const root = path.resolve(rootArg.slice('--root='.length)); // used literally, never realpathed (the 29w class)
+    const root = path.resolve(listed ? runList.root : rootArg.slice('--root='.length)); // used literally, never realpathed (the 29w class)
     const findings = checkRepository(root, nowMs);
     if (args.includes('--json')) {
       console.log(JSON.stringify({ findings }, null, 2));
