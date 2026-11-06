@@ -5,14 +5,17 @@
 // last committed before its source? Dates come from git's committer record, never from mtime (a checkout or a copy
 // resets mtime). Every finding is SUSPECTED: which side is the true one is a judgment this engine never makes.
 //
-// Zero-dep (Phoenix #2): node built-ins plus this folder's repo-fs.mjs (kind-gated file reads) and git-env.mjs
-// (the git spawn's environment). Both ride beside this file in the skill copy.
+// Zero-dep (Phoenix #2): node built-ins plus this folder's repo-fs.mjs (kind-gated file reads), git-env.mjs
+// (the git spawn's environment) and the config cascade (config-load.mjs, config-schema.mjs, jsonc.mjs). All of them ride
+// beside this file in the skill copy.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { repoEntryKind } from './repo-fs.mjs';
 import { gitEnv } from './git-env.mjs';
+import { loadMergedConfig } from './config-load.mjs';
+import { clampedRead } from './config-schema.mjs';
 
 const ruleText = (raw) => `translationPairs ${JSON.stringify(raw)}`;
 
@@ -92,7 +95,9 @@ function isMainModule(url) {
 }
 
 // CLI: node translation-pairs.mjs --root=<project root> [--json] [--pair=<source=counterpart> ...]
-// Exit 0 whenever the run completed, findings included; exit 2 on a usage error. Never process.exit().
+// The pairs come from the project config (`translationPairs`, read through the one cascade) unless --pair flags are
+// given. The flag is for tests and direct use: a SKILL never pastes a config value onto its command line (a cloned
+// repository writes that config). Exit 0 whenever the run completed, findings included; exit 2 on a usage error. Never process.exit().
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const rootArg = args.find((a) => a.startsWith('--root='));
@@ -101,7 +106,8 @@ if (isMainModule(import.meta.url)) {
     process.exitCode = 2;
   } else {
     const root = path.resolve(rootArg.slice('--root='.length)); // used literally, never realpathed (the 29w class)
-    const pairs = args.filter((a) => a.startsWith('--pair=')).map((a) => a.slice('--pair='.length));
+    const flagged = args.filter((a) => a.startsWith('--pair=')).map((a) => a.slice('--pair='.length));
+    const pairs = flagged.length ? flagged : clampedRead(loadMergedConfig({ cwd: root }), 'translationPairs');
     const findings = checkTranslationPairs(root, pairs);
     if (args.includes('--json')) {
       console.log(JSON.stringify({ findings }, null, 2));

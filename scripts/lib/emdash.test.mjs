@@ -10,7 +10,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFileSync } from 'node:child_process';
+import { gitEnv } from './git-env.mjs';
 import { SANDBOX_ENV } from '../test-sandbox.mjs';
 import { fileURLToPath } from 'node:url';
 import { scanText, scanFile, isLegalPath, THIRD_PARTY_MARKER, CASES } from './emdash.mjs';
@@ -139,7 +140,8 @@ test('CLI unreadable: a file the scanner cannot read is counted, TOTAL reads unk
   fs.writeFileSync(good, 'word—word is a hit in one mode\nplain line\n');
   const found = scanFile(good, 'spaced').length;
   const missing = path.join(dir, 'missing.md');
-  const r = runCli([good, missing]);
+  // The mode is pinned: with no --mode the engine reads the project's emDash, which must not steer this test.
+  const r = runCli(['--mode=spaced', good, missing]);
   assert.equal(r.code, 1, `exit ${r.code}: ${r.out}`);
   assert.match(r.out, /unreadable, skipped/);
   assert.match(r.out, new RegExp(`^TOTAL: unknown \\(1 unreadable; ${found} found in the readable files\\)$`, 'm'));
@@ -151,7 +153,7 @@ test('CLI unreadable (control): every file readable keeps the clean numeric TOTA
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const good = path.join(dir, 'good.md');
   fs.writeFileSync(good, 'plain line\nanother plain line\n');
-  const r = runCli([good]);
+  const r = runCli(['--mode=spaced', good]);
   assert.equal(r.code, 0, `exit ${r.code}: ${r.out}`);
   assert.match(r.out, /^TOTAL: 0$/m);
 });
@@ -159,7 +161,7 @@ test('CLI unreadable (control): every file readable keeps the clean numeric TOTA
 test('CLI unreadable: a directory passed as a file is unreadable too (EISDIR), counted the same way', (t) => {
   const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-emdash-cli-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const r = runCli([dir]);
+  const r = runCli(['--mode=spaced', dir]);
   assert.equal(r.code, 1, `exit ${r.code}: ${r.out}`);
   assert.match(r.out, /^TOTAL: unknown \(1 unreadable; 0 found in the readable files\)$/m);
 });
@@ -209,3 +211,37 @@ for (const [name, text, want] of COMMONMARK) {
     assert.deepEqual(scanText(text, 'spaced').map((h) => h.line), want);
   });
 }
+
+// With no --mode the engine reads emDash from the project config itself, so a SKILL never pastes it
+// onto a shell line. --mode stays as a flag for tests and direct use.
+function configRepo(t, value) {
+  const d = fs.realpathSync.native(fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'cl-emdash-cfg-')));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 }));
+  execFileSync('git', ['init', '-q', d], { env: gitEnv(path.dirname(d)), stdio: 'ignore' });
+  fs.mkdirSync(path.join(d, '.claude', 'coal'), { recursive: true });
+  fs.writeFileSync(path.join(d, '.claude', 'coal', 'coalledger.json'), JSON.stringify({ emDash: value }) + '\n');
+  return d;
+}
+
+test('with no --mode the rule comes from the project config: a spaced em-dash is the finding under unspaced', (t) => {
+  const d = configRepo(t, 'unspaced');
+  const doc = path.join(d, 'doc.md');
+  fs.writeFileSync(doc, 'alpha ' + String.fromCharCode(0x2014) + ' beta\n');
+  const r = runCli(['--root=' + d, doc]);
+  assert.match(r.out, /TOTAL: 1/, r.out);
+});
+
+test("with no --mode and emDash 'off' the engine reads nothing and prints a zero total", (t) => {
+  const d = configRepo(t, 'off');
+  const r = runCli(['--root=' + d, path.join(d, 'missing.md')]);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /TOTAL: 0/, r.out);
+});
+
+test('an explicit --mode still wins over the project config', (t) => {
+  const d = configRepo(t, 'off');
+  const doc = path.join(d, 'doc.md');
+  fs.writeFileSync(doc, 'alpha ' + String.fromCharCode(0x2014) + ' beta\n');
+  const r = runCli(['--mode=unspaced', '--root=' + d, doc]);
+  assert.match(r.out, /TOTAL: 1/, r.out);
+});

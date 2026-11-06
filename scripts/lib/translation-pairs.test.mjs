@@ -145,3 +145,46 @@ test('clampedRead keeps the case of a translation pair while disabledCanaries st
   assert.deepEqual(clampedRead({ translationPairs: ['README.md=README.th.md'] }, 'translationPairs'), ['README.md=README.th.md']);
   assert.deepEqual(clampedRead({ disabledCanaries: ['Doc-Structure'] }, 'disabledCanaries'), ['doc-structure']);
 });
+
+// With no --pair the engine reads translationPairs from the project config itself, so a SKILL never has
+// to paste a config value onto a shell line. A cloned repository writes that config, so the value is data here, never shell.
+function configPairs(d, pairs) {
+  commit(d, T_OLD, { 'a.md': '# a\n', '.claude/coal/coalledger.json': JSON.stringify({ translationPairs: pairs }) + '\n' });
+}
+
+test('with no --pair the pairs come from the project config, read from --root alone', (t) => {
+  const d = repo(t);
+  configPairs(d, ['a.md=b.md']);
+  const r = run([`--root=${d}`, '--json']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout).findings.map((x) => x.check), ['translation-missing'], r.stdout);
+});
+
+test('a config value holding a command substitution is read as data: no shell runs and the marker is never written', (t) => {
+  const d = repo(t);
+  const marker = path.join(d, 'pwned').split(path.sep).join('/');
+  const substOpen = String.fromCharCode(36, 40); // the two characters opening a command substitution, built here so the literal stays out of the text
+  configPairs(d, ['a.md=' + substOpen + 'touch ' + marker + ').md']);
+  const r = run([`--root=${d}`, '--json']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(fs.existsSync(path.join(d, 'pwned')), false, 'the value ran in a shell');
+  assert.deepEqual(JSON.parse(r.stdout).findings.map((x) => x.check), ['translation-missing'], r.stdout);
+});
+
+test('the command the built doc-consistency SKILL.md names reads the project config, with no value pasted into it', (t) => {
+  const d = repo(t);
+  configPairs(d, ['a.md=b.md']);
+  const skillDir = path.join(here, '..', '..', 'plugin', 'skills', 'doc-consistency');
+  const md = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+  const span = /`(cd "<skill base dir>" && node \.\/lib\/translation-pairs\.mjs[^`]*)`/.exec(md);
+  assert.ok(span, 'the SKILL names the engine command in one code span');
+  const cmd = span[1]
+    .split('<skill base dir>').join(skillDir.split(path.sep).join('/'))
+    .split('<project root>').join(d.split(path.sep).join('/'));
+  const script = path.join(d, 'run-engine.sh');
+  fs.writeFileSync(script, cmd + '\n');
+  const r = spawnSync('bash', [script], { encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL', env: SANDBOX_ENV });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(fs.existsSync(path.join(d, 'pwned')), false);
+  assert.match(r.stdout, /translation-missing/, r.stdout);
+});

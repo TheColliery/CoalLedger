@@ -94,6 +94,16 @@ export const GENERATED = new Map([
     path.join(DOC_CONSISTENCY_ENGINE_DIR, f),
     path.join('scripts', 'lib', f),
   ]),
+  // The two engines read `translationPairs` and `emDash` through the config cascade, so each skill copy
+  // carries the cascade (config-load.mjs imports config-schema.mjs and jsonc.mjs), each copied from its one source.
+  ...['config-load.mjs', 'config-schema.mjs', 'jsonc.mjs'].map((f) => [
+    path.join(DOC_CONSISTENCY_ENGINE_DIR, f),
+    path.join('scripts', 'lib', f),
+  ]),
+  ...['config-load.mjs', 'config-schema.mjs', 'jsonc.mjs'].map((f) => [
+    path.join(DOC_QUALITY_ENGINE_DIR, f),
+    path.join('scripts', 'lib', f),
+  ]),
   // T-21: repo-standard.mjs imports repo-fs.mjs (the bounded, kind-gated reader), so that leaf rides beside it.
   ...['repo-standard.mjs', 'repo-fs.mjs'].map((f) => [
     path.join(DOC_STANDARD_ENGINE_DIR, f),
