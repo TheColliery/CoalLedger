@@ -2,6 +2,12 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [Unreleased]
+
+### Security
+- **The doc skills take their paths from a run list, not the command line (commit `3a3af3638ff280bbdcbc84e928509bbea5ce09d2`).** The agent writes the project folder and the doc paths to `~/.claude/coal/coalledger/run.json` (under `CLAUDE_CONFIG_DIR` when that is set), and the engine reads them there, so no path is placed on a command line. This hardens how the skills take their paths. Two sessions sharing that one file can overwrite each other's list between the write and the run.
+- **New write: the run list.** The skills write `~/.claude/coal/coalledger/run.json` (commit `3a3af3638ff280bbdcbc84e928509bbea5ce09d2`); the README and SECURITY.md write lists name it.
+
 ## [0.17.0-beta.3] - 2026-11-06
 
 doc skills read config in their engines, never on a command line
