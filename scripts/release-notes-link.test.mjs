@@ -38,6 +38,43 @@ function lyingLstat(dir) {
   return pathToFileURL(file).href;
 }
 
+// A preload: fs.lstatSync reports CHANGELOG.md as the decoy file, so the name looks like a file other than the one the open reaches.
+function swapLstat(dir) {
+  const file = path.join(dir, 'swap-lstat.mjs');
+  fs.writeFileSync(file, [
+    "import fs from 'node:fs';",
+    'const real = fs.lstatSync;',
+    `const decoy = ${JSON.stringify(path.join(dir, 'decoy.md'))};`,
+    "fs.lstatSync = (p, o) => real(String(p) === 'CHANGELOG.md' ? decoy : p, o);",
+    '',
+  ].join('\n'));
+  return pathToFileURL(file).href;
+}
+
+// The fallback branch (no O_NOFOLLOW: Windows) compares the open descriptor with a fresh lstat of the name. The constant decides
+// which branch runs here, so the probe is the constant, not the platform name. Runs on this box, where the branch is the one in use.
+test('a CHANGELOG.md whose name is swapped for another file after the check is refused, never read (runs only where no-follow is absent)', { skip: fs.constants.O_NOFOLLOW !== undefined ? 'this platform refuses a link at the open itself (O_NOFOLLOW), so the lstat fallback never runs' : false }, (t) => {
+  const dir = sandbox(t);
+  const work = path.join(dir, 'work');
+  fs.mkdirSync(work);
+  fs.writeFileSync(path.join(work, 'CHANGELOG.md'), '## [9.9.9] - 2026-01-01\n\nSecretOutsideText.\n');
+  fs.writeFileSync(path.join(dir, 'decoy.md'), 'decoy\n');
+  const r = spawnSync(process.execPath, ['--import', swapLstat(dir), SCRIPT, '--check', '--repo', 'CoalLedger'], { cwd: work, encoding: 'utf8', env: sandboxEnv(dir), timeout: 60000, killSignal: 'SIGKILL' });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /CHANGELOG\.md changed between the check and the read/, r.stderr);
+  assert.equal((r.stdout + r.stderr).includes('SecretOutsideText'), false, 'the swapped file was read');
+  assert.equal((r.stdout + r.stderr).includes('9.9.9'), false, 'the swapped file was read');
+});
+
+test('a plain CHANGELOG.md is read on the fallback branch too: the descriptor and the name agree, so the check passes', (t) => {
+  const dir = sandbox(t);
+  const work = path.join(dir, 'work');
+  fs.mkdirSync(work);
+  fs.writeFileSync(path.join(work, 'CHANGELOG.md'), '## [1.2.0] - 2026-09-22\n\nA proof.\n\n### Added\n- x\n');
+  const r = spawnSync(process.execPath, [SCRIPT, '--check', '--repo', 'CoalLedger'], { cwd: work, encoding: 'utf8', env: sandboxEnv(dir), timeout: 60000, killSignal: 'SIGKILL' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+});
+
 test('a CHANGELOG.md that is a link is refused by name and its target is never read, even when the link check says plain file', (t) => {
   const dir = sandbox(t);
   const outside = path.join(dir, 'outside.md');
