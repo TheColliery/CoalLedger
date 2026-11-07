@@ -11,6 +11,8 @@ The Antigravity conductor's once-per-session marker now lives in the same privat
 ### Security
 - **The Antigravity conductor's marker lives in a folder only you own (commit `ce67bf91d5e5344e015c86ae84b5eaafd3c13bf4`).** On a shared temp folder another account could previously have made the marker's name first; the conductor now refuses a folder that is a link, belongs to another user or is open to others.
 
+Note: the owner and open-mode checks on this folder apply only where the platform reports a user id; without one (Windows temp folders are per-user), only a link is refused.
+
 ## [0.17.0-beta.5] - 2026-11-07
 
 doc skills ask the engine for a private run list path first
@@ -20,6 +22,8 @@ The doc skills now run each engine's `--list-path` before they write the run lis
 ### Security
 - **The run list lives in a private per-user folder and is read through no link (commit `ab5c71f8b5c78ddba53628b20a3edd125ce4cebc`).** The engine reads the list without following a link and checks owner, type and size on the open file; the file's permission bits are not checked.
 - **`--list-path` removes an earlier run list, so a list the agent failed to write never answers for the run (commit `d600f12ae38b39b1b71c30d1862274b2ac779f74`).**
+
+Note: the owner and open-mode checks on this folder apply only where the platform reports a user id; without one (Windows temp folders are per-user), only a link is refused.
 
 ## [0.17.0-beta.4] - 2026-11-06
 
