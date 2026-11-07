@@ -51,6 +51,7 @@ test('test.mjs: the wiring is the canon runner with the room\'s numbers, a faile
   assert.doesNotMatch(src, /runDirect|DIRECT_FILES/, 'every roster file, the canon runner test included, runs in a wave (09b: the canon test 30 no longer loses to the preload)');
   assert.doesNotMatch(fs.readFileSync(path.join(ROOM, 'scripts', 'lib', 'test-plan.mjs'), 'utf8'), /runDirect|DIRECT_FILES/);
   assert.match(src, /expectationFindings\(run\.results/);
+  assert.match(src, /skippedLines\(run\.results\)[\s\S]*console\.log\(run\.summary\.line\)/, 'the SKIPPED lines print before the summary line');
   assert.match(src, /process\.exitCode = run\.exitCode !== 0 \|\| short\.length \? 1 : 0/);
 });
 
@@ -191,4 +192,17 @@ test('test.mjs (run): a run that cannot start (an empty roster) is a named FAIL 
   assert.equal(r.bound, false, r.out.slice(-400));
   assert.notEqual(r.code, 0, r.out.slice(-600));
   assert.match(r.out, /FAIL test runner: the run did not start \(no test files were given\)/);
+});
+
+test('test.mjs (run): a skipped test is named on stdout as SKIPPED <file>: "<name>" BEFORE the summary line, so a skip reads as a skip and never as a count (the canon runner shape)', async (t) => {
+  const src = HDR + "test('a real check', () => assert.equal(1, 1));\ntest('the link leg', { skip: 'no file link on this volume' }, () => assert.equal(1, 2));\n";
+  const dir = plant(t, { 'skip.test.mjs': src });
+  const r = await runPlanted(dir);
+  assert.equal(r.bound, false, r.out.slice(-400));
+  assert.equal(r.code, 0, r.out.slice(-600));
+  const skipped = r.out.indexOf('SKIPPED scripts/lib/skip.test.mjs: "the link leg"');
+  assert.notEqual(skipped, -1, 'no SKIPPED line for the skipped test\n' + r.out.slice(-600));
+  const summary = r.out.indexOf('wave-run: 1 file');
+  assert.notEqual(summary, -1, 'no summary line\n' + r.out.slice(-600));
+  assert.ok(skipped < summary, 'the SKIPPED line must come before the summary line\n' + r.out.slice(-600));
 });

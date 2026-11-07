@@ -47,6 +47,6 @@ test('the files that left the pin list read clean with NO pin: the canon secret-
   }
   assert.equal(gitBlobId(read('scripts/secret-gate.test.mjs').text), '16917c8d86921f738cacd11e4784250c35273b7e');
   assert.equal(gitBlobId(read('scripts/secret-scan.test.mjs').text), '521eb48843762191f44bca16e2b008d6eacbb645', 'the Bankfire source copy (d17ffd0), the parity blob');
-  assert.ok(gitBlobId(read('scripts/release-notes.mjs').text).startsWith('ad35cc0a'));
-  assert.ok(gitBlobId(read('scripts/release-notes.test.mjs').text).startsWith('fa707032'));
+  assert.ok(gitBlobId(read('scripts/release-notes.mjs').text).startsWith('73484342'));
+  assert.ok(gitBlobId(read('scripts/release-notes.test.mjs').text).startsWith('7d3a8ca7'));
 });

@@ -88,7 +88,7 @@ if (missing.length) {
     // force-exited file keeps its tail. A file is judged by its TAP, never by its exit code alone: a file that exits 0 before its tests register is VACUOUS and the run is RED
     // (testing.md; measured on Node 24.19: process.exit(0) there prints "# pass 1" and exits 0). The room adds one check the canon names as open: expectationFindings, a lower bound
     // on the tests a PASS file must report. Dynamic and inside the step that needs it, per node/runtime.md section 1 (a gate entry imports node builtins only at the top).
-    const { runWaves } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'wave-run.mjs')).href);
+    const { runWaves, skippedLines } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'wave-run.mjs')).href);
     const plan = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'test-plan.mjs')).href);
     let run = null;
     try {
@@ -106,6 +106,8 @@ ${r.stdout ?? ''}${r.stderr ?? ''}`);
       }
       const short = plan.expectationFindings(run.results, (f) => { try { return fs.readFileSync(path.join(repo, f), 'utf8'); } catch { return null; } });
       for (const s of short) console.log(`SHORT ${s}`);
+      // A skipped test is named, never only counted (the canon's SKIPPED lines), and they print before the summary the way the canon's main() prints them.
+      for (const line of skippedLines(run.results)) console.log(line);
       console.log(run.summary.line);
       if (short.length) console.log(`test runner: RED -- ${short.length} file(s) failed the declared-test lower bound (SHORT lines above)`);
       process.exitCode = run.exitCode !== 0 || short.length ? 1 : 0;
