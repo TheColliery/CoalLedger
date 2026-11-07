@@ -412,12 +412,14 @@ const POSIX_UID = typeof process.getuid === 'function';
 test('AG: a marker folder another account owns is refused: no marker, no emit', { skip: POSIX_UID ? false : 'this platform reports no uid (Windows): the owner branch has no leg to run' }, () => {
   const { home, proj, tmp } = agSandbox();
   try {
-    const folder = path.join(tmp, markerFolderName());
+    // The hook runs as the stubbed user, so the folder it uses is the stubbed user's, and that is the folder another account would own here.
+    const stubbed = process.getuid() + 1;
+    const folder = path.join(tmp, `coalledger-${stubbed}`);
     fs.mkdirSync(folder, { mode: 0o700 });
-    const r = agRunWith(proj, home, tmp, payload('s-owner', proj), stubUid(tmp, process.getuid() + 1));
+    const r = agRunWith(proj, home, tmp, payload('s-owner', proj), stubUid(tmp, stubbed));
     assertGraceful(r);
     assert.strictEqual(r.stdout, '', 'a folder another account owns is refused: no emit');
-    assert.strictEqual(markerFiles(tmp).length, 0, 'no marker written into the refused folder');
+    assert.strictEqual(fs.readdirSync(folder).filter((n) => n.endsWith('.marker')).length, 0, 'no marker written into the refused folder');
   } finally { clean(home, proj, tmp); }
 });
 
