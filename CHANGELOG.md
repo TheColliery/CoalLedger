@@ -2,6 +2,18 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.7] - 2026-11-12
+
+session files are removed when the session ends
+
+A `SessionEnd` hook removes this session's own docs-drift files when the session ends. A staleness sweep removes leftovers older than seven days (at most 200 a run) from the temp folder and, on Antigravity, the private run-list folder. Nothing else in those folders is touched. Nothing to configure.
+
+### Fixed
+- **Session files and old leftovers are removed (SessionEnd hook, `hooks/coalledger-session-end.js`).** Before, the files were cleared only as a session went on, and the rest waited for the OS to reap the temp folder. Links, folders and files of other names are never removed.
+
+### Changed
+- The canon release, gate and link scripts are re-copied from `.github`. No shipped behaviour changes with it.
+
 ## [0.17.0-beta.6] - 2026-11-07
 
 the Antigravity conductor keeps its marker in your private folder
