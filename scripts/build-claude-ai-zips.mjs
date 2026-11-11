@@ -13,10 +13,10 @@
 // not recognized as a skill) and checks every archive's layout before upload.
 // Canonical exemplar: CoalMine (board #40).
 //
-// NAMED DIVERGENCE from the canon blob 2e9f4ed2 (ONE FLOCK ONE COLOR, R14): this room keeps
-// three fixes the canon copy lacks -- the block-scalar blank-line scan (CWK-120 row 9), the
-// empty plugin/skills guard (CWK-120 row 2) and the realpath main-module guard (r33/r34
-// INSPECT). Everything else, header included, is the canon text.
+// NAMED DIVERGENCE from the canon blob c14abb3a (ONE FLOCK ONE COLOR): this room keeps ONE fix the canon
+// copy lacks, the realpath main-module guard at the bottom of this file (r33/r34 INSPECT). The canon took
+// the other two of this room's CWK-120 fixes, the block-scalar blank-line scan (row 9) and the empty
+// plugin/skills guard (row 2), at its T-43 commit. Everything else, header included, is the canon text.
 //
 // REPRODUCIBLE, AND REFUSING WHAT IT CANNOT PACKAGE (09g, CoalMine issue 42 M1-M3). A junction or symlink directly under plugin/skills is refused by name too (29e (a)). A symlink or any entry that is neither a regular file nor a folder is REFUSED, never
 // followed (copyFileSync would read the link's target into a public asset); an entry whose name starts with a dot is not staged at any depth (a nested .DS_Store); a name with a
@@ -82,18 +82,9 @@ function replaceDescriptionField(text, newValue) {
   let end = i + 1;
   const v = lines[i].slice('description:'.length).trim();
   if (/^[>|][-+]?$/.test(v)) {
-    // CWK-120 row 9's class, SECOND site (the claim named `desc-cap.mjs:29`;
-    // this scan is the same shape and its miss is worse): an internal BLANK line
-    // used to end the block scalar, so a rewrite would have replaced only the
-    // HEAD of the description and left the orphaned tail lines standing in the
-    // frontmatter of a SHIPPED SKILL.md. Carry blank lines through, end at the
-    // last real continuation line (so trailing blanks are preserved, not eaten),
-    // and stop at the next top-level field.
-    let j = i + 1;
-    while (j < lines.length && (/^\s*$/.test(lines[j]) || /^\s/.test(lines[j]))) {
-      if (/\S/.test(lines[j])) end = j + 1;
-      j++;
-    }
+    // A blank line inside a block scalar does not end it (CoalLedger T-43): the scan carries blanks through, ends after the last indented line,
+    // and stops at the next top-level field, so no tail of the old description is left in the frontmatter of a shipped SKILL.md.
+    for (let j = i + 1; j < lines.length && /^(\s|$)/.test(lines[j]); j++) if (/\S/.test(lines[j])) end = j + 1;
   }
   const escaped = newValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const newLines = [...lines.slice(0, i), `description: "${escaped}"`, ...lines.slice(end)];
@@ -127,14 +118,9 @@ async function main() {
     if (st.isDirectory()) skills.push({ name: entry.name, refused: false });
     else if (st.isSymbolicLink() || !st.isFile()) skills.push({ name: entry.name, refused: true });
   }
-  // CWK-120 row 2 (CodeRabbit, this line): the guard above covers plugin/skills
-  // ABSENT; an EMPTY plugin/skills fell straight through — the loop never ran,
-  // `failed` stayed 0, and the script exited 0 printing `Done: 0/0 skill(s)
-  // staged`. The claude-ai-zips workflow would then attach ZERO assets to a
-  // Release and report success: a failure reported as a clean bill, which is the
-  // class this room has already paid for in its own link-check gate (CWK-092).
+  // An EMPTY plugin/skills is a failure too (CoalLedger T-43): the loop below would never run and the workflow would attach no asset, reported as a success.
   if (skills.length === 0) {
-    console.error(`FAIL: ${pluginSkills} holds no skill directories — nothing to stage; run node scripts/build-plugin.mjs first.`);
+    console.error(`FAIL: ${pluginSkills} holds no skill directories -- nothing to stage; run node scripts/build-plugin.mjs first.`);
     process.exitCode = 1;
     return;
   }
