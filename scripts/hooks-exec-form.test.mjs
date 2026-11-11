@@ -13,7 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PLACEHOLDER = '${CLAUDE_PLUGIN_ROOT}';
-const WIRED = { SessionStart: 'coalledger-conductor.js', PostToolUse: 'coalledger-doctrack.js', Stop: 'coalledger-drift-stop.js' };
+// 29ea: SessionEnd joins the roster (coalledger-session-end.js, the session's own temp markers); the other three entries are unchanged.
+const WIRED = { SessionStart: 'coalledger-conductor.js', PostToolUse: 'coalledger-doctrack.js', Stop: 'coalledger-drift-stop.js', SessionEnd: 'coalledger-session-end.js' };
 
 function entries(root) {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8'));
@@ -27,7 +28,7 @@ function entries(root) {
 for (const [label, root] of [['source', REPO], ['dist', path.join(REPO, 'plugin')]]) {
   test(`hooks.json (${label}): every entry is exec form, node + one args path to its hook, no shell or onFailure`, () => {
     const all = entries(root);
-    assert.deepEqual(all.map((e) => e.event).sort(), Object.keys(WIRED).sort(), 'SessionStart, PostToolUse and Stop, one entry each');
+    assert.deepEqual(all.map((e) => e.event).sort(), Object.keys(WIRED).sort(), 'SessionStart, PostToolUse, Stop and SessionEnd, one entry each');
     for (const { event, h } of all) {
       assert.equal(h.type, 'command', event);
       assert.equal(h.command, 'node', `${event}: command is the executable alone, never a shell string (got ${JSON.stringify(h.command)})`);

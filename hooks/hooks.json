@@ -11,6 +11,9 @@
     ],
     "Stop": [
       { "hooks": [{ "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/coalledger-drift-stop.js"] }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/coalledger-session-end.js"], "timeout": 5 }] }
     ]
   }
 }

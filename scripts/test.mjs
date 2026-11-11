@@ -40,6 +40,7 @@ const TESTS = [
   'scripts/lib/run-list.test.mjs',
   'scripts/lib/run-list-engines.test.mjs',
   'scripts/lib/run-list-folder.test.mjs',
+  'scripts/lib/session-end.test.mjs',
   'scripts/lib/repo-standard.test.mjs',
   'scripts/lib/main-module-guard.test.mjs',
   'scripts/lib/release-shape.test.mjs',

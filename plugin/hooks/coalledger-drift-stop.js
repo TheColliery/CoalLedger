@@ -68,8 +68,8 @@ const DRIFT_LINE = "[CoalLedger] Docs memory-drift: documentation was edited thi
 // regression test "the satisfier SURVIVES a stop"). CoalMine avoids this with
 // its `.scanned` ACK-mtime machinery — overkill for a one-line advisory, so the
 // satisfier simply persists.
-// ponytail: the 0-byte sid-scoped `.docmemmoved` leftover is OS-tmp reaped —
-// the same accepted tmp ceiling as the AG conductor markers; port CoalMine's
+// The 0-byte sid-scoped `.docmemmoved` survives every Stop; the SessionEnd hook
+// (coalledger-session-end.js) removes it at the end of the session. Port CoalMine's
 // ACK machinery only if this tier ever needs re-nudging within a session.
 function cleanup(base) {
   try { fs.unlinkSync(base + '.docs'); } catch {}
@@ -134,8 +134,9 @@ async function main() {
   } catch {}
 
   // Close this edit BATCH: drop .docs so the next Stop with no new doc edit
-  // stays silent (the satisfier persists — see cleanup). A crashed session's
-  // leftover is OS-tmp reaped, CoalLedger's accepted ceiling for its tmp markers.
+  // stays silent (the satisfier persists — see cleanup). The session's own markers
+  // go at SessionEnd; a crashed session's leftover is swept by a later SessionEnd
+  // once it is seven days old (scripts/lib/temp-sweep.mjs).
   cleanup(base);
   process.stdout.write(JSON.stringify(out)); // {} when not drifting (allow stop, no context)
 }

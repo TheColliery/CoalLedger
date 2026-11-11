@@ -94,9 +94,9 @@ async function main() {
   // unwritable tmp) skips the emit entirely. Marker BEFORE the config read:
   // every later PreInvocation of the session returns here at ~1ms, never
   // paying the ESM config import again (Phoenix #3).
-  // ponytail: markers are session-scoped and OS-tmp-cleaner reaped; the Stop
-  // hook that could collect them (coalledger-drift-stop.js) is CC-only and
-  // never runs on AG — accumulation is bounded, same accepted ceiling as CoalFace.
+  // Markers are session-scoped. AG has no SessionEnd, so the run that writes its
+  // marker (the one run per session that gets this far) also sweeps the folder's
+  // stale AG markers (scripts/lib/temp-sweep.mjs, seven days, bounded), below.
   // The folder is the room's per-user folder (repo-fs.mjs runListFolder, the one the run list uses). mkdir's mode is NOT applied to a folder
   // that already exists, so the folder is checked after the make: a link, a folder another account owns, or one open to group or other bits
   // is refused (checkRunListFolder throws) and the emit is skipped. Where the platform reports no uid, only the link leg runs.
@@ -106,6 +106,11 @@ async function main() {
     try { fs.mkdirSync(markerDir, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') return; }
     if (!checkRunListFolder(markerDir)) return; // absent after the make -> fail-closed
     fs.writeFileSync(path.join(markerDir, `ag-conductor-${hashKey(key)}.marker`), '', { flag: 'wx' });
+    // 29ea: this run wrote its marker, so it sweeps the folder's stale AG markers once. A failed sweep never blocks the emit below.
+    try {
+      const sweep = await import(lib('temp-sweep.mjs'));
+      sweep.sweepStaleFiles(markerDir, sweep.AG_MARKER_PATTERN);
+    } catch { /* a failed sweep is skipped */ }
   } catch { return; } // refused folder, EEXIST (already ran), or any write failure -> fail-closed, no emit
 
   // AG does not guarantee the hook process's cwd is the workspace (documented:
