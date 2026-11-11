@@ -347,15 +347,13 @@ export const PENDING_POINTERS = [
 // OWN suite byte-identically green at 266/266 (recorded before this fix landed), the
 // same fail-open shape CoalMine's own INSPECT found in their inline call site.
 export function classifyCheckIgnoreResult(ci) {
-  // 05a CI-red bounce (run 37231230559): git exits 129 on an unknown option BEFORE it reads stdin, while spawnSync is still writing
-  // `input`, so spawnSync returns BOTH a broken-pipe error (EPIPE on POSIX; EOF on Windows, the same pipe, measured on this box) AND
-  // the child's real status. The child DID spawn and exit, so the exit-status branch below names it. Narrow on purpose: only a
-  // broken-pipe code, only beside a non-0/1 integer status. Every other error, and an error beside status 0, 1 or none, stays
-  // error-first and fail-closed (TEN-SHAPE row 9, "error WITH status 0", is the row that ordering protects).
-  const childExited = ci.error && (ci.error.code === 'EPIPE' || ci.error.code === 'EOF')
-    && Number.isInteger(ci.status) && ci.status !== 0 && ci.status !== 1;
-  if (ci.error && !childExited) {
-    return { ok: false, message: `git check-ignore --stdin failed to spawn: ${ci.error.message}` };
+  // STATUS FIRST (CW-018; the flock shape, CoalFace 888fa04). The exit status decides the branch, and an error is read only once
+  // the status says git answered. 05a CI-red (run 37231230559): git exits 129 on an unknown option before it reads stdin, so
+  // spawnSync returns a broken-pipe error beside the real status; the status names that failure. Row 9 (an error WITH status 0:
+  // the stdin write failed after git answered 0 or 1) is a partial answer, failing in the third branch.
+  if (ci.status === null || ci.status === undefined) {
+    const signalNote = ci.signal ? ` (signal ${ci.signal})` : '';
+    return { ok: false, message: `git check-ignore --stdin failed to spawn${signalNote}: ${ci.error ? ci.error.message : 'no status and no error -- unrecognized shape'}` };
   }
   if (ci.status !== 0 && ci.status !== 1) {
     const stderrLine = typeof ci.stderr === 'string' ? ci.stderr.split('\n')[0].trim() : '';
@@ -364,11 +362,17 @@ export function classifyCheckIgnoreResult(ci) {
       message: `git check-ignore --stdin exited ${ci.status}${stderrLine ? ` -- ${stderrLine}` : ''} -- cannot tell which cited roots are gitignored`,
     };
   }
+  if (ci.error) {
+    return {
+      ok: false,
+      message: `git check-ignore --stdin exited ${ci.status} but the stdin write failed (${ci.error.message}) -- the answer may be partial`,
+    };
+  }
   // NAMED BOUND -- exit 0 means AT LEAST ONE fed path matched, but a non-string or
   // empty-of-content stdout here would still answer ok with zero recovered roots: git
   // said something matched, this classifier would conclude nothing did. UNREACHABLE
   // today, on both halves -- `encoding: 'utf8'` makes `ci.stdout` a string whenever the
-  // spawn itself did not error (caught by the branch above), and verify.mjs never passes
+  // spawn itself did not error (caught by the error branch above), and verify.mjs never passes
   // `-q` (the one flag that pairs a silent, empty stdout with exit 0). A stated bound,
   // not a guard: adding a branch for a case nothing can reach is the over-hardening this
   // room's own rules ban, the same register as the NAMED BOUNDs already carrying that

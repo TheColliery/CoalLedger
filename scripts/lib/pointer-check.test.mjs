@@ -423,12 +423,36 @@ test('classifyCheckIgnoreResult: a genuine spawn error (git missing) is a FAIL n
   assert.match(verdict.message, /failed to spawn: spawn git ENOENT/);
 });
 
+test('classifyCheckIgnoreResult (status first): a null status with an error names the signal when one is present', () => {
+  const verdict = classifyCheckIgnoreResult({ error: new Error('spawn git ENOENT'), status: null, signal: 'SIGTERM', stdout: null, stderr: null });
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.message, /failed to spawn \(signal SIGTERM\): spawn git ENOENT/);
+});
+
+test('classifyCheckIgnoreResult (status first): a status 0 that carries a NON-pipe error is a PARTIAL answer, never "failed to spawn"', () => {
+  const verdict = classifyCheckIgnoreResult({ error: Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }), status: 0, stdout: '', stderr: '' });
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.message, /stdin write failed/);
+  assert.match(verdict.message, /may be partial/);
+  assert.doesNotMatch(verdict.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (status first): a status 128 names "exited 128" and its first stderr line', () => {
+  const verdict = classifyCheckIgnoreResult({ status: 128, stdout: '', stderr: "fatal: bad pattern\nusage: git check-ignore" });
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.message, /exited 128 -- fatal: bad pattern/);
+  assert.doesNotMatch(verdict.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult (status first): a status 0 alone and a status 1 alone are both ok', () => {
+  assert.equal(classifyCheckIgnoreResult({ status: 0, stdout: 'dist\n', stderr: '' }).ok, true);
+  assert.equal(classifyCheckIgnoreResult({ status: 1, stdout: '', stderr: '' }).ok, true);
+});
+
 // TEN-SHAPE TABLE (CWK-092, CoalFace's reviewer's shapes, flowed back through CoalMine's
-// r32). THIS IS A TEST UNIT, NOT A CODE UNIT: classifyCheckIgnoreResult already checks
-// `ci.error` BEFORE `ci.status` (see the function above, :350-352) -- inventing a code
-// change to justify the ticket would be the costume. What was missing is the SHAPE that
-// proves the order matters: an `error` carried WITH `status: 0` (row 9), the one row a
-// status-only discriminator waves through.
+// r32). classifyCheckIgnoreResult reads the status first and an error only beside a 0 or 1
+// status: row 9, an `error` carried WITH `status: 0`, is the one row a status-only reading
+// waves through, and the third branch refuses it as a partial answer.
 const TEN_SHAPES = [
   ['status 0 clean', { status: 0, stdout: '', stderr: '' }, true],
   ['status 1', { status: 1, stdout: '', stderr: '' }, true],
@@ -448,21 +472,19 @@ for (const [name, ci, wantOk] of TEN_SHAPES) {
   });
 }
 
-// THE COUNTERFACTUAL -- proves the ORDER matters, not merely that ci.error is checked
-// somewhere. A STATUS-ONLY discriminator (the shape the order names, and the one a
-// status-code-first reading of "check the exit code" naturally produces) sees status 0
-// -- a "clean" status -- and never asks about `ci.error` at all: row 9 flips from
-// ok=false to ok=true. Swapping the shipped classifier for this LOCAL copy and watching
-// row 9 flip is the proof the error-FIRST ordering is load-bearing, not decorative.
+// THE COUNTERFACTUAL -- proves the ERROR CHECK is what row 9 needs, not the status alone.
+// A STATUS-ONLY reading (a clean status 0 or 1 is ok, anything else is not) never asks about
+// `ci.error`, so row 9 flips from ok=false to ok=true. Swapping the shipped classifier for
+// this LOCAL copy and watching row 9 flip is the proof the third branch is load-bearing.
 function statusOnlyClassify(ci) {
   if (ci.status !== 0 && ci.status !== 1) return { ok: false };
   return { ok: true, stdout: typeof ci.stdout === 'string' ? ci.stdout : '' };
 }
 
-test('classifyCheckIgnoreResult: the ci.error-FIRST ordering is load-bearing -- a status-only discriminator flips row 9', () => {
+test('classifyCheckIgnoreResult: the error check is load-bearing -- a status-only reading waves row 9 through, the shipped classifier refuses it', () => {
   const errorWithStatusZero = { error: new Error('spawn git ENOENT'), status: 0, stdout: '', stderr: '' };
-  assert.equal(classifyCheckIgnoreResult(errorWithStatusZero).ok, false, 'shipped: error-first correctly refuses');
-  assert.equal(statusOnlyClassify(errorWithStatusZero).ok, true, 'status-only would wave this through -- the counterfactual proves the order, not just the presence of the check, matters');
+  assert.equal(classifyCheckIgnoreResult(errorWithStatusZero).ok, false, 'shipped: the partial-answer branch correctly refuses');
+  assert.equal(statusOnlyClassify(errorWithStatusZero).ok, true, 'status-only would wave this through -- the counterfactual proves the error check, not just the status, is what row 9 needs');
 });
 
 // WIRING over EVERY FAILING SHAPE (CWK-092) -- the pre-existing wiring test below proves
@@ -551,8 +573,7 @@ test('applyCheckIgnoreProbe: an empty toProbe list never spawns, never fails, re
 
 // 05a bounce (CI red, run 37231230559, job 111521097672): git exits 129 on an unknown option BEFORE it reads stdin, while spawnSync is
 // still writing `input`, so spawnSync returns BOTH an error (EPIPE on POSIX; EOF on Windows, the same broken pipe, measured on this
-// box) AND the child's real status. The child DID spawn and exit, so the verdict names the exit status. Every other error shape,
-// and an error beside status 0 or 1, stays error-first and fail-closed (the TEN-SHAPE table above pins that).
+// box) AND the child's real status. The status names the failure, whatever the error's code (the status-first legs below pin it).
 const brokenPipe = (code, status, stderr = '') => ({ error: Object.assign(new Error('spawnSync git ' + code), { code }), status, stdout: '', stderr });
 
 test('classifyCheckIgnoreResult (broken pipe): EPIPE beside status 129 names the exit status, not "failed to spawn"', () => {
@@ -576,28 +597,33 @@ test('classifyCheckIgnoreResult (broken pipe): the first stderr line rides along
   assert.match(v.message, /exited 129 -- error: unknown option/);
 });
 
-test('classifyCheckIgnoreResult (broken pipe): EPIPE beside status 0 stays error-first and fail-closed', () => {
+test('classifyCheckIgnoreResult (broken pipe): EPIPE beside status 0 is a PARTIAL answer -- the stdin write failed, never "failed to spawn", never ok', () => {
   const v = classifyCheckIgnoreResult(brokenPipe('EPIPE', 0));
   assert.equal(v.ok, false);
-  assert.match(v.message, /failed to spawn/);
+  assert.match(v.message, /stdin write failed/);
+  assert.match(v.message, /may be partial/);
+  assert.doesNotMatch(v.message, /failed to spawn/);
 });
 
-test('classifyCheckIgnoreResult (broken pipe): EPIPE beside status 1 stays error-first and fail-closed', () => {
+test('classifyCheckIgnoreResult (broken pipe): EPIPE beside status 1 is a PARTIAL answer -- the stdin write failed, never "failed to spawn", never ok', () => {
   const v = classifyCheckIgnoreResult(brokenPipe('EPIPE', 1));
   assert.equal(v.ok, false);
-  assert.match(v.message, /failed to spawn/);
+  assert.match(v.message, /stdin write failed/);
+  assert.match(v.message, /may be partial/);
+  assert.doesNotMatch(v.message, /failed to spawn/);
 });
 
-test('classifyCheckIgnoreResult (broken pipe): EPIPE with NO status (the child never reported one) stays error-first', () => {
+test('classifyCheckIgnoreResult (broken pipe): EPIPE with NO status (the child never reported one) is a spawn failure', () => {
   const v = classifyCheckIgnoreResult(brokenPipe('EPIPE', null));
   assert.equal(v.ok, false);
   assert.match(v.message, /failed to spawn/);
 });
 
-test('classifyCheckIgnoreResult (broken pipe): a NON-pipe error beside status 129 (ENOENT) stays error-first', () => {
+test('classifyCheckIgnoreResult (status first): a NON-pipe error beside status 129 (ENOENT) is read by its status, "exited 129"', () => {
   const v = classifyCheckIgnoreResult(brokenPipe('ENOENT', 129));
   assert.equal(v.ok, false);
-  assert.match(v.message, /failed to spawn/);
+  assert.match(v.message, /exited 129/);
+  assert.doesNotMatch(v.message, /failed to spawn/);
 });
 
 test('classifyCheckIgnoreResult (broken pipe): a REAL git exit 129 with an input too large to be written before git exits is classified by status on every host', () => {
@@ -612,56 +638,4 @@ test('classifyCheckIgnoreResult (broken pipe): a REAL git exit 129 with an input
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
-});
-
-// 05a bounce 2 / E1: pin the allowlist from the OTHER side. Only a broken pipe (EPIPE, EOF) beside a non-0/1 status means "the child ran
-// and exited". Any other code beside an integer status stays error-first, so a deny-list rewrite or a widened allowlist is caught here
-// (in Node today ETIMEDOUT and ENOBUFS come with status null; these tests pin the allowlist itself, not the runtime's present behaviour).
-test('classifyCheckIgnoreResult (allowlist): ETIMEDOUT beside status 129 stays error-first, "failed to spawn"', () => {
-  const v = classifyCheckIgnoreResult(brokenPipe('ETIMEDOUT', 129));
-  assert.equal(v.ok, false);
-  assert.match(v.message, /failed to spawn/);
-});
-
-test('classifyCheckIgnoreResult (allowlist): ENOBUFS beside status 129 stays error-first, "failed to spawn"', () => {
-  const v = classifyCheckIgnoreResult(brokenPipe('ENOBUFS', 129));
-  assert.equal(v.ok, false);
-  assert.match(v.message, /failed to spawn/);
-});
-
-test('classifyCheckIgnoreResult (allowlist): neither non-pipe code is reported as an exit status', () => {
-  for (const code of ['ETIMEDOUT', 'ENOBUFS']) {
-    assert.doesNotMatch(classifyCheckIgnoreResult(brokenPipe(code, 129)).message, /exited 129/, code);
-  }
-});
-
-// 25a (CWK2-061): the classifier decides by `ci.error.code`, never `ci.error.message`. These two legs put the opposite word in the
-// message from the one in the code, so a message-reading mutant fails them. The shared brokenPipe helper always writes the same word
-// into both, which is why no earlier leg could tell the two apart.
-test('classifyCheckIgnoreResult (code over message): a non-pipe error whose MESSAGE says EPIPE is still a spawn failure', () => {
-  const v = classifyCheckIgnoreResult({ error: Object.assign(new Error('write EPIPE'), { code: 'ENOENT' }), status: 128, stdout: '', stderr: '' });
-  assert.equal(v.ok, false);
-  assert.match(v.message, /failed to spawn/);
-  assert.doesNotMatch(v.message, /exited 128/);
-});
-
-test('classifyCheckIgnoreResult (code over message): an EPIPE code whose message names no pipe still reads the exit status', () => {
-  const v = classifyCheckIgnoreResult({ error: Object.assign(new Error('write'), { code: 'EPIPE' }), status: 129, stdout: '', stderr: '' });
-  assert.match(v.message, /exited 129/);
-  assert.doesNotMatch(v.message, /failed to spawn/);
-});
-
-// 25a bounce 1 (INSPECT LOW-1): the EOF half is the Windows spelling of the same broken pipe, so it is pinned to error.code too.
-// The first leg's code is EOF and its message names no pipe, so a mutant that reads EOF from the message passes every earlier leg. The twin puts EOF in the message of a non-pipe code, so a message-keyed EOF check fails it.
-test('classifyCheckIgnoreResult (code over message): an EOF code whose message names no pipe still reads the exit status', () => {
-  const v = classifyCheckIgnoreResult({ error: Object.assign(new Error('write'), { code: 'EOF' }), status: 129, stdout: '', stderr: '' });
-  assert.match(v.message, /exited 129/);
-  assert.doesNotMatch(v.message, /failed to spawn/);
-});
-
-test('classifyCheckIgnoreResult (code over message): a non-pipe error whose MESSAGE says EOF is still a spawn failure', () => {
-  const v = classifyCheckIgnoreResult({ error: Object.assign(new Error('write EOF'), { code: 'ENOENT' }), status: 128, stdout: '', stderr: '' });
-  assert.equal(v.ok, false);
-  assert.match(v.message, /failed to spawn/);
-  assert.doesNotMatch(v.message, /exited 128/);
 });
