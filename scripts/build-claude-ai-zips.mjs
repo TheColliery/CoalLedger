@@ -13,10 +13,11 @@
 // not recognized as a skill) and checks every archive's layout before upload.
 // Canonical exemplar: CoalMine (board #40).
 //
-// NAMED DIVERGENCE from the canon blob c14abb3a (ONE FLOCK ONE COLOR): this room keeps ONE fix the canon
-// copy lacks, the realpath main-module guard at the bottom of this file (r33/r34 INSPECT). The canon took
-// the other two of this room's CWK-120 fixes, the block-scalar blank-line scan (row 9) and the empty
-// plugin/skills guard (row 2), at its T-43 commit. Everything else, header included, is the canon text.
+// THE ENTRY GUARD (2026-11-12a, CoalLedger's r33/r34 INSPECT fixes, taken into the canon): the build runs only as the entry point, never on import, which would run it against the importer's
+// cwd and set the importer's own exit code (LOW-3). The compare is on REAL paths (MED-3): import.meta.url is the loader's realpath of the entry while process.argv[1] is only path.resolve'd,
+// so a lexical compare through a junction or a symlinked folder never matches and the guard fails OPEN (the script silently does nothing). Both sides go through fs.realpathSync.native
+// (never the plain call, which does not expand a Windows 8.3 short name); where either cannot be resolved the PLAIN resolved paths are compared, the house entry guard (release-notes.mjs).
+// CoalLedger's own copy failed CLOSED there (an unresolvable path read as not the entry); the canon compares plain paths instead, so a build of an entry whose real path cannot be read still runs.
 //
 // REPRODUCIBLE, AND REFUSING WHAT IT CANNOT PACKAGE (09g, CoalMine issue 42 M1-M3). A junction or symlink directly under plugin/skills is refused by name too (29e (a)). A symlink or any entry that is neither a regular file nor a folder is REFUSED, never
 // followed (copyFileSync would read the link's target into a public asset); an entry whose name starts with a dot is not staged at any depth (a nested .DS_Store); a name with a
@@ -153,34 +154,30 @@ async function main() {
   console.log(`Done: ${skills.length - failed}/${skills.length} skill(s) staged into ${outDir}, ${failed} failed`);
 }
 
-// LOW-3 (r33 INSPECT): a bare `main().catch(...)` here means IMPORTING this
-// module (rather than spawning it) runs the build against whatever cwd/argv
-// the importer happens to carry, silently setting the IMPORTER's own
-// process.exitCode.
-//
-// MED-3 (r34 INSPECT): the original guard here compared import.meta.url
-// against pathToFileURL(process.argv[1]) -- a LEXICAL compare, since
-// import.meta.url is the loader's REALPATH of the entry while argv[1] is
-// only path.resolve'd. Through a junction or a symlinked ~/.claude the two
-// never matched and the guard FAILED OPEN. This room paid for the identical
-// lexical-vs-realpath defect at CWK-078.
-// fs.realpathSync.native on BOTH sides (.native, never plain -- plain does
-// not expand a Windows 8.3 short name, AGENTS.md Hard-won lessons); an
-// unresolvable path fails CLOSED (treated as NOT the entry) inside a
-// try/catch that never throws past it -- an importer must still see its own
-// exit code untouched (LOW-3). Duplicated per file, not shared: three of
-// this room's six guarded scripts ship standalone into a copied skill
-// folder with no scripts/lib sibling, so a shared helper would break the
-// self-contained-engine property -- kept identical across all six rather
-// than splitting the idiom three-and-three.
-function isMainModule(url) {
-  if (!process.argv[1]) return false;
+// dev:ino of what a path names, or null where the volume gives none (stat fails, or answers ino 0: a zero id would make any two files one)
+function fileIdentity(p) {
   try {
-    return fs.realpathSync.native(fileURLToPath(url)) === fs.realpathSync.native(process.argv[1]);
+    const s = fs.statSync(p, { bigint: true });
+    return s.ino === 0n ? null : `${s.dev}:${s.ino}`;
   } catch {
-    return false;
+    return null;
   }
 }
+
+function isMainModule(url) {
+  if (!process.argv[1]) return false;
+  const self = fileURLToPath(url);
+  try {
+    return fs.realpathSync.native(self) === fs.realpathSync.native(process.argv[1]);
+  } catch {
+    // the real path cannot be resolved: compare file identity (stat follows a link, so a symlinked temp folder still matches); where stat gives no identity (it fails, or a volume answers ino 0) the
+    // plain paths are the last resort
+    const a = fileIdentity(self);
+    const b = fileIdentity(process.argv[1]);
+    return a !== null && b !== null ? a === b : path.resolve(self) === path.resolve(process.argv[1]);
+  }
+}
+
 if (isMainModule(import.meta.url)) {
   main().catch((e) => {
     console.error(e);
