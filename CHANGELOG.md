@@ -14,6 +14,8 @@ A `SessionEnd` hook removes this session's own docs-drift files when the session
 ### Changed
 - The canon release, gate and link scripts are re-copied from `.github`. No shipped behaviour changes with it.
 
+Note: the sweep never removes a link. The session's own two file names are unlinked even when one is a link, which removes the link only, never its target.
+
 ## [0.17.0-beta.6] - 2026-11-07
 
 the Antigravity conductor keeps its marker in your private folder
