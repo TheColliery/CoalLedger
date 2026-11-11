@@ -6,7 +6,7 @@ All notable changes to CoalLedger are documented here. Format: [Keep a Changelog
 
 session files are removed when the session ends
 
-A `SessionEnd` hook removes this session's own docs-drift files when the session ends. A staleness sweep removes leftovers older than seven days (at most 200 a run) from the temp folder and, on Antigravity, the private run-list folder. Nothing else in those folders is touched. Nothing to configure.
+A `SessionEnd` hook removes this session's own docs-drift files when the session ends. A staleness sweep removes leftovers older than seven days (at most 200 per folder a run) from the temp folder and, on Antigravity, the private run-list folder, which the `SessionEnd` hook sweeps too. Nothing else in those folders is touched. Nothing to configure.
 
 ### Fixed
 - **Session files and old leftovers are removed (SessionEnd hook, `hooks/coalledger-session-end.js`).** Before, the files were cleared only as a session went on, and the rest waited for the OS to reap the temp folder. Links, folders and files of other names are never removed.
