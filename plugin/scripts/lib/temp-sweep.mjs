@@ -2,8 +2,9 @@
 // dynamic import, from the SessionEnd hook and from the AG conductor's first run of a session. A file is removed only when ALL hold: its name matches
 // the caller's exact pattern, lstat says a REGULAR file (a link or a folder is never touched, and unlinking a link would remove the link alone, never its
 // target), its mtime is older than the age bound, and the folder's realpath is the one the caller named. Every error is a skip, never a throw.
-// The work is bounded by a named count of directory entries read and of files removed, so a huge temp folder cannot take SessionEnd's shared budget;
-// a run cut short leaves only stale files of the room's own pattern, which the next run sweeps.
+// The work is bounded by a named count of directory entries read and of files removed, so a huge temp folder cannot take SessionEnd's shared budget.
+// The 200-deletion bound leaves the rest for the next run to sweep.
+// shortcut: the scan stops after MAX_SCANNED entries, so with more than 5000 entries listed ahead of ours those files stay in place (left, never removed wrongly), upgrade when a real temp folder reaches that size.
 import fs from 'node:fs';
 import path from 'node:path';
 

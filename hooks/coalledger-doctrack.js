@@ -18,11 +18,11 @@
 // config to gate an expensive tripwire SCAN): this tracker runs NO scan, so it
 // has nothing costly to gate — recording is a single appendFileSync. Gating it
 // on config would pay an ESM config import on EVERY doc edit (the common path
-// when the feature is ON, the default) only to skip an invisible, OS-reaped
-// temp write in the OFF case. So ALL config gating lives in the Stop hook,
-// which runs once per edit BATCH: when the feature is off the Stop hook emits
-// nothing and the stray temp file is OS-tmp reaped — CoalLedger's
-// already-accepted ceiling for its AG conductor markers.
+// when the feature is ON, the default) only to skip an invisible temp write in
+// the OFF case. So ALL config gating lives in the Stop hook, which runs once per
+// edit BATCH: when the feature is off the Stop hook emits nothing, and the stray
+// temp file goes at SessionEnd (coalledger-session-end.js) or, if the session
+// crashed, in the seven-day staleness sweep (scripts/lib/temp-sweep.mjs).
 //
 // Phoenix-13: fail-silent (try/catch around main), exit 0 on every path,
 // zero-dep (node builtins only), no spawn, no network, never process.exit.
