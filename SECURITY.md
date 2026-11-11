@@ -8,6 +8,12 @@ Report a security issue in this repo through GitHub's private vulnerability repo
 
 Fixed vulnerabilities are published as [GitHub Security Advisories](https://github.com/TheColliery/CoalLedger/security/advisories), where each write-up lives.
 
+<!-- A fix whose advisory is still a draft: its write-up goes under one heading, "## Fixed Security Issues", right after this section, and stays only until its advisory is published; delete it in the commit that follows. A fix an outsider cannot trigger gets no write-up here, only its CHANGELOG line. -->
+
+## What counts as a vulnerability
+
+The shipped code is in scope: what this project installs and runs for a user, including anything it reads from a repository or file the user did not write. This repository's own tooling (its CI workflows, its release and build scripts, and its test harness, as a maintainer runs them on the maintainer's checkout) is welcome to report on, and a flaw in it is fixed as hardening. Either part earns a published advisory only when an outsider can reach the flaw through input they control: a repository they clone, a file they send, a pull request from a fork, or a network response. A flaw that only the maintainer or the user feeds does not get one. Where it is unclear whether an outsider can reach a flaw, it counts as reachable until the maintainers have decided.
+
 ## Commit & Tag Signatures
 
 Release tags and maintainer commits are SSH-signed (`gpg.format=ssh`); GitHub shows the Verified badge on them. Automated Dependabot / CI commits are unsigned by design (they carry no maintainer key), so verify a signed release tag—the artifact a release consumer trusts:
