@@ -2,6 +2,8 @@
 name: doc-quality
 description: >-
   Docs-health readability scan—two axes: QUALITY (bloat: filler, repetition, walls of text, buried leads; clarity: unexplained jargon, ambiguity, sentences that fight the reader) and language MECHANICS (typo, grammar, spelling, orthography—including script-level defects like decomposed characters that render right but break search, doubled spaces, wrong ellipsis/quote characters, an em-dash spacing convention check against `emDash`—engine-detected, off by factory default—spacing rules of the doc's language). Catches UNREADABLE or MALFORMED-LANGUAGE docs. Triggers on: "/doc-quality", "doc-quality", "tighten this doc", "proofread", "typos and grammar", "is this readable". Mechanical layer = deterministic mechanics (Unicode normalization, spacing, punctuation shape—~free, report-only); semantic layer = bloat/clarity judgment + grammar in context (paid, consent-gated). Honors the project's own style/language rules where defined. Severity judged by context, never mechanical.
+metadata:
+  author: HetCreep <info@thecolliery.org>
 ---
 
 # Doc-Quality

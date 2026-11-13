@@ -2,6 +2,8 @@
 name: doc-grounding
 description: >-
   Docs-health grounding scan—doc claims verified against their SOURCE OF TRUTH: the code (README-vs-code, docstring params, examples that must run), the data (figures, tables, cited records), an original text (a rendering such as a translation, summary, or quote vs what it renders), or reality (versions, dates, external facts—verified REAL-TIME against MULTIPLE authoritative sources). Catches WRONG docs: fabricated claims, stale assertions, numbers that do not recompute. Triggers on: "/doc-grounding", "doc-grounding", "does the doc match the code", "verify doc claims", "fact-check this doc". Semantic (consent-gated Full) plus a cheap mechanical recompute layer (stated arithmetic, unit sanity). Offline or unverifiable degrades safe to "⚠️ unverified"—never a guess. Severity judged by context, never mechanical; claims needing formal verification escalate to CoalBoard.
+metadata:
+  author: HetCreep <info@thecolliery.org>
 ---
 
 # Doc-Grounding

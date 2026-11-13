@@ -2,6 +2,8 @@
 name: doc-leak
 description: >-
   Docs-health audience-safety scan—PROSE-level sensitive content in a doc meant to be public: internal URLs/hostnames/paths, personal data (names, emails, phone numbers in examples or logs), unpublished plans or roadmaps, private figures (pricing, customers), anything whose audience boundary the doc crosses. Catches LEAKED docs. Explicitly NOT a secret scanner: token-shaped secrets (API keys, passwords, private keys) are gitleaks' job—this canary hunts the sensitive PROSE that token scanners and gitignore both miss. Triggers on: "/doc-leak", "doc-leak", "is this safe to publish", "leak check", "anything private in this doc". Semantic, conservative by design: EVERY finding is SUSPECTED—public-vs-private is the human's judgment, never the tool's. Config-gated via `docLeak` (`.coalledger.json`, global + project merge; default on; a private-only project turns it off).
+metadata:
+  author: HetCreep <info@thecolliery.org>
 ---
 
 # Doc-Leak

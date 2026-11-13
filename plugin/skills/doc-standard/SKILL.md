@@ -2,6 +2,8 @@
 name: doc-standard
 description: >-
   Docs-health completeness scan—a doc measured against its KIND's standard: required sections present, public surface documented (every command/config key/exported API the code ships appears in the doc), the shape the genre expects (a README's install path, a security policy's reporting channel, a formal letter's parts). Catches INCOMPLETE docs. The standard is the project's OWN declared one first (a style guide, template, or pattern doc in the repo), else the kind's widely-accepted standard verified REAL-TIME against MULTIPLE authoritative sources. Triggers on: "/doc-standard", "doc-standard", "is this doc complete", "missing sections", "audit doc completeness". Mechanical layer (sections/hierarchy present, detected by structure/position/meaning—an agent read, never an English keyword) + semantic layer (completeness judgment, consent-gated); the repository-scope pass runs a checked engine. Offline degrades safe to "⚠️ unverified". Severity judged by context, never mechanical.
+metadata:
+  author: HetCreep <info@thecolliery.org>
 ---
 
 # Doc-Standard

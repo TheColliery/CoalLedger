@@ -2,6 +2,8 @@
 name: doc-consistency
 description: >-
   Docs-health contradiction scan—docs that disagree with EACH OTHER: the same fact stated two ways in two places, terminology drift (one thing under several names, or one name for several things), copy-paste blocks that were updated in one home and not the other, and cross-LANGUAGE drift (a doc and its counterpart in another language no longer say the same thing). Catches CONTRADICTORY doc sets. Triggers on: "/doc-consistency", "doc-consistency", "docs contradict", "terminology drift", "are the translations in sync". A mechanical layer (~free) checks declared translation pairs (`translationPairs`); the three drift classes are semantic (paid, consent-gated—comparing meaning across files is judgment, not pattern-matching). Severity judged by context, never mechanical; CONFIRMED contradictions and SUSPECTED tensions reported separately.
+metadata:
+  author: HetCreep <info@thecolliery.org>
 ---
 
 # Doc-Consistency

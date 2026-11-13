@@ -2,6 +2,8 @@
 name: doc-rot
 description: >-
   Docs-health staleness scan—content that time has made false: version strings older than the shipped version, dates and "last updated" stamps long past, stale badges, dead TODO/FIXME/"coming soon" markers, superseded instructions (steps for a surface that has since changed or gone), revalidate-by dates that have passed. Catches STALE docs—was true once, is not now. Triggers on: "/doc-rot", "doc-rot", "stale docs", "outdated docs", "is this doc still current". Mechanical layer = deterministic age-markers (versions, dates, TODO markers, badges—~free, report-only); semantic layer = judging whether a flagged marker is actually rotten and spotting undated superseded content (paid, consent-gated). Severity judged by context, never mechanical; CONFIRMED and SUSPECTED reported separately.
+metadata:
+  author: HetCreep <info@thecolliery.org>
 ---
 
 # Doc-Rot
