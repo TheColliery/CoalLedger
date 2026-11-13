@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.8] - 2026-11-14
+
+each skill names its author
+
+### Changed
+- Each of the seven skills' frontmatter gains `metadata.author: HetCreep <info@thecolliery.org>`. No behaviour changes.
+
 ## [0.17.0-beta.7] - 2026-11-12
 
 session files are removed when the session ends
