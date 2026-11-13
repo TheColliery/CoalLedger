@@ -4,7 +4,7 @@ All notable changes to CoalLedger are documented here. Format: [Keep a Changelog
 
 ## [0.17.0-beta.8] - 2026-11-14
 
-each skill names its author
+each of the seven skills names its author in the frontmatter
 
 ### Changed
 - Each of the seven skills' frontmatter gains `metadata.author: HetCreep <info@thecolliery.org>`. No behaviour changes.
