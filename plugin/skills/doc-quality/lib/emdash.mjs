@@ -7,9 +7,9 @@
 // UNSPACED em-dash the coming sweep needs to know about". That question has
 // a single fixed answer-direction (unspaced = the thing to find) and is
 // still what this file's DEFAULT behaviour answers — the zone's own canonical
-// `CoalWorks/emdash.mjs` copy keeps exactly that hardcoded shape, unchanged,
-// as a manual sweep tool (main's r21 ruling: it never becomes a per-room
-// gate). CWK-073 asks a DIFFERENT, ONGOING question this room's doc-quality
+// `CoalWorks/emdash.mjs` copy is a manual sweep tool that also takes `--mode`
+// and refuses a wrong invocation the way this file does (main's r21 ruling: it
+// never becomes a per-room gate). CWK-073 asks a DIFFERENT, ONGOING question this room's doc-quality
 // canary owns going forward, now that the house HAS a target convention
 // (`word—word`, owner ruling 2026-09-03): "does this doc match the
 // CONFIGURED direction". That needs a MODE, not a hardcoded polarity — see
@@ -368,58 +368,80 @@ function isMainModule(url) {
   }
 }
 
-// CLI: node emdash.mjs [--selftest] [--mode=unspaced|spaced|off] [--root=<dir>] <file...>
+// CLI: node emdash.mjs [--selftest] [--list] [--mode=unspaced|spaced|off] [--root=<dir>] <file...>
+// 29hy (a)-(c): a wrong invocation is refused the way the zone copy refuses one (CWK2-021 round 4, c152): a reason line and the
+// usage line, both on STDERR, exit 2, and NO TOTAL line, because a TOTAL: 0 reads as a clean measurement and nothing was
+// measured. That covers an unknown flag, and no file with no --list. --selftest alone scans nothing, so it prints no TOTAL.
+// When the rule is off (the config's emDash, or --mode=off) the run prints ONE OFF line on STDOUT and exits 0: off is the
+// user's own setting and the factory default, not an error, and it measures nothing.
+const USAGE = 'usage: node emdash.mjs [--selftest] [--mode=unspaced|spaced|off] [--root=<dir>] (<file...> | --list)';
+function refuse(why) { console.error(why + '\n' + USAGE); process.exitCode = 2; }
+function runSelftest() {
+  const fails = selfTest();
+  if (fails.length) {
+    for (const f of fails) console.log('  FAIL ' + f);
+    console.log(`SELFTEST: FAIL (${fails.length}/${CASES.length})`);
+    process.exitCode = 1;
+  } else {
+    console.log(`SELFTEST: PASS (${CASES.length}/${CASES.length}) — the instrument is live, so a zero below is a measurement`);
+  }
+}
 function readListOrReport() {
   try { return readRunList(); } catch (e) { console.error(e.message); process.exitCode = 2; return null; }
 }
-// With no --mode the rule is the project's `emDash` (read through the config cascade by this engine, so a SKILL never
-// pastes it onto a shell line). --mode stays as a flag for tests and direct use.
+// With no --mode the rule is the project's `emDash` (read through the config cascade by this engine, so a SKILL never pastes it
+// onto a shell line). --mode stays as a flag for tests and direct use.
 if (isMainModule(import.meta.url) && !listPathCli()) {
   const args = process.argv.slice(2);
-  if (args.includes('--selftest')) {
-    const fails = selfTest();
-    if (fails.length) {
-      for (const f of fails) console.log('  FAIL ' + f);
-      console.log(`SELFTEST: FAIL (${fails.length}/${CASES.length})`);
-      process.exitCode = 1;
-    } else {
-      console.log(`SELFTEST: PASS (${CASES.length}/${CASES.length}) — the instrument is live, so a zero below is a measurement`);
-    }
-  }
+  const isKnownFlag = (a) => a === '--selftest' || a === '--list' || a.startsWith('--mode=') || a.startsWith('--root=');
+  const unknown = args.find((a) => a.startsWith('--') && !isKnownFlag(a));
   const modeArg = args.find((a) => a.startsWith('--mode='));
   const rootArg = args.find((a) => a.startsWith('--root='));
   const listed = args.includes('--list');
-  const runList = listed ? readListOrReport() : null;
-  const root = listed ? runList?.root : (rootArg ? rootArg.slice('--root='.length) : undefined);
-  const files = listed ? (runList?.docs ?? []) : args.filter((a) => !a.startsWith('--'));
-  if (listed && runList) console.log(runListLine(runList));
-  // No --root: the config is read from the working folder (a bare run; the SKILL always passes --root or --list).
-  const mode = modeArg ? modeArg.slice('--mode='.length) : clampedRead(loadMergedConfig({ cwd: root ?? process.cwd() }), 'emDash');
-  if (listed && rootArg) {
-    console.error('usage: --list and --root=<dir> are two ways to give the root; use one');
-    process.exitCode = 2;
-  } else if (listed && runList === null) {
-    // the refusal is printed and the exit code is 2
-  } else if (mode !== 'unspaced' && mode !== 'spaced' && mode !== 'off') {
-    console.log(`FAIL: --mode must be 'unspaced', 'spaced', or 'off' (got '${mode}')`);
-    process.exitCode = 1;
+  const selftest = args.includes('--selftest');
+  if (unknown !== undefined) {
+    refuse('unknown flag ' + unknown);
+  } else if (listed && rootArg) {
+    refuse('--list and --root=<dir> are two ways to give the root; use one');
   } else {
-    // R14 / CWK-166's sibling defect: a file the scanner cannot read is COUNTED, never folded into a clean total. One
-    // unreadable file makes the TOTAL unknown (the readable files' hits are still printed) and the exit code 1; a clean
-    // numeric TOTAL means every named file was read.
-    let total = 0, unreadable = 0;
-    for (const f of files) {
-      let hits;
-      try { hits = scanFile(f, mode, root); } catch { console.log(`  --   unreadable, skipped: ${f}`); unreadable++; continue; }
-      for (const h of hits) console.log(`${f}:${h.line}:${h.col}: ${h.context}`);
-      if (hits.length) console.log(`  ${f}: ${hits.length}`);
-      total += hits.length;
-    }
-    if (unreadable) {
-      console.log(`TOTAL: unknown (${unreadable} unreadable; ${total} found in the readable files)`);
-      process.exitCode = 1;
-    } else {
-      console.log(`TOTAL: ${total}`);
+    // a bad run list is refused by readListOrReport (its reason printed, exit 2); the run stops there
+    const runList = listed ? readListOrReport() : null;
+    if (!(listed && runList === null)) {
+      if (listed) console.log(runListLine(runList));
+      if (selftest) runSelftest();
+      const files = listed ? (runList.docs ?? []) : args.filter((a) => !a.startsWith('--'));
+      const root = listed ? runList.root : (rootArg ? rootArg.slice('--root='.length) : undefined);
+      if (!files.length) {
+        // --selftest alone is a valid run that scans nothing: no TOTAL, since a zero here would not be a measurement
+        if (!selftest) refuse(listed ? 'the run list names no file' : 'no file given: name a file to scan, or pass --list');
+      } else {
+        // No --root: the config is read from the working folder (a bare run; the SKILL always passes --root or --list).
+        const mode = modeArg ? modeArg.slice('--mode='.length) : clampedRead(loadMergedConfig({ cwd: root ?? process.cwd() }), 'emDash');
+        if (mode !== 'unspaced' && mode !== 'spaced' && mode !== 'off') {
+          console.log(`FAIL: --mode must be 'unspaced', 'spaced', or 'off' (got '${mode}')`);
+          process.exitCode = 1;
+        } else if (mode === 'off') {
+          console.log(`OFF: the emDash rule is off (${modeArg ? 'from --mode' : 'from the config'}); nothing was measured`);
+        } else {
+          // R14 / CWK-166's sibling defect: a file the scanner cannot read is COUNTED, never folded into a clean total. One
+          // unreadable file makes the TOTAL unknown (the readable files' hits are still printed) and the exit code 1; a clean
+          // numeric TOTAL means every named file was read.
+          let total = 0, unreadable = 0;
+          for (const f of files) {
+            let hits;
+            try { hits = scanFile(f, mode, root); } catch { console.log(`  --   unreadable, skipped: ${f}`); unreadable++; continue; }
+            for (const h of hits) console.log(`${f}:${h.line}:${h.col}: ${h.context}`);
+            if (hits.length) console.log(`  ${f}: ${hits.length}`);
+            total += hits.length;
+          }
+          if (unreadable) {
+            console.log(`TOTAL: unknown (${unreadable} unreadable; ${total} found in the readable files)`);
+            process.exitCode = 1;
+          } else {
+            console.log(`TOTAL: ${total}`);
+          }
+        }
+      }
     }
   }
 }

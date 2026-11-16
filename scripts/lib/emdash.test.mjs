@@ -231,11 +231,14 @@ test('with no --mode the rule comes from the project config: a spaced em-dash is
   assert.match(r.out, /TOTAL: 1/, r.out);
 });
 
-test("with no --mode and emDash 'off' the engine reads nothing and prints a zero total", (t) => {
+// 29hy (c): this test used to assert "TOTAL: 0" for an off rule. That asserted the defect: a zero total reads as a clean
+// measurement, and nothing was measured. Changed in this step, with that reason, to the OFF line and no TOTAL.
+test("with no --mode and emDash 'off' the engine prints the OFF line, never a zero total", (t) => {
   const d = configRepo(t, 'off');
   const r = runCli(['--root=' + d, path.join(d, 'missing.md')]);
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /TOTAL: 0/, r.out);
+  assert.match(r.out, /^OFF: the emDash rule is off \(from the config\); nothing was measured$/m, r.out);
+  assert.doesNotMatch(r.out, /TOTAL/, r.out);
 });
 
 test('an explicit --mode still wins over the project config', (t) => {
@@ -244,4 +247,65 @@ test('an explicit --mode still wins over the project config', (t) => {
   fs.writeFileSync(doc, 'alpha ' + String.fromCharCode(0x2014) + ' beta\n');
   const r = runCli(['--mode=unspaced', '--root=' + d, doc]);
   assert.match(r.out, /TOTAL: 1/, r.out);
+});
+
+// ---------------------------------------------------------------------------
+// 29hy part 1: the four hazards in the head's witness (scratchpad/29hw/witness.mjs). A wrong invocation is refused with its
+// reason and the usage line on STDERR, exit 2, and NO TOTAL line: a TOTAL: 0 reads as a clean measurement, and nothing was
+// measured. An off rule is ONE OFF line on STDOUT, exit 0, no TOTAL. --selftest alone scans nothing, so it prints no TOTAL.
+// Spawned for real, like the CLI tests above; the streams are kept apart so "on STDERR" is checked, not assumed.
+// ---------------------------------------------------------------------------
+function runCliIO(args) {
+  const r = spawnSync(process.execPath, ['--max-old-space-size=128', EMDASH, ...args], {
+    encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL',
+    env: { ...SANDBOX_ENV, NODE_OPTIONS: '--max-old-space-size=128' },
+  });
+  return { code: r.status, stdout: r.stdout || '', stderr: r.stderr || '' };
+}
+
+test('CLI (a): no file argument and no --list is a wrong invocation: exit 2, usage on stderr, no TOTAL line', () => {
+  const r = runCliIO(['--mode=spaced']);
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /^usage: /m, r.stderr);
+  assert.doesNotMatch(r.stdout + r.stderr, /TOTAL/, 'a TOTAL line would read as a clean measurement');
+});
+
+test('CLI (b): an unknown flag is a wrong invocation: the flag is named, usage on stderr, exit 2, no TOTAL line', (t) => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cl-emdash-cli-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const good = path.join(dir, 'good.md');
+  fs.writeFileSync(good, 'plain line\n');
+  const r = runCliIO(['--bogus', good]);
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /unknown flag --bogus/, r.stderr);
+  assert.match(r.stderr, /^usage: /m, r.stderr);
+  assert.doesNotMatch(r.stdout + r.stderr, /TOTAL/, 'an ignored flag must not be measured as if it were not there');
+});
+
+test('CLI (c): the rule off from the config prints ONE OFF line on stdout, exit 0, and no TOTAL line', (t) => {
+  const d = configRepo(t, 'off');
+  const doc = path.join(d, 'doc.md');
+  fs.writeFileSync(doc, 'alpha' + String.fromCharCode(0x2014) + 'beta\n'); // a real hit under unspaced; off must not measure it
+  const r = runCliIO(['--root=' + d, doc]);
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^OFF: the emDash rule is off \(from the config\); nothing was measured$/m, r.stdout);
+  assert.doesNotMatch(r.stdout, /TOTAL/, r.stdout);
+});
+
+test('CLI (c): --mode=off prints the OFF line naming --mode as its source, exit 0, no TOTAL', (t) => {
+  const d = configRepo(t, 'unspaced');
+  const doc = path.join(d, 'doc.md');
+  fs.writeFileSync(doc, 'alpha' + String.fromCharCode(0x2014) + 'beta\n');
+  const r = runCliIO(['--mode=off', '--root=' + d, doc]);
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^OFF: the emDash rule is off \(from --mode\); nothing was measured$/m, r.stdout);
+  assert.doesNotMatch(r.stdout, /TOTAL/, r.stdout);
+});
+
+test('CLI: --selftest alone runs the built-in cases and prints no TOTAL line (it scans nothing, so a zero would be no measurement)', () => {
+  // The mode is pinned: in the sandbox (no config) the factory default is off, which prints OFF and would hide the TOTAL this test is for.
+  const r = runCliIO(['--selftest', '--mode=spaced']);
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^SELFTEST: PASS/m, r.stdout);
+  assert.doesNotMatch(r.stdout, /TOTAL/, r.stdout);
 });
