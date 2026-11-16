@@ -39,13 +39,13 @@ test('pins are blob-bound: one edited byte spends the pin, and a pin names its f
   assert.ok(scanGitSpawns([f], [{ ...pin, rel: 'scripts/other.mjs' }]).findings.length >= 1);
 });
 
-test('the files that left the pin list read clean with NO pin: the canon secret-gate.test.mjs (rewritten to named keys, 0d82f706), the Bankfire source copy of secret-scan.test.mjs, verify.mjs and verify.test.mjs (fixed room-side), and the canon release-notes pair', () => {
+test('the files that left the pin list read clean with NO pin: the canon secret-gate.test.mjs (the faster canon file at .github 07920f8, 47e6a269), the Bankfire source copy of secret-scan.test.mjs, verify.mjs and verify.test.mjs (fixed room-side), and the canon release-notes pair', () => {
   for (const rel of ['scripts/secret-gate.test.mjs', 'scripts/secret-scan.test.mjs', 'scripts/verify.mjs', 'scripts/verify.test.mjs', 'scripts/release-notes.mjs', 'scripts/release-notes.test.mjs']) {
     const f = read(rel);
     const r = scanGitSpawns([f], []);
     assert.deepEqual(r.findings, [], `${rel} is refused now`);
   }
-  assert.equal(gitBlobId(read('scripts/secret-gate.test.mjs').text), '0d82f7061b768e425e12dcf1c19444515f903bee');
+  assert.equal(gitBlobId(read('scripts/secret-gate.test.mjs').text), '47e6a269042b01898ba58703a5110e5de5887af2');
   assert.equal(gitBlobId(read('scripts/secret-scan.test.mjs').text), 'f420af29e4c29991b1468aa27c58b72bafb89c66', 'the Bankfire source copy (557a2e6), the parity blob');
   assert.ok(gitBlobId(read('scripts/release-notes.mjs').text).startsWith('f2b8b7d7'));
   assert.ok(gitBlobId(read('scripts/release-notes.test.mjs').text).startsWith('5413b8fa'));
