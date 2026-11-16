@@ -2,6 +2,15 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.9] - 2026-11-16
+
+the em-dash CLI refuses a wrong call and says when its rule is off
+
+### Fixed
+- **The em-dash CLI refuses a wrong call (`scripts/lib/emdash.mjs`).** A call with no file (and no `--list`), or with an unknown flag, now prints a reason and the usage line on stderr and exits 2, with no `TOTAL` line. Before, it printed `TOTAL: 0` and exited 0, which reads as a clean measurement of nothing.
+- **An off rule says so instead of printing a clean zero.** When `emDash` is `off` (from the config or `--mode=off`), the CLI prints one `OFF: the emDash rule is off (...); nothing was measured` line and exits 0, with no `TOTAL` line. Before, it printed `TOTAL: 0`.
+- **`--selftest` alone prints no `TOTAL` line.** It runs the cases and scans nothing, so a zero would not be a measurement.
+
 ## [0.17.0-beta.8] - 2026-11-14
 
 each of the seven skills names its author in the frontmatter
