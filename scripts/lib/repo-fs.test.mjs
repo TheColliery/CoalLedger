@@ -284,6 +284,26 @@ test('writeRepoFile: EPERM on rename falls back to an in-place write on a plain 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// 29hy part 2 (c), CoalMine 02dff20 / CoalLedger r12 F12: the EPERM fallback truncates the file BEFORE it writes through the fd. A
+// shorter replacement over a longer file must not keep the old tail (a JSON reader would call the file malformed). The fallback
+// test above writes a LONGER replacement, so it never exercised the truncate. MUTANT: delete the fs.ftruncateSync(wfd, 0) line in
+// writeRepoFile's fallback -- this test must go red. (The current code already truncates: this test is the missing witness, not a fix.)
+test('writeRepoFile EPERM fallback truncates first: a shorter replacement leaves no stale tail (fault-injected)', () => {
+  const dir = scratch('cl-write-eperm-tail-');
+  try {
+    const target = path.join(dir, 'config.json');
+    fs.writeFileSync(target, '{"longer":"original content that is well past the replacement"}');
+    const real = fs.renameSync;
+    let called = false;
+    fs.renameSync = (...a) => { called = true; const e = new Error('EPERM: simulated'); e.code = 'EPERM'; throw e; };
+    try {
+      writeRepoFile(target, '{}', dir);
+    } finally { fs.renameSync = real; }
+    assert.ok(called, 'the fault must actually have fired for this test to mean anything');
+    assert.equal(fs.readFileSync(target, 'utf8'), '{}', 'exact bytes: nothing of the longer original survives');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('writeRepoFile: EPERM on rename does NOT fall back on a hard-linked target -- it throws, the other name keeps its bytes (fault-injected)', () => {
   const dir = scratch('cl-write-eperm-hardlink-');
   try {
