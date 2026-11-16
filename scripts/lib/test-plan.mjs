@@ -12,13 +12,19 @@
 // scripts/secret-gate.test.mjs 48.0 s, scripts/lib/wave-run.test.mjs 36.1 s, scripts/verify.test.mjs 25.3 s). The whole-run deadline is 1.7 times the longest whole run, 1.7 x 264 s
 // = 448.8 s, rounded to 450 s; the 300 s of 09a sat at 88% of the 264 s run (INSPECT 09b MEDIUM-1). Re-derive: time three runs of `node scripts/test.mjs` (the per-file times come
 // from the runner's start and exit events).
+// SUPERSEDED for the three clocks by the 2026-11-16 basis above them: scripts/secret-gate.test.mjs (142.2 s alone, Node 26; CI windows Node 22 cut at 120.0 s, run 43826816558) is
+// now the slowest file, and on Node 22 the per-test clock binds the whole file. The 2026-10-09 figures above stay as the record of the roster they were measured on.
 // Not measured: a CI runner (macOS and Windows runners are slower; the first CI run after a push is that venue, and a deadline hit there is a number to raise with the run's time beside it),
 // Node 22, Linux, macOS.
 
 export const HEAP_MB = 2048;
-export const TEST_TIMEOUT_MS = 120000; // per TEST (--test-timeout): about twice the slowest FILE measured (54.6 s), and the value the other rooms use
-export const FILE_CLOCK_MS = 240000; // per FILE wall clock: 4.4 times the slowest file; it ends a hang before the first test, which --test-timeout never reaches, and the rest of the roster still runs
-export const RUN_TIMEOUT_MS = 450000; // the waves: 1.7 times the longest whole run measured (264 s), rounded to 450 s. The waves stay inside the gate job's 10-minute timeout-minutes in ci.yml, so a stuck run ends in the runner, loudly, before the job clock does
+// Sized 2026-11-16 (scratchpad/29hv/b-29hv.md) from secret-gate.test.mjs, the slowest file measured: 142.2 s run alone here (Node 26; the CI gate legs ran Node 22 and 24).
+// On Node 22 --test-timeout binds the whole FILE, and that leg (windows-latest, run 43826816558) was cut at 120.0 s; the sibling measured 132.8 s on this box. 240 s is 1.7 times the local figure.
+export const TEST_TIMEOUT_MS = 240000; // per TEST on Node 24 and per FILE on Node 22 (--test-timeout): 240 s, 1.7 times the 142.2 s secret-gate file, above the 120.0 s cut on windows Node 22
+// per FILE wall clock: 480 s, twice TEST_TIMEOUT_MS; it ends a hang before the first test, which --test-timeout never reaches, and the rest of the roster still runs
+export const FILE_CLOCK_MS = 480000;
+// the waves: 540 s, above FILE_CLOCK_MS. The gate job is 600 s (ci.yml timeout-minutes 10); its worst measured leg spent 15 s before the test step (checkout, setup-node, verify, run 43826816558), so 540 s leaves about 45 s of the job spare. A stuck run ends in the runner, loudly, before the job clock does
+export const RUN_TIMEOUT_MS = 540000;
 
 // The expectation check (testing.md: a gate judges a run by the TAP test names it expects, never by the exit code and pass count alone).
 // wave-run reads a file whose only result line names the file itself as VACUOUS (process.exit(0) before the tests, or inside the first), but names one gap open: a file whose

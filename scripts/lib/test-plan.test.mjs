@@ -16,6 +16,8 @@ test('test-plan: the numbers are finite, ordered per test < per file < the waves
   for (const [k, v] of Object.entries({ HEAP_MB, TEST_TIMEOUT_MS, FILE_CLOCK_MS, RUN_TIMEOUT_MS })) assert.ok(Number.isInteger(v) && v > 0, `${k} is a positive integer`);
   assert.equal(HEAP_MB, 2048);
   assert.ok(TEST_TIMEOUT_MS > 54600, 'above the slowest file measured (54.6 s, 2026-10-09)');
+  assert.ok(TEST_TIMEOUT_MS > 142186, 'above secret-gate.test.mjs run alone (142.2 s, 2026-11-16, Node 26 on this box; CI windows Node 22 cut it at 120.0 s, run 43826816558), since --test-timeout binds the whole FILE on Node 22');
+  assert.ok(RUN_TIMEOUT_MS <= GATE_JOB_TIMEOUT_MS - 60000, 'the waves leave the gate job 60 s for checkout, setup-node and verify (the worst CI leg took 15 s before its test step, run 43826816558)');
   assert.ok(TEST_TIMEOUT_MS < FILE_CLOCK_MS && FILE_CLOCK_MS < RUN_TIMEOUT_MS, 'per test < per file < the waves');
   assert.ok(RUN_TIMEOUT_MS < GATE_JOB_TIMEOUT_MS, 'the waves end before the gate job clock does: a stuck run ends in the runner, loudly');
   assert.ok(RUN_TIMEOUT_MS >= Math.round(1.7 * 264000 / 10000) * 10000, 'at least 1.7 times the longest whole run measured (264 s, 2026-10-09, n = 3, 34 files in waves)');
