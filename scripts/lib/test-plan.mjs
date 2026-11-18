@@ -12,17 +12,21 @@
 // scripts/secret-gate.test.mjs 48.0 s, scripts/lib/wave-run.test.mjs 36.1 s, scripts/verify.test.mjs 25.3 s). The whole-run deadline is 1.7 times the longest whole run, 1.7 x 264 s
 // = 448.8 s, rounded to 450 s; the 300 s of 09a sat at 88% of the 264 s run (INSPECT 09b MEDIUM-1). Re-derive: time three runs of `node scripts/test.mjs` (the per-file times come
 // from the runner's start and exit events).
-// SUPERSEDED for the three clocks by the 2026-11-16 basis above them: scripts/secret-gate.test.mjs (142.2 s alone, Node 26; CI windows Node 22 cut at 120.0 s, run 43826816558) is
-// now the slowest file, and on Node 22 the per-test clock binds the whole file. The 2026-10-09 figures above stay as the record of the roster they were measured on.
+// SUPERSEDED for the three clocks by the 2026-11-18 basis at HEAP_MB below (scratchpad/29is/b-29is.md): the clocks rest on it. The 2026-11-16 basis below it stays as the record of
+// scripts/secret-gate.test.mjs at 142.2 s alone (Node 26; CI windows Node 22 cut at 120.0 s, run 43826816558), and the 2026-10-09 figures above stay as the record of the roster they were measured on.
 // Not measured: a CI runner (macOS and Windows runners are slower; the first CI run after a push is that venue, and a deadline hit there is a number to raise with the run's time beside it),
 // Node 22, Linux, macOS.
 
 export const HEAP_MB = 2048;
-// Sized 2026-11-16 (scratchpad/29hv/b-29hv.md) from secret-gate.test.mjs, the slowest file measured: 142.2 s run alone here (Node 26; the CI gate legs ran Node 22 and 24).
-// On Node 22 --test-timeout binds the whole FILE, and that leg (windows-latest, run 43826816558) was cut at 120.0 s; the sibling measured 132.8 s on this box. 240 s is 1.7 times the local figure.
-export const TEST_TIMEOUT_MS = 240000; // per TEST on Node 24 and per FILE on Node 22 (--test-timeout): 240 s, 1.7 times the 142.2 s secret-gate file, above the 120.0 s cut on windows Node 22
-// per FILE wall clock: 480 s, twice TEST_TIMEOUT_MS; it ends a hang before the first test, which --test-timeout never reaches, and the rest of the roster still runs
+// Sized 2026-11-18 (scratchpad/29is/b-29is.md), from the slowest VENUE's reading, not the local box: on Node 22 --test-timeout binds the whole FILE, and secret-gate.test.mjs was cut
+// at 240 s on windows-latest, node 22 (job 134775496122, run 44296702679); CoalMine's windows Node 22 leg cut it at 240 s once and passed on re-run (leg 268 s); CoalHearth's 120 s
+// clock cut it on macOS and windows Node 22; CoalGob (400 s) and CoalWash (420 s) are green; CoalFace is inside 240 s (job 182 s). On this box it runs 140.5 s alone (the local
+// Node major is not named here). 400 s is the venue's reading with headroom, and it stays under FILE_CLOCK_MS (480 s) and RUN_TIMEOUT_MS (540 s), which stay under the 600 s gate job.
+export const TEST_TIMEOUT_MS = 400000; // per TEST on Node 24 and per FILE on Node 22 (--test-timeout): 400 s, the slowest venue's reading above; the cut at 240 s was not the local 140.5 s
+// per FILE wall clock: 480 s; it ends a hang before the first test, which --test-timeout never reaches, and the rest of the roster still runs; it stays above TEST_TIMEOUT_MS so the per-test clock fires first
 export const FILE_CLOCK_MS = 480000;
+// a file whose wall time is at least this long gets one TIME line in the log, so the next clock is sized from a number a run printed, not from memory; below it every file would flood the log
+export const SLOW_FILE_LOG_MS = 30000;
 // the waves: 540 s, above FILE_CLOCK_MS. The gate job is 600 s (ci.yml timeout-minutes 10); its worst measured leg spent 15 s before the test step (checkout, setup-node, verify, run 43826816558), so 540 s leaves about 45 s of the job spare. A stuck run ends in the runner, loudly, before the job clock does
 export const RUN_TIMEOUT_MS = 540000;
 

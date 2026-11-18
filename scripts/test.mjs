@@ -92,8 +92,18 @@ if (missing.length) {
     const { runWaves, skippedLines } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'wave-run.mjs')).href);
     const plan = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'test-plan.mjs')).href);
     let run = null;
+    // 29is: a file's own wall time is printed when it is slow (SLOW_FILE_LOG_MS), so the per-file clock is sized from a number a run printed. A file cut by its clock also exits, so a cut prints its time too.
+    const started = new Map();
+    const onEvent = (ev) => {
+      if (ev.type === 'start') started.set(ev.file, Date.now());
+      else if (ev.type === 'exit' && started.has(ev.file)) {
+        const ms = Date.now() - started.get(ev.file);
+        started.delete(ev.file);
+        if (ms >= plan.SLOW_FILE_LOG_MS) console.log(`TIME ${ev.file} ${(ms / 1000).toFixed(1)} s`);
+      }
+    };
     try {
-      run = await runWaves({ files: TESTS, cwd: repo, env: process.env, heapMb: plan.HEAP_MB, fileTimeoutMs: plan.TEST_TIMEOUT_MS, fileClockMs: plan.FILE_CLOCK_MS, deadlineMs: plan.RUN_TIMEOUT_MS });
+      run = await runWaves({ files: TESTS, cwd: repo, env: process.env, heapMb: plan.HEAP_MB, fileTimeoutMs: plan.TEST_TIMEOUT_MS, fileClockMs: plan.FILE_CLOCK_MS, deadlineMs: plan.RUN_TIMEOUT_MS, onEvent });
     } catch (e) {
       console.error(`FAIL test runner: the run did not start (${e && e.message ? e.message : 'error'})`);
       process.exitCode = 1;

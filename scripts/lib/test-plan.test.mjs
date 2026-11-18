@@ -7,16 +7,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { HEAP_MB, TEST_TIMEOUT_MS, FILE_CLOCK_MS, RUN_TIMEOUT_MS, declaredTopLevelTests, expectationFindings } from './test-plan.mjs';
+import { HEAP_MB, TEST_TIMEOUT_MS, FILE_CLOCK_MS, RUN_TIMEOUT_MS, SLOW_FILE_LOG_MS, declaredTopLevelTests, expectationFindings } from './test-plan.mjs';
 
 const ROOM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const GATE_JOB_TIMEOUT_MS = 10 * 60 * 1000; // ci.yml: timeout-minutes 10 on the gate job
 
 test('test-plan: the numbers are finite, ordered per test < per file < the waves, the waves end inside the gate job clock, and the heap cap is the room\'s 2048 MB', () => {
-  for (const [k, v] of Object.entries({ HEAP_MB, TEST_TIMEOUT_MS, FILE_CLOCK_MS, RUN_TIMEOUT_MS })) assert.ok(Number.isInteger(v) && v > 0, `${k} is a positive integer`);
+  for (const [k, v] of Object.entries({ HEAP_MB, TEST_TIMEOUT_MS, FILE_CLOCK_MS, RUN_TIMEOUT_MS, SLOW_FILE_LOG_MS })) assert.ok(Number.isInteger(v) && v > 0, `${k} is a positive integer`);
   assert.equal(HEAP_MB, 2048);
   assert.ok(TEST_TIMEOUT_MS > 54600, 'above the slowest file measured (54.6 s, 2026-10-09)');
   assert.ok(TEST_TIMEOUT_MS > 142186, 'above secret-gate.test.mjs run alone (142.2 s, 2026-11-16, Node 26 on this box; CI windows Node 22 cut it at 120.0 s, run 43826816558), since --test-timeout binds the whole FILE on Node 22');
+  assert.ok(TEST_TIMEOUT_MS > 240000, 'above 240 s: job 134775496122 (run 44296702679, gate windows-latest node 22) cut secret-gate.test.mjs at 240 s, and Node 22 applies --test-timeout per FILE; the local 140.5 s was one venue\'s reading, not the slowest venue\'s');
   assert.ok(RUN_TIMEOUT_MS <= GATE_JOB_TIMEOUT_MS - 60000, 'the waves leave the gate job 60 s for checkout, setup-node and verify (the worst CI leg took 15 s before its test step, run 43826816558)');
   assert.ok(TEST_TIMEOUT_MS < FILE_CLOCK_MS && FILE_CLOCK_MS < RUN_TIMEOUT_MS, 'per test < per file < the waves');
   assert.ok(RUN_TIMEOUT_MS < GATE_JOB_TIMEOUT_MS, 'the waves end before the gate job clock does: a stuck run ends in the runner, loudly');
@@ -48,8 +49,10 @@ test('expectationFindings: a PASS file that reported fewer tests than it declare
 
 test('test.mjs: the wiring is the canon runner with the room\'s numbers, a failed start and a short report are named FAILs, and nothing else spawns the tests', () => {
   const src = fs.readFileSync(path.join(ROOM, 'scripts', 'test.mjs'), 'utf8');
-  assert.match(src, /runWaves\(\{ files: TESTS, cwd: repo, env: process\.env, heapMb: plan\.HEAP_MB, fileTimeoutMs: plan\.TEST_TIMEOUT_MS, fileClockMs: plan\.FILE_CLOCK_MS, deadlineMs: plan\.RUN_TIMEOUT_MS \}\)/);
+  assert.match(src, /runWaves\(\{ files: TESTS, cwd: repo, env: process\.env, heapMb: plan\.HEAP_MB, fileTimeoutMs: plan\.TEST_TIMEOUT_MS, fileClockMs: plan\.FILE_CLOCK_MS, deadlineMs: plan\.RUN_TIMEOUT_MS, onEvent \}\)/);
   assert.match(src, /FAIL test runner: the run did not start/);
+  assert.match(src, /SLOW_FILE_LOG_MS/, 'the TIME line threshold is a named constant in test-plan.mjs, beside the clocks');
+  assert.match(src, /`TIME \$\{/, 'test.mjs prints one TIME line per slow file (the file\'s own wall time) from the wave event stream');
   assert.doesNotMatch(src, /runDirect|DIRECT_FILES/, 'every roster file, the canon runner test included, runs in a wave (09b: the canon test 30 no longer loses to the preload)');
   assert.doesNotMatch(fs.readFileSync(path.join(ROOM, 'scripts', 'lib', 'test-plan.mjs'), 'utf8'), /runDirect|DIRECT_FILES/);
   assert.match(src, /expectationFindings\(run\.results/);
