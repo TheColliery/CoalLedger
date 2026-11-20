@@ -128,7 +128,10 @@ const REPO_READ_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0);
 // kind-gated and bounded) or is over `maxBytes`. OVER THE BOUND IS SKIPPED, NEVER
 // TRUNCATED: a truncated config parses as malformed, a truncated doc half-scans
 // silently -- both worse than a visible skip.
-export function readRepoFileBounded(file, root, maxBytes) {
+// 29kz (T-59): the bounded read AND the identity of the descriptor it read (dev, ino, size, mtimeMs), from ONE open.
+// Same kind gate, flags, fstat re-check, bound and short-read refusal as readRepoFileBounded, which now delegates here.
+// A caller that judges the file again later compares through a descriptor, never by a second read of the name.
+export function readRepoFileWithIdentity(file, root, maxBytes) {
   if (repoEntryKind(file, root) !== 'file') return null;
   let fd;
   try { fd = fs.openSync(file, REPO_READ_FLAGS); } catch { return null; }
@@ -148,9 +151,31 @@ export function readRepoFileBounded(file, root, maxBytes) {
     // and the old code violated it: a truncated config parses as "malformed JSON" (a wrong
     // diagnosis) and a truncated doc half-scans silently (worse than a skip).
     if (readSoFar !== st.size) return null;
-    return buf.slice(0, readSoFar).toString('utf8');
+    return { text: buf.slice(0, readSoFar).toString('utf8'), identity: { dev: st.dev, ino: st.ino, size: st.size, mtimeMs: st.mtimeMs } };
   } catch { return null; }
   finally { try { fs.closeSync(fd); } catch {} }
+}
+
+export function readRepoFileBounded(file, root, maxBytes) {
+  const got = readRepoFileWithIdentity(file, root, maxBytes);
+  return got === null ? null : got.text;
+}
+
+// 29kz (T-59): the re-check before a migration deletes its legacy file. The file is read through ONE descriptor (the
+// same gate as readRepoFileWithIdentity), and its text and descriptor identity (device, inode, size, mtime) must equal
+// the snapshot the seeding read took. Returns that descriptor's identity when the file is unchanged, else null (a file
+// that cannot be checked is not unchanged). The caller then compares the NAME's lstat with the returned identity before
+// it deletes. RESIDUAL WINDOW: a change between that lstat and the delete is not seen; this narrows the window, it does
+// not close it.
+export function recheckRepoFileIdentity(file, root, maxBytes, snap) {
+  if (!snap) return null;
+  const now = readRepoFileWithIdentity(file, root, maxBytes);
+  if (now === null) return null;
+  const a = now.identity;
+  const b = snap.identity;
+  if (a.dev !== b.dev || a.ino !== b.ino || a.size !== b.size || a.mtimeMs !== b.mtimeMs) return null;
+  if (now.text !== snap.text) return null;
+  return { dev: a.dev, ino: a.ino };
 }
 
 // T-17: the LITERAL root a doc the caller names is read under (node/runtime.md section 4: an allowlist pins the

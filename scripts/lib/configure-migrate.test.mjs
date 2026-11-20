@@ -100,6 +100,44 @@ test('T-53 leg A (same-size replace): a legacy file replaced by a different file
   assert.ok(newConfigFile(sb.proj), 'the new config file was not written');
 });
 
+// T-59 leg C: a LINK planted at the legacy name is not the file the migration read as a plain file. The migration
+// keeps it (exit non-zero, named as kept) and leaves its target alone; the old two-step form followed the link and
+// removed it. A probe decides whether this platform may make a file link; where it may not, the leg skips visibly.
+function canMakeFileLink(root) {
+  const probe = path.join(root, 'probe-target');
+  const link = path.join(root, 'probe-link');
+  fs.writeFileSync(probe, 'x');
+  try {
+    fs.symlinkSync(probe, link, 'file');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(link, { force: true });
+    fs.rmSync(probe, { force: true });
+  }
+}
+
+test('T-59 leg C (link at the legacy name): a link planted where the legacy file was is kept, the run exits non-zero and names it as kept, its target is untouched', (t) => {
+  const sb = sandbox(t);
+  if (!canMakeFileLink(sb.root)) {
+    t.skip('this account cannot make a file link (capability probe): the link leg needs the privilege to run');
+    return;
+  }
+  const target = path.join(sb.proj, 'legacy-target.json');
+  fs.writeFileSync(target, LEGACY_BODY);
+  fs.rmSync(sb.legacy);
+  fs.symlinkSync(target, sb.legacy, 'file');
+  const r = runConfigure(sb, null);
+  assert.equal(r.error, undefined, `the child did not run: ${r.error && r.error.message}`);
+  assert.ok(r.status !== 0, `configure exited ${r.status}; a kept legacy link is a partial failure, so it must exit non-zero`);
+  assert.ok(fs.lstatSync(sb.legacy).isSymbolicLink(), 'the link at the legacy name was DELETED (T-59: the migration followed the link and removed it)');
+  assert.equal(fs.readFileSync(target, 'utf8'), LEGACY_BODY, 'the link target was changed or removed');
+  assert.ok(newConfigFile(sb.proj), 'the new config file was not written');
+  const out = `${r.stdout}\n${r.stderr}`;
+  assert.ok(out.split(/\r?\n/).some((line) => line.includes('changed while migrating') && line.includes(path.basename(sb.legacy))), `no plain line names ${path.basename(sb.legacy)} as kept:\n${out}`);
+});
+
 test('T-53 leg B (unchanged): the legacy file is migrated and removed, the new file holds the setting, exit 0 and the Migrated line prints', (t) => {
   const sb = sandbox(t);
   const r = runConfigure(sb, null);

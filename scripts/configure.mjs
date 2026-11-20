@@ -44,25 +44,19 @@ import { fileURLToPath } from 'url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { parseJsonc } from './lib/jsonc.mjs';
 import { findProjectRoot, projectConfigPath, ownDirDefault, globalConfigPath } from './lib/config-load.mjs';
-import { readRepoFileBounded, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
+import { readRepoFileBounded, readRepoFileWithIdentity, recheckRepoFileIdentity, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
 
-// T-53: the identity a file had at one moment (device, inode, size, mtime), or null when it cannot be read.
-function identityOf(p) {
+// 29kz (T-59): true only when the legacy file is still the file the seeding read saw. The re-check reads through ONE
+// descriptor (recheckRepoFileIdentity: the same text, device, inode, size and mtime). Then the NAME must lstat as a
+// regular file with that same device and inode, so a link at the name, or a different file there, is kept. Any failure
+// to check counts as changed. RESIDUAL WINDOW: a change between that name's lstat and the rmSync is not seen; a stated
+// limit, not a closed one.
+function legacyUnchanged(p, root, snap) {
+  const kept = recheckRepoFileIdentity(p, root, MAX_CONFIG_BYTES, snap);
+  if (kept === null) return false;
   try {
-    const s = fs.lstatSync(p);
-    return `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}`;
-  } catch {
-    return null;
-  }
-}
-
-// T-53: true only when the legacy file still holds the bytes the first read returned, and still has the identity
-// it had then (a same-size replace changes the inode or the mtime, so bytes alone are not enough). Any failure to
-// re-read counts as changed.
-function legacyUnchanged(p, root, bytes, identity) {
-  if (bytes === null || identity === null) return false;
-  try {
-    return readRepoFileBounded(p, root, MAX_CONFIG_BYTES) === bytes && identityOf(p) === identity;
+    const named = fs.lstatSync(p);
+    return named.isFile() && named.dev === kept.dev && named.ino === kept.ino;
   } catch {
     return false;
   }
@@ -210,11 +204,13 @@ function main() {
   // containment, matching config-load.mjs's own readJsonc); root=projectRoot for the
   // project file (must resolve inside the project).
   const readRoot = isGlobal ? null : projectRoot;
-  let rawConfig = readRepoFileBounded(readPath, readRoot, MAX_CONFIG_BYTES);
-  // T-53: the bytes this read returned and the file's identity at that moment, kept for the check before the legacy
-  // file is deleted. Taken before the BOM strip, so the re-read compares like with like.
+  // 29kz (T-59): a LEGACY file is read through one descriptor, and the text and descriptor identity it returns are the
+  // snapshot the delete is judged against. Taken before the BOM strip, so the re-check compares like with like.
+  const legacySnapshot = migrating ? readRepoFileWithIdentity(readPath, readRoot, MAX_CONFIG_BYTES) : null;
+  let rawConfig = migrating
+    ? (legacySnapshot === null ? null : legacySnapshot.text)
+    : readRepoFileBounded(readPath, readRoot, MAX_CONFIG_BYTES);
   const readBytes = rawConfig;
-  const readIdentity = migrating && rawConfig !== null ? identityOf(readPath) : null;
   if (rawConfig !== null && rawConfig.charCodeAt(0) === 0xfeff) rawConfig = rawConfig.slice(1);
   if (rawConfig !== null) {
     try {
@@ -308,7 +304,7 @@ function main() {
     // still leaves a correctly-written new config, and the Migrated line prints
     // only when the legacy file is actually gone.
     if (migrating && writePath !== readPath && readBytes !== null) {
-      if (legacyUnchanged(readPath, readRoot, readBytes, readIdentity)) {
+      if (legacyUnchanged(readPath, readRoot, legacySnapshot)) {
         try { fs.rmSync(readPath, { force: true }); } catch {}
         if (!fs.existsSync(readPath)) console.log(`Migrated the project config from ${readPath} to ${writePath}.`);
       } else {

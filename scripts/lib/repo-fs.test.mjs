@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isContained, repoEntryKind, readRepoFileBounded, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { isContained, repoEntryKind, readRepoFileBounded, readRepoFileWithIdentity, recheckRepoFileIdentity, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 function scratch(prefix) {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
@@ -171,6 +171,83 @@ test('readRepoFileBounded: root = null (a home file) still reads a plain file an
     assert.equal(readRepoFileBounded(f, null, MAX_CONFIG_BYTES), '{"ok":true}');
     fs.writeFileSync(f, 'y'.repeat(MAX_CONFIG_BYTES + 1));
     assert.equal(readRepoFileBounded(f, null, MAX_CONFIG_BYTES), null, 'root=null still bounds the read -- it only lifts CONTAINMENT, never the size/kind gates');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// 29kz (T-59): the identity read and the re-check go through ONE descriptor. Each leg below pins one branch of the
+// re-check: the identity read back, an unchanged file accepted, a same-identity file with changed bytes refused, a
+// same-bytes file with a changed mtime refused, and the null and oversize refusals.
+const FIXED_MTIME_S = 1700000000; // whole seconds, so a restored mtime is exact in mtimeMs
+
+test('readRepoFileWithIdentity: returns the text and the identity of the descriptor it read (dev, ino, size, mtimeMs)', () => {
+  const dir = scratch('cl-identity-read-');
+  try {
+    const f = path.join(dir, 'config.json');
+    fs.writeFileSync(f, '{"a":2}');
+    fs.utimesSync(f, FIXED_MTIME_S, FIXED_MTIME_S);
+    const got = readRepoFileWithIdentity(f, dir, MAX_CONFIG_BYTES);
+    const st = fs.statSync(f);
+    assert.equal(got.text, '{"a":2}');
+    assert.deepEqual(got.identity, { dev: st.dev, ino: st.ino, size: st.size, mtimeMs: st.mtimeMs });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('readRepoFileWithIdentity: an oversize file is SKIPPED (null), never a truncated identity-bearing read', () => {
+  const dir = scratch('cl-identity-over-');
+  try {
+    const f = path.join(dir, 'big.json');
+    fs.writeFileSync(f, 'z'.repeat(MAX_CONFIG_BYTES + 1));
+    assert.equal(readRepoFileWithIdentity(f, dir, MAX_CONFIG_BYTES), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('recheckRepoFileIdentity: an unchanged file returns its descriptor identity (the caller then compares the name)', () => {
+  const dir = scratch('cl-recheck-same-');
+  try {
+    const f = path.join(dir, 'legacy.json');
+    fs.writeFileSync(f, '{"b":3}');
+    fs.utimesSync(f, FIXED_MTIME_S, FIXED_MTIME_S);
+    const snap = readRepoFileWithIdentity(f, dir, MAX_CONFIG_BYTES);
+    const kept = recheckRepoFileIdentity(f, dir, MAX_CONFIG_BYTES, snap);
+    const st = fs.statSync(f);
+    assert.deepEqual(kept, { dev: st.dev, ino: st.ino });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('recheckRepoFileIdentity: the SAME identity with CHANGED bytes is refused (the text branch)', () => {
+  const dir = scratch('cl-recheck-text-');
+  try {
+    const f = path.join(dir, 'legacy.json');
+    fs.writeFileSync(f, '{"b":3}');
+    fs.utimesSync(f, FIXED_MTIME_S, FIXED_MTIME_S);
+    const snap = readRepoFileWithIdentity(f, dir, MAX_CONFIG_BYTES);
+    fs.writeFileSync(f, '{"b":4}'); // same size, different bytes
+    fs.utimesSync(f, FIXED_MTIME_S, FIXED_MTIME_S); // mtime restored, so only the text differs
+    assert.equal(recheckRepoFileIdentity(f, dir, MAX_CONFIG_BYTES, snap), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('recheckRepoFileIdentity: the SAME bytes with a CHANGED mtime is refused (the identity branch)', () => {
+  const dir = scratch('cl-recheck-mtime-');
+  try {
+    const f = path.join(dir, 'legacy.json');
+    fs.writeFileSync(f, '{"b":3}');
+    fs.utimesSync(f, FIXED_MTIME_S, FIXED_MTIME_S);
+    const snap = readRepoFileWithIdentity(f, dir, MAX_CONFIG_BYTES);
+    fs.utimesSync(f, FIXED_MTIME_S + 60, FIXED_MTIME_S + 60); // same bytes, later mtime
+    assert.equal(recheckRepoFileIdentity(f, dir, MAX_CONFIG_BYTES, snap), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('recheckRepoFileIdentity: a missing file, or no snapshot, is never "unchanged"', () => {
+  const dir = scratch('cl-recheck-missing-');
+  try {
+    const f = path.join(dir, 'legacy.json');
+    fs.writeFileSync(f, '{"b":3}');
+    const snap = readRepoFileWithIdentity(f, dir, MAX_CONFIG_BYTES);
+    assert.equal(recheckRepoFileIdentity(f, dir, MAX_CONFIG_BYTES, null), null, 'no snapshot is not unchanged');
+    fs.rmSync(f);
+    assert.equal(recheckRepoFileIdentity(f, dir, MAX_CONFIG_BYTES, snap), null, 'a file that vanished is not unchanged');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
