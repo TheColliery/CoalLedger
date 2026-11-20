@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.10] - 2026-11-20
+
+the migration keeps a legacy config that changed while it ran
+
+### Fixed
+- **The legacy config is kept when it changed during the migration (`scripts/configure.mjs`, HIGH).** The migration read the legacy project config once, wrote the new one, then deleted the legacy file on the strength of that earlier read. An edit made in between was in neither file, and the run reported success, so the setting was lost silently. Now, right before the delete, it re-reads the legacy file and compares its bytes and its identity (device, inode, size, mtime) with the first read. If either changed, or the re-read fails, the legacy file is kept, one warning names it and says the new config does not include the change, and the run exits 1; the new config is still written. The `Migrated` line prints only when the legacy file is gone. The check narrows the window, it does not close it: a change between the last check and the delete can still be lost. Test: `scripts/lib/configure-migrate.test.mjs`.
+
 ## [0.17.0-beta.9] - 2026-11-16
 
 the em-dash CLI refuses a wrong call and says when its rule is off
