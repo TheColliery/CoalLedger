@@ -46,6 +46,28 @@ import { parseJsonc } from './lib/jsonc.mjs';
 import { findProjectRoot, projectConfigPath, ownDirDefault, globalConfigPath } from './lib/config-load.mjs';
 import { readRepoFileBounded, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
 
+// T-53: the identity a file had at one moment (device, inode, size, mtime), or null when it cannot be read.
+function identityOf(p) {
+  try {
+    const s = fs.lstatSync(p);
+    return `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}`;
+  } catch {
+    return null;
+  }
+}
+
+// T-53: true only when the legacy file still holds the bytes the first read returned, and still has the identity
+// it had then (a same-size replace changes the inode or the mtime, so bytes alone are not enough). Any failure to
+// re-read counts as changed.
+function legacyUnchanged(p, root, bytes, identity) {
+  if (bytes === null || identity === null) return false;
+  try {
+    return readRepoFileBounded(p, root, MAX_CONFIG_BYTES) === bytes && identityOf(p) === identity;
+  } catch {
+    return false;
+  }
+}
+
 function printHelp() {
   const lines = [
     'CoalLedger Configurator Utility',
@@ -189,6 +211,10 @@ function main() {
   // project file (must resolve inside the project).
   const readRoot = isGlobal ? null : projectRoot;
   let rawConfig = readRepoFileBounded(readPath, readRoot, MAX_CONFIG_BYTES);
+  // T-53: the bytes this read returned and the file's identity at that moment, kept for the check before the legacy
+  // file is deleted. Taken before the BOM strip, so the re-read compares like with like.
+  const readBytes = rawConfig;
+  const readIdentity = migrating && rawConfig !== null ? identityOf(readPath) : null;
   if (rawConfig !== null && rawConfig.charCodeAt(0) === 0xfeff) rawConfig = rawConfig.slice(1);
   if (rawConfig !== null) {
     try {
@@ -273,12 +299,22 @@ function main() {
     // Move-on-CONFIG-WRITE-only (no-old-version-leftover): the legacy root
     // file is removed only AFTER the new-home write above succeeded, and only
     // when this write actually migrated it (readPath was the legacy file and
-    // writePath moved away from it). Best-effort — a failed delete here still
-    // leaves a correctly-written new config; the stray legacy file is simply
-    // not cleaned up this run.
-    if (migrating && writePath !== readPath) {
-      try { fs.rmSync(readPath, { force: true }); } catch {}
-      console.log(`Migrated the project config from ${readPath} to ${writePath}.`);
+    // writePath moved away from it). T-53: the delete also needs the legacy file
+    // to still hold what the first read returned. An edit made between that read
+    // and this delete is in neither file, so a changed legacy file is kept, the
+    // run exits 1, and the new config is written as usual. RESIDUAL WINDOW: the
+    // check narrows the window, it does not close it; a change between the last
+    // check and the rmSync below can still be lost. Best-effort — a failed delete
+    // still leaves a correctly-written new config, and the Migrated line prints
+    // only when the legacy file is actually gone.
+    if (migrating && writePath !== readPath && readBytes !== null) {
+      if (legacyUnchanged(readPath, readRoot, readBytes, readIdentity)) {
+        try { fs.rmSync(readPath, { force: true }); } catch {}
+        if (!fs.existsSync(readPath)) console.log(`Migrated the project config from ${readPath} to ${writePath}.`);
+      } else {
+        process.exitCode = 1;
+        console.warn(`Warning: ${readPath} changed while migrating; kept it. The new config at ${writePath} does not include that change; merge it by hand, then delete ${readPath}.`);
+      }
     }
     if (hadComments) {
       console.warn('Note: inline comments were stripped (this tool writes plain JSON). Every key stays documented in platform-configs/.coalledger.json.');
