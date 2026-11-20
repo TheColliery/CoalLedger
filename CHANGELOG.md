@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.11] - 2026-11-20
+
+the migration reads the legacy config through one descriptor
+
+### Fixed
+- **The legacy-config migration opens the legacy file once (`scripts/configure.mjs`, HIGH).** The migration took the legacy file's bytes and identity in two steps, a read and then a separate `lstat` by name: the check-then-use shape CodeQL's `js/file-system-race` names. It now opens the file once, takes the bytes and the identity from that one descriptor (`readRepoFileWithIdentity` in `scripts/lib/repo-fs.mjs`, which ships in the plugin too), and before the remove requires the name to be the same regular file. A link planted at the legacy name is now kept, with the warning and exit 1; before, the migration removed the link. The residual window between the name's last `lstat` and the remove is not closed: a change there can still be lost. Tests: `scripts/lib/configure-migrate.test.mjs` and `scripts/lib/repo-fs.test.mjs`.
+
 ## [0.17.0-beta.10] - 2026-11-20
 
 the migration keeps a legacy config that changed while it ran
