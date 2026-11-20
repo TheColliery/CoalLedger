@@ -12,10 +12,10 @@
 // scripts/secret-gate.test.mjs 48.0 s, scripts/lib/wave-run.test.mjs 36.1 s, scripts/verify.test.mjs 25.3 s). The whole-run deadline is 1.7 times the longest whole run, 1.7 x 264 s
 // = 448.8 s, rounded to 450 s; the 300 s of 09a sat at 88% of the 264 s run (INSPECT 09b MEDIUM-1). Re-derive: time three runs of `node scripts/test.mjs` (the per-file times come
 // from the runner's start and exit events).
-// SUPERSEDED for the three clocks by the 2026-11-18 basis at HEAP_MB below (scratchpad/29is/b-29is.md): the clocks rest on it. The 2026-11-16 basis below it stays as the record of
-// scripts/secret-gate.test.mjs at 142.2 s alone (Node 26; CI windows Node 22 cut at 120.0 s, run 43826816558), and the 2026-10-09 figures above stay as the record of the roster they were measured on.
-// Not measured: a CI runner (macOS and Windows runners are slower; the first CI run after a push is that venue, and a deadline hit there is a number to raise with the run's time beside it),
-// Node 22, Linux, macOS.
+// The three clocks rest on the 2026-11-18 basis at HEAP_MB below (scratchpad/29is/b-29is.md): the windows Node 22 CI cut of scripts/secret-gate.test.mjs, measured 187.8 s on that leg at
+// 4f7459f. The 2026-10-09 figures above are the record of the roster they were measured on; the 2026-11-16 figure (142.2 s alone, Node 26; CI cut at 120.0 s, run 43826816558) is history.
+// Measured: this box (node 24.19, the figures above) and the windows Node 22 CI leg (the venue that set TEST_TIMEOUT_MS). No per-file figure is recorded here for Node 22 on Linux or
+// macOS, nor for the other CI legs; a deadline hit on any venue is a number to raise with the run's time beside it.
 
 export const HEAP_MB = 2048;
 // Sized 2026-11-18 (scratchpad/29is/b-29is.md), from the slowest VENUE's reading, not the local box: on Node 22 --test-timeout binds the whole FILE, and secret-gate.test.mjs was cut
