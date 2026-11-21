@@ -110,8 +110,50 @@ test('CRLF security.txt and CRLF raw-log changelog behave as their LF forms', (t
   assert.equal(f[0].line, 3, 'the finding is the first matching line');
 });
 
-test('a Keep a Changelog file whose prose names a 7-hex SHA once has no finding', (t) => {
-  assert.ok(!checks(findings(clean(t))).includes('release-notes-raw-log'));
+// 29mh (T-24): the prose-SHA fixture names SHAs in a Keep a Changelog section and stays UNDER the run of five the raw-log shape needs.
+// The clean fixture never put a SHA in its changelog, so the old form of this test could not fail for the reason its name gives.
+// A threshold lowered to four makes this file read as a raw log, which is the red this test exists to show.
+test('a Keep a Changelog file whose prose names 7-hex SHAs, four of them line-leading, has no finding', (t) => {
+  const d = clean(t);
+  put(d, 'CHANGELOG.md', '# Changelog\n\n## [1.0.0] - 2026-01-01\n\n### Fixed\n- abc1234 is the parser fix\n- bcd2345 is the timeout fix\n'
+    + '- cde3456 is the encoding fix\n- def4567 is the link fix\n');
+  assert.ok(!checks(findings(d)).includes('release-notes-raw-log'));
+});
+
+// 29mh (T-22): a project whose docs/ or .github/ is a FILE is a project with no such folder, not a crash (readdir ENOTDIR).
+test('a docs/ or .github/ that is a file, not a folder, is read as absent and the run completes', (t) => {
+  for (const place of ['docs', '.github']) {
+    const d = clean(t);
+    put(d, place, 'not a folder\n');
+    const r = run([`--root=${d}`, '--json', `--now=${NOW}`]);
+    assert.equal(r.status, 0, `${place} as a file crashed the run:\n${r.stderr}`);
+  }
+});
+
+// 29mh (T-25): a --root that is not a folder is a usage error (exit 2) that names the root, never a verdict on absent files.
+test('a --root that names a file is a usage error (exit 2), not a verdict on absent files', (t) => {
+  const d = fixture(t);
+  put(d, 'notes.txt', 'x\n');
+  const target = path.join(d, 'notes.txt');
+  const r = run([`--root=${target}`, '--json', `--now=${NOW}`]);
+  assert.equal(r.status, 2, `expected a usage refusal, got exit ${r.status}:\n${r.stdout}`);
+  assert.match(r.stderr, /--root must name a folder/, 'the refusal names the problem');
+});
+
+// 29mh (T-68): one over-bound file under two names is reported ONCE. A hard link is the same file under two names; its identity
+// is read by stat, because the bounded read refuses it and there is no identity to dedupe on through the read.
+test('an over-bound release-notes file under two names (a hard link) is reported once', (t) => {
+  const d = clean(t);
+  const big = path.join(d, 'CHANGELOG.md');
+  fs.writeFileSync(big, Buffer.alloc(4 * 1024 * 1024 + 1, 0x61)); // one byte over MAX_DOC_BYTES (repo-fs.mjs)
+  try {
+    fs.linkSync(big, path.join(d, 'HISTORY.md'));
+  } catch (e) {
+    t.skip(`this account cannot make a hard link (${e.code}): the two-name shape is not reproduced here`);
+    return;
+  }
+  const f = findings(d).filter((x) => x.check === 'release-notes-unreadable');
+  assert.equal(f.length, 1, `the one file was reported ${f.length} times: ${JSON.stringify(f.map((x) => x.file))}`);
 });
 
 test('four one-line log entries are not a raw log', (t) => {

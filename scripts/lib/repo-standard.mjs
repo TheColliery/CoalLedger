@@ -26,10 +26,11 @@ const RELEASE_NOTES_RE = /^(CHANGELOG|HISTORY|NEWS|RELEASES)(\.md|\.rst|\.txt)?$
 // Where a project's policy and contribution files may sit: the root, docs/ and .github/.
 const PLACES = ['', 'docs', '.github'];
 
-// The plain files under `dir` whose names match. A project with no such folder has none.
+// The plain files under `dir` whose names match. A project with no such folder has none. 29mh (T-22): a name that is a FILE
+// (ENOTDIR on readdir) is the same answer, a folder that is not there, not a crash.
 function presentIn(root, dir, re) {
   let names;
-  try { names = fs.readdirSync(path.join(root, dir)); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+  try { names = fs.readdirSync(path.join(root, dir)); } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return []; throw e; }
   return names.filter((n) => re.test(n) && repoEntryKind(path.join(root, dir, n), root) === 'file').map((n) => path.join(dir, n));
 }
 
@@ -60,6 +61,17 @@ function identityKey(identity, abs) {
   if (identity.ino !== 0n) return `ino:${identity.dev}:${identity.ino}`;
   try {
     return `path:${fs.realpathSync.native(abs)}`;
+  } catch {
+    return null;
+  }
+}
+
+// 29mh (T-68): the dedupe key of a file the bounded read refused, from a stat of the name (the same key shape as identityKey).
+// Null when the name cannot be stat'ed at all: the caller then reports it, as it always did.
+function unreadableKey(abs) {
+  try {
+    const st = fs.statSync(abs, { bigint: true });
+    return st.ino !== 0n ? `ino:${st.dev}:${st.ino}` : `path:${fs.realpathSync.native(abs)}`;
   } catch {
     return null;
   }
@@ -155,6 +167,11 @@ export function checkRepository(root, nowMs) {
       const abs = path.join(root, rel);
       const got = readRepoFileWithIdentity(abs, root, MAX_DOC_BYTES);
       if (got === null) {
+        // 29mh (T-68): an unreadable file is still one file under however many names; its identity comes from a stat, so the
+        // second name of an over-bound file is skipped, not reported again.
+        const key = unreadableKey(abs);
+        if (key !== null && judged.has(key)) continue;
+        if (key !== null) judged.add(key);
         out.push({ check: 'release-notes-unreadable', criterion: 'release_notes', verdict: 'SUSPECTED', file: rel,
           reason: unreadableReason(abs, rel) });
         continue;
@@ -186,6 +203,11 @@ function isMainModule(url) {
   }
 }
 
+// 29mh (T-25): true when the path is an existing folder; a missing path, a file or an unreadable name is not.
+function isFolderPath(p) {
+  try { return fs.statSync(p).isDirectory(); } catch { return false; }
+}
+
 // CLI: node repo-standard.mjs --root=<project root> [--json] [--now=<ISO>]
 // Exit 0 whenever the run completed, findings included; exit 2 on a usage error. Never process.exit().
 function readListOrReport() {
@@ -199,6 +221,8 @@ if (isMainModule(import.meta.url) && !listPathCli()) {
   const nowMs = nowArg ? Date.parse(nowArg.slice('--now='.length)) : Date.now();
   const listed = args.includes('--list');
   const runList = listed ? readListOrReport() : null;
+  // 29mh (T-25): the root is resolved once, literally (the 29w class), and must name a folder before any verdict is given.
+  const givenRoot = path.resolve(listed ? (runList ? runList.root : '') : (rootArg ? rootArg.slice('--root='.length) : ''));
   if (listed && rootArg) {
     console.error('usage: --list and --root=<dir> are two ways to give the root; use one');
     process.exitCode = 2;
@@ -210,8 +234,11 @@ if (isMainModule(import.meta.url) && !listPathCli()) {
   } else if (Number.isNaN(nowMs)) {
     console.error(`usage: --now must be an ISO date (got ${JSON.stringify(nowArg)})`);
     process.exitCode = 2;
+  } else if (!isFolderPath(givenRoot)) {
+    console.error(`usage: --root must name a folder (got ${JSON.stringify(givenRoot)})`);
+    process.exitCode = 2;
   } else {
-    const root = path.resolve(listed ? runList.root : rootArg.slice('--root='.length)); // used literally, never realpathed (the 29w class)
+    const root = givenRoot; // used literally, never realpathed (the 29w class)
     const findings = checkRepository(root, nowMs);
     if (args.includes('--json')) {
       const body = listed ? { findings, runList: { root: runList.root, docs: runList.docs.length } } : { findings };
