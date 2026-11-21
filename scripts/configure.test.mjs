@@ -264,7 +264,12 @@ test('configure: writing to the PROJECT config target that is an EXISTING SYMLIN
     fs.symlinkSync(victim, cfgPath, 'file');
     const r = run(['--updateCheckDays', '9'], { home, proj });
     assert.notStrictEqual(r.status, 0, 'a write refused by the write guard must exit non-zero (fail loud)');
-    assert.match(r.stderr + r.stdout, /refused/i, `the refusal must be reported, not silently swallowed; got:\n${r.stdout}${r.stderr}`);
+    // 29mv (CI fix): the READ refuses a link that leaves the project before the write guard is reached (T-69), so the refusal is the
+    // reader's line, not the write guard's word "refused". Match that line exactly: the first FAIL line, its file, its reason.
+    // The path is compared by its file name because the CLI prints the project path it resolved, which may spell the temp folder differently.
+    const failLine = `${r.stdout}\n${r.stderr}`.split(/\r?\n/).find((l) => l.startsWith('FAIL ') && l.includes('coalledger.json'));
+    assert.ok(failLine, `the refusal must be reported on a FAIL line naming the config, not silently swallowed; got:\n${r.stdout}${r.stderr}`);
+    assert.ok(failLine.endsWith('could not be read (ENOTFILE); nothing was written'), `the refusal line is not the reader's line: ${failLine}`);
     assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'ORIGINAL-OUTSIDE-FILE', 'the symlink target outside the project must be UNTOUCHED -- this is the actual security property');
   } finally { clean(home, proj); fs.rmSync(outside, { recursive: true, force: true }); }
 });

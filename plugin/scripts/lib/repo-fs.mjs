@@ -137,8 +137,7 @@ const REPO_READ_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0);
 // read carries its own code; an over-bound file is ECONFIGTOOLARGE; a short read is EIO). Same kind gate, flags, fstat re-check,
 // bound and short-read refusal as before: only the shape of the answer is new.
 export function readRepoFileOutcome(file, root, maxBytes) {
-  let st;
-  try { st = fs.lstatSync(file); } catch (e) {
+  try { fs.lstatSync(file); } catch (e) {
     if (e.code === 'ENOENT') return { status: 'absent' };
     return refusedRead(file, e.code, 'inspect');
   }
