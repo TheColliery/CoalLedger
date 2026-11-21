@@ -131,17 +131,33 @@ const REPO_READ_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0);
 // 29kz (T-59): the bounded read AND the identity of the descriptor it read (dev, ino, size, mtimeMs), from ONE open.
 // Same kind gate, flags, fstat re-check, bound and short-read refusal as readRepoFileBounded, which now delegates here.
 // A caller that judges the file again later compares through a descriptor, never by a second read of the name.
-export function readRepoFileWithIdentity(file, root, maxBytes) {
-  if (repoEntryKind(file, root) !== 'file') return null;
+// 29mo (T-69): the read as an OUTCOME, so a caller can tell "there is no file" from "there is a file and it could not be read".
+// { status: 'ok', text, identity } · { status: 'absent' } (ENOENT only) · { status: 'refused', file, code, phase }, where phase is
+// 'inspect' (the name could not be lstat'ed) or 'read' (a directory, a non-file or an escaping link is ENOTFILE; a failed open or
+// read carries its own code; an over-bound file is ECONFIGTOOLARGE; a short read is EIO). Same kind gate, flags, fstat re-check,
+// bound and short-read refusal as before: only the shape of the answer is new.
+export function readRepoFileOutcome(file, root, maxBytes) {
+  let st;
+  try { st = fs.lstatSync(file); } catch (e) {
+    if (e.code === 'ENOENT') return { status: 'absent' };
+    return refusedRead(file, e.code, 'inspect');
+  }
+  const kind = repoEntryKind(file, root);
+  if (kind === 'missing') return { status: 'absent' }; // the name went away between the lstat and this check
+  if (kind === 'dir') return refusedRead(file, 'EISDIR', 'read');
+  if (kind !== 'file') return refusedRead(file, 'ENOTFILE', 'read');
   let fd;
-  try { fd = fs.openSync(file, REPO_READ_FLAGS); } catch { return null; }
+  try { fd = fs.openSync(file, REPO_READ_FLAGS); } catch (e) {
+    if (e.code === 'ENOENT') return { status: 'absent' };
+    return refusedRead(file, e.code, 'read');
+  }
   try {
     // 29mh (T-67): the identity is BIGINT (fstat with bigint), so a key built from it is exact where a volume's file IDs pass 2^53
     // (NTFS does; a Number rounds them). The byte count stays a Number for the buffer and the bound.
-    const st = fs.fstatSync(fd, { bigint: true }); // re-check AFTER open -- the TOCTOU window the O_NONBLOCK flag also guards
-    if (!st.isFile()) return null;
-    const size = Number(st.size);
-    if (size > maxBytes) return null;
+    const fst = fs.fstatSync(fd, { bigint: true }); // re-check AFTER open -- the TOCTOU window the O_NONBLOCK flag also guards
+    if (!fst.isFile()) return refusedRead(file, 'ENOTFILE', 'read');
+    const size = Number(fst.size);
+    if (size > maxBytes) return refusedRead(file, 'ECONFIGTOOLARGE', 'read');
     const buf = Buffer.alloc(size);
     let readSoFar = 0;
     while (readSoFar < size) {
@@ -153,10 +169,20 @@ export function readRepoFileWithIdentity(file, root, maxBytes) {
     // SKIPPED, never returned as a truncated prefix -- the header above says exactly this
     // and the old code violated it: a truncated config parses as "malformed JSON" (a wrong
     // diagnosis) and a truncated doc half-scans silently (worse than a skip).
-    if (readSoFar !== size) return null;
-    return { text: buf.slice(0, readSoFar).toString('utf8'), identity: { dev: st.dev, ino: st.ino, size: st.size, mtimeMs: st.mtimeMs } };
-  } catch { return null; }
+    if (readSoFar !== size) return refusedRead(file, 'EIO', 'read');
+    return { status: 'ok', text: buf.slice(0, readSoFar).toString('utf8'), identity: { dev: fst.dev, ino: fst.ino, size: fst.size, mtimeMs: fst.mtimeMs } };
+  } catch (e) { return refusedRead(file, e.code || 'EREAD', 'read'); }
   finally { try { fs.closeSync(fd); } catch {} }
+}
+
+function refusedRead(file, code, phase) {
+  return { status: 'refused', file, code: code || 'EREAD', phase };
+}
+
+// Same answer as before for every caller that does not ask for the reason: the text and its identity, or null for any failure.
+export function readRepoFileWithIdentity(file, root, maxBytes) {
+  const out = readRepoFileOutcome(file, root, maxBytes);
+  return out.status === 'ok' ? { text: out.text, identity: out.identity } : null;
 }
 
 export function readRepoFileBounded(file, root, maxBytes) {
@@ -264,7 +290,6 @@ export function writeRepoFile(target, content, root) {
   } catch { existingKind = 'missing'; }
   if (existingKind === 'symlink') throw new RepoWriteRefused(target, 'it already exists and is a symlink');
   if (existingKind === 'other') throw new RepoWriteRefused(target, 'it already exists and is not a regular file');
-
   // R12 bounce 1 F3: the temp name is predictable (pid alone) and a stale leftover from a
   // crashed earlier run blocks this one. A raw EEXIST from the open is not an actionable
   // message (security.md's problem-report MUST — "never a raw stack trace or an internal

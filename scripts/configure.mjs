@@ -44,7 +44,7 @@ import { fileURLToPath } from 'url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { parseJsonc } from './lib/jsonc.mjs';
 import { findProjectRoot, projectConfigPath, ownDirDefault, globalConfigPath } from './lib/config-load.mjs';
-import { readRepoFileBounded, readRepoFileWithIdentity, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
+import { readRepoFileBounded, readRepoFileOutcome, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
 import { spawnSync } from 'child_process';
 import { gitEnv } from './lib/git-env.mjs';
 
@@ -252,12 +252,20 @@ function main() {
   // containment, matching config-load.mjs's own readJsonc); root=projectRoot for the
   // project file (must resolve inside the project).
   const readRoot = isGlobal ? null : projectRoot;
-  // 29kz (T-59) / BB-533: a LEGACY file is read through one descriptor; its text is the snapshot the backup is compared with
-  // after the move. Taken before the BOM strip, so the compare is like with like.
-  const legacySnapshot = migrating ? readRepoFileWithIdentity(readPath, readRoot, MAX_CONFIG_BYTES) : null;
-  let rawConfig = migrating
-    ? (legacySnapshot === null ? null : legacySnapshot.text)
-    : readRepoFileBounded(readPath, readRoot, MAX_CONFIG_BYTES);
+  // 29mo (T-69): only "no file" (ENOENT) is an empty config. A file that EXISTS and cannot be read is a refusal here, before anything is
+  // written: the run names the file and the code and exits 1, and the file, the new home and any .bak are left as they were.
+  const readOut = readRepoFileOutcome(readPath, readRoot, MAX_CONFIG_BYTES);
+  if (readOut.status === 'refused') {
+    // An over-bound file keeps its own wording: it is a file the run does not read, so it is not moved or changed (the legacy move named it so before 29mo).
+    const advice = readOut.code === 'ECONFIGTOOLARGE' ? `the file is over the ${MAX_CONFIG_BYTES}-byte read bound, so it was not moved or changed`
+      : readOut.phase === 'inspect' ? 'check that the file is reachable and run again' : '';
+    const why = readOut.phase === 'inspect' ? `could not be inspected (${readOut.code})` : `could not be read (${readOut.code})`;
+    console.error(`FAIL ${readPath}: ${why}; nothing was written${advice ? ` -- ${advice}` : ''}`);
+    process.exitCode = 1;
+    return;
+  }
+  const legacySnapshot = migrating && readOut.status === 'ok' ? { text: readOut.text } : null;
+  let rawConfig = readOut.status === 'ok' ? readOut.text : null;
   if (rawConfig !== null && rawConfig.charCodeAt(0) === 0xfeff) rawConfig = rawConfig.slice(1);
   if (rawConfig !== null) {
     try {

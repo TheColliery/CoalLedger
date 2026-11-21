@@ -235,16 +235,20 @@ function canSymlinkCli() {
 }
 const CLI_SYMLINK_OK = canSymlinkCli();
 
-test('configure: an OVER-SIZE project config is treated as absent, never read in full, and the run still succeeds with defaults', () => {
+// 29mo (T-69): this test used to pin the defect it now refuses. An over-size config the run does not read was "treated as absent" and
+// REPLACED from defaults with exit 0. The run never read those bytes, so it must not rewrite them: it is refused by name, exit 1, and the
+// file is left as it was.
+test('configure: an OVER-SIZE project config is refused by name (exit 1) and is never replaced, because the run did not read it', () => {
   const { home, proj } = sandbox();
   try {
     fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
     const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
-    fs.writeFileSync(cfgPath, '/*' + 'x'.repeat(1024 * 1024) + '*/'); // over MAX_CONFIG_BYTES
+    const original = '/*' + 'x'.repeat(1024 * 1024) + '*/'; // over MAX_CONFIG_BYTES
+    fs.writeFileSync(cfgPath, original);
     const r = run(['--updateCheckDays', '9'], { home, proj });
-    assert.strictEqual(r.status, 0, `an over-size existing config must not crash the run; got:\n${r.stdout}${r.stderr}`);
-    const written = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-    assert.strictEqual(written.updateCheckDays, 9, 'the rebuild must still succeed from defaults, over-size old content treated as absent');
+    assert.strictEqual(r.status, 1, `an over-size existing config is refused (exit 1); got ${r.status}:\n${r.stdout}${r.stderr}`);
+    assert.match(`${r.stdout}${r.stderr}`, /could not be read \(ECONFIGTOOLARGE\); nothing was written/);
+    assert.strictEqual(fs.readFileSync(cfgPath, 'utf8'), original, 'the over-size config the run did not read was replaced');
   } finally { clean(home, proj); }
 });
 
