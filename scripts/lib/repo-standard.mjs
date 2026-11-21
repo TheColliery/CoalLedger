@@ -55,8 +55,9 @@ function expiresValueOf(line) {
 // T-63: the dedupe key of a release-notes file, taken from the descriptor the text was read through (readRepoFileWithIdentity),
 // never from a stat of the name in an earlier step. Two names of one file (a hard link) share a device and an inode. Where the
 // volume reports no inode the realpath is the key, and a hard link is not caught there (the fallback this pass always had).
+// 29mh (T-67): the identity is bigint (readRepoFileWithIdentity), so the key is exact and the inode-0 test is against 0n.
 function identityKey(identity, abs) {
-  if (identity.ino !== 0) return `ino:${identity.dev}:${identity.ino}`;
+  if (identity.ino !== 0n) return `ino:${identity.dev}:${identity.ino}`;
   try {
     return `path:${fs.realpathSync.native(abs)}`;
   } catch {

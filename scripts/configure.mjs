@@ -44,22 +44,70 @@ import { fileURLToPath } from 'url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { parseJsonc } from './lib/jsonc.mjs';
 import { findProjectRoot, projectConfigPath, ownDirDefault, globalConfigPath } from './lib/config-load.mjs';
-import { readRepoFileBounded, readRepoFileWithIdentity, recheckRepoFileIdentity, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
+import { readRepoFileBounded, readRepoFileWithIdentity, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
+import { spawnSync } from 'child_process';
+import { gitEnv } from './lib/git-env.mjs';
 
-// 29kz (T-59): true only when the legacy file is still the file the seeding read saw. The re-check reads through ONE
-// descriptor (recheckRepoFileIdentity: the same text, device, inode, size and mtime). Then the NAME must lstat as a
-// regular file with that same device and inode, so a link at the name, or a different file there, is kept. Any failure
-// to check counts as changed. RESIDUAL WINDOW: a change between that name's lstat and the rmSync is not seen; a stated
-// limit, not a closed one.
-function legacyUnchanged(p, root, snap) {
-  const kept = recheckRepoFileIdentity(p, root, MAX_CONFIG_BYTES, snap);
-  if (kept === null) return false;
+// BB-533 (29mh, the form of CoalFace 3552d9f): whether git's index tracks the legacy file. GIT_* is stripped from the child
+// environment and the probe has a timeout. No git on the machine means not tracked, and the tracked line is then absent.
+function trackedByGit(file, root) {
+  // gitEnv strips the whole GIT_* family and sets a ceiling: git may look at the project root, never above its parent.
   try {
-    const named = fs.lstatSync(p);
-    return named.isFile() && named.dev === kept.dev && named.ino === kept.ino;
+    const r = spawnSync('git', ['ls-files', '--error-unmatch', '--', path.basename(file)], { cwd: path.dirname(file), env: gitEnv(path.dirname(root)), encoding: 'utf8', timeout: 10000 });
+    return r.status === 0;
   } catch {
     return false;
   }
+}
+
+// BB-533 (29mh, the form of CoalFace 3552d9f): the legacy file is moved aside, never removed. Called after the new home is
+// written. ONE rename is the only call that touches the legacy name; the backup is then read back and compared with the text
+// the seeding read took (`snapshot`, before the BOM strip; null when that read did not take the file in full). A failed
+// rename is reported and the file is kept only where an lstat still shows it. STATED LIMITS: the "earlier backup" word is one
+// step stale (the lstat comes just before the rename, and the rename is what replaces a file); a change made after the
+// read-back is not seen; a file held open by another process across the rename is reported by the compare, not prevented.
+function moveLegacyAside(legacy, writePath, root, snapshot) {
+  const bak = `${legacy}.bak`;
+  if (snapshot === null) {
+    process.exitCode = 1;
+    console.error(`Warning: the legacy config ${legacy} could not be read in full, so it was not moved aside. The new config at ${writePath} does not include its settings; merge them by hand, then move ${legacy} aside yourself.`);
+    return;
+  }
+  let st = null;
+  try { st = fs.lstatSync(legacy); } catch { /* absent: the rename below reports it */ }
+  if (st && st.isSymbolicLink()) {
+    process.exitCode = 1;
+    console.error(`Warning: the legacy config ${legacy} is a link, not a file; it was kept. The new config at ${writePath} is written. Remove the link by hand once it is no longer needed.`);
+    return;
+  }
+  const tracked = trackedByGit(legacy, root);
+  let replaced = false;
+  try { fs.lstatSync(bak); replaced = true; } catch { /* no earlier backup */ }
+  try {
+    fs.renameSync(legacy, bak);
+  } catch (e) {
+    const why = e.code || e.message;
+    let stillThere = false;
+    try { fs.lstatSync(legacy); stillThere = true; } catch { /* gone */ }
+    process.exitCode = 1;
+    if (stillThere) console.error(`Warning: the legacy config ${legacy} was kept: it could not be moved aside (${why}). The new config at ${writePath} is written; move ${legacy} aside by hand once it is no longer needed.`);
+    else console.error(`Warning: the legacy config ${legacy} was not moved: it is not at its name any more (${why}). The new config at ${writePath} is written.`);
+    return;
+  }
+  let back = null;
+  try { back = readRepoFileBounded(bak, root, MAX_CONFIG_BYTES); } catch { back = null; }
+  if (back === null) {
+    process.exitCode = 1;
+    console.error(`Warning: the backup ${bak} could not be read back, so it was not checked against what was migrated. The old settings are in it, and the new config at ${writePath} is written.`);
+    return;
+  }
+  if (back !== snapshot) {
+    process.exitCode = 1;
+    console.error(`Warning: ${legacy} changed while migrating: the backup ${bak} holds a change the new config at ${writePath} does not include; merge it by hand, then delete the backup.`);
+    return;
+  }
+  console.log(`Migrated the project config to ${writePath}; the old file is kept as ${bak} ${replaced ? '(replaced an earlier backup)' : '(no earlier backup)'}.`);
+  if (tracked) console.log(`${legacy} is tracked by git: commit its removal (git add -A -- ${legacy}). ${bak} is untracked and yours to keep or delete.`);
 }
 
 function printHelp() {
@@ -204,13 +252,12 @@ function main() {
   // containment, matching config-load.mjs's own readJsonc); root=projectRoot for the
   // project file (must resolve inside the project).
   const readRoot = isGlobal ? null : projectRoot;
-  // 29kz (T-59): a LEGACY file is read through one descriptor, and the text and descriptor identity it returns are the
-  // snapshot the delete is judged against. Taken before the BOM strip, so the re-check compares like with like.
+  // 29kz (T-59) / BB-533: a LEGACY file is read through one descriptor; its text is the snapshot the backup is compared with
+  // after the move. Taken before the BOM strip, so the compare is like with like.
   const legacySnapshot = migrating ? readRepoFileWithIdentity(readPath, readRoot, MAX_CONFIG_BYTES) : null;
   let rawConfig = migrating
     ? (legacySnapshot === null ? null : legacySnapshot.text)
     : readRepoFileBounded(readPath, readRoot, MAX_CONFIG_BYTES);
-  const readBytes = rawConfig;
   if (rawConfig !== null && rawConfig.charCodeAt(0) === 0xfeff) rawConfig = rawConfig.slice(1);
   if (rawConfig !== null) {
     try {
@@ -292,25 +339,13 @@ function main() {
     // through it. writeRoot mirrors readRoot: null for the global (home) file, the
     // project root otherwise.
     writeRepoFile(writePath, JSON.stringify(cfg, null, 2) + '\n', writeRoot);
-    // Move-on-CONFIG-WRITE-only (no-old-version-leftover): the legacy root
-    // file is removed only AFTER the new-home write above succeeded, and only
-    // when this write actually migrated it (readPath was the legacy file and
-    // writePath moved away from it). T-53: the delete also needs the legacy file
-    // to still hold what the first read returned. An edit made between that read
-    // and this delete is in neither file, so a changed legacy file is kept, the
-    // run exits 1, and the new config is written as usual. RESIDUAL WINDOW: the
-    // check narrows the window, it does not close it; a change between the last
-    // check and the rmSync below can still be lost. Best-effort — a failed delete
-    // still leaves a correctly-written new config, and the Migrated line prints
-    // only when the legacy file is actually gone.
-    if (migrating && writePath !== readPath && readBytes !== null) {
-      if (legacyUnchanged(readPath, readRoot, legacySnapshot)) {
-        try { fs.rmSync(readPath, { force: true }); } catch {}
-        if (!fs.existsSync(readPath)) console.log(`Migrated the project config from ${readPath} to ${writePath}.`);
-      } else {
-        process.exitCode = 1;
-        console.warn(`Warning: ${readPath} changed while migrating; kept it. The new config at ${writePath} does not include that change; merge it by hand, then delete ${readPath}.`);
-      }
+    // BB-533 (29mh): the legacy root file is never removed. It is moved aside
+    // AFTER the new-home write above succeeded, and only when this write
+    // actually migrated it (readPath was the legacy file and writePath moved
+    // away from it): one rename to `<legacy>.bak`, then a read-back compare.
+    // Nothing is decided at one moment and destroyed at a later one.
+    if (migrating && writePath !== readPath) {
+      moveLegacyAside(readPath, writePath, readRoot, legacySnapshot === null ? null : legacySnapshot.text);
     }
     if (hadComments) {
       console.warn('Note: inline comments were stripped (this tool writes plain JSON). Every key stays documented in platform-configs/.coalledger.json.');

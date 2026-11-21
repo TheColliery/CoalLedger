@@ -136,13 +136,16 @@ export function readRepoFileWithIdentity(file, root, maxBytes) {
   let fd;
   try { fd = fs.openSync(file, REPO_READ_FLAGS); } catch { return null; }
   try {
-    const st = fs.fstatSync(fd); // re-check AFTER open -- the TOCTOU window the O_NONBLOCK flag also guards
+    // 29mh (T-67): the identity is BIGINT (fstat with bigint), so a key built from it is exact where a volume's file IDs pass 2^53
+    // (NTFS does; a Number rounds them). The byte count stays a Number for the buffer and the bound.
+    const st = fs.fstatSync(fd, { bigint: true }); // re-check AFTER open -- the TOCTOU window the O_NONBLOCK flag also guards
     if (!st.isFile()) return null;
-    if (st.size > maxBytes) return null;
-    const buf = Buffer.alloc(st.size);
+    const size = Number(st.size);
+    if (size > maxBytes) return null;
+    const buf = Buffer.alloc(size);
     let readSoFar = 0;
-    while (readSoFar < st.size) {
-      const n = fs.readSync(fd, buf, readSoFar, st.size - readSoFar, readSoFar);
+    while (readSoFar < size) {
+      const n = fs.readSync(fd, buf, readSoFar, size - readSoFar, readSoFar);
       if (n <= 0) break;
       readSoFar += n;
     }
@@ -150,7 +153,7 @@ export function readRepoFileWithIdentity(file, root, maxBytes) {
     // SKIPPED, never returned as a truncated prefix -- the header above says exactly this
     // and the old code violated it: a truncated config parses as "malformed JSON" (a wrong
     // diagnosis) and a truncated doc half-scans silently (worse than a skip).
-    if (readSoFar !== st.size) return null;
+    if (readSoFar !== size) return null;
     return { text: buf.slice(0, readSoFar).toString('utf8'), identity: { dev: st.dev, ino: st.ino, size: st.size, mtimeMs: st.mtimeMs } };
   } catch { return null; }
   finally { try { fs.closeSync(fd); } catch {} }
@@ -159,23 +162,6 @@ export function readRepoFileWithIdentity(file, root, maxBytes) {
 export function readRepoFileBounded(file, root, maxBytes) {
   const got = readRepoFileWithIdentity(file, root, maxBytes);
   return got === null ? null : got.text;
-}
-
-// 29kz (T-59): the re-check before a migration deletes its legacy file. The file is read through ONE descriptor (the
-// same gate as readRepoFileWithIdentity), and its text and descriptor identity (device, inode, size, mtime) must equal
-// the snapshot the seeding read took. Returns that descriptor's identity when the file is unchanged, else null (a file
-// that cannot be checked is not unchanged). The caller then compares the NAME's lstat with the returned identity before
-// it deletes. RESIDUAL WINDOW: a change between that lstat and the delete is not seen; this narrows the window, it does
-// not close it.
-export function recheckRepoFileIdentity(file, root, maxBytes, snap) {
-  if (!snap) return null;
-  const now = readRepoFileWithIdentity(file, root, maxBytes);
-  if (now === null) return null;
-  const a = now.identity;
-  const b = snap.identity;
-  if (a.dev !== b.dev || a.ino !== b.ino || a.size !== b.size || a.mtimeMs !== b.mtimeMs) return null;
-  if (now.text !== snap.text) return null;
-  return { dev: a.dev, ino: a.ino };
 }
 
 // T-17: the LITERAL root a doc the caller names is read under (node/runtime.md section 4: an allowlist pins the
