@@ -2,6 +2,21 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.13] - 2026-11-21
+
+the config migration moves the old file aside and removes nothing
+
+### Added
+- **The plugin icon and the new logo.** The logo is the design hand-over's (`assets/logo.svg`); the icon (`.claude-plugin/icon.png`) ships in the plugin, and the build places it with its dist copies. No manifest key names the icon yet, so the listing shows it only once it is saved there; Antigravity shows the new logo.
+
+### Changed
+- **The config migration keeps the legacy file as `<legacy path>.bak` and removes nothing (`scripts/configure.mjs`, BB-533).** Before, it deleted the old project config after writing the new one, on the strength of an earlier read. Now it moves the file aside with one rename, after the new config is written, and reads the backup back to check it against what was migrated. A difference warns and exits 1; a refused move keeps the legacy file and exits 1; a legacy file that git tracks gets a line saying what to commit. An earlier `.bak` is replaced, and the run says so. The backup is the user's to keep or delete; nothing sweeps it. Test: `scripts/lib/configure-migrate.test.mjs`.
+- **The canon's secret scanner and gate are re-copied from `.github` at `ea92a58`.** Repo tooling, not in the installed plugin: `scripts/lib/secret-scan.mjs`, `scripts/secret-gate.mjs` and `scripts/secret-gate.test.mjs`, with the pins in `scripts/lib/git-env-pins.mjs` and its test moved to match. No shipped behaviour changes with it.
+
+### Fixed
+- **The legacy file's identity is exact on volumes with large file IDs (`scripts/lib/repo-fs.mjs`, T-67).** The identity is read as bigint, so two files cannot share a key above 2^53. Test: `scripts/lib/repo-fs.test.mjs`.
+- **repo-standard riders (`scripts/lib/repo-standard.mjs`, LOW).** An over-bound file that appears under two names is reported once, not twice (T-68). A `docs` or `.github` that is not a folder no longer crashes the pass (T-22). A `--root` that is not a folder is a usage error and exits 2 (T-25). The prose-SHA test has a fixture that can fail (T-24). Test: `scripts/lib/repo-standard.test.mjs`.
+
 ## [0.17.0-beta.12] - 2026-11-21
 
 doc-standard reads the release-notes file through one descriptor
