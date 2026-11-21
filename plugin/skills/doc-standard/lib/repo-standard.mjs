@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { repoEntryKind, readRepoFileBounded, readRunList, runListLine, listPathCli, MAX_DOC_BYTES } from './repo-fs.mjs';
+import { repoEntryKind, readRepoFileBounded, readRepoFileWithIdentity, readRunList, runListLine, listPathCli, MAX_DOC_BYTES } from './repo-fs.mjs';
 
 // The criterion ids the engine can emit; the test checks each one against the CoalGob checklist's headings.
 export const CRITERIA = ['license_location', 'contribution', 'vulnerability_report_process', 'release_notes'];
@@ -52,16 +52,29 @@ function expiresValueOf(line) {
   return value;
 }
 
-// The identity of a file, not its name: two names of one file (a hard link) share a device and an inode. A realpath is the
-// key only where the volume reports no inode, and there a hard link is not caught.
-function fileIdentity(abs) {
+// T-63: the dedupe key of a release-notes file, taken from the descriptor the text was read through (readRepoFileWithIdentity),
+// never from a stat of the name in an earlier step. Two names of one file (a hard link) share a device and an inode. Where the
+// volume reports no inode the realpath is the key, and a hard link is not caught there (the fallback this pass always had).
+function identityKey(identity, abs) {
+  if (identity.ino !== 0) return `ino:${identity.dev}:${identity.ino}`;
   try {
-    const st = fs.statSync(abs, { bigint: true });
-    if (st.ino !== 0n) return `ino:${st.dev}:${st.ino}`;
     return `path:${fs.realpathSync.native(abs)}`;
   } catch {
     return null;
   }
+}
+
+// T-63: the wording of a release-notes-unreadable finding when the one read returns nothing. The two meanings the old two-step
+// form gave are kept: a name that cannot be stat'ed at all (its identity could not be read), and a file that was there but
+// could not be read as a plain file under the bound (over it, not a plain file, or unreadable). This only words the finding;
+// both are SUSPECTED and fail closed, so no decision is taken from the name here.
+function unreadableReason(abs, rel) {
+  try {
+    fs.statSync(abs);
+  } catch {
+    return `${rel} could not be identified, so it is not judged (fail closed)`;
+  }
+  return `${rel} could not be read under the ${MAX_DOC_BYTES / 1048576} MB bound (over it, or unreadable), so its shape is not judged`;
 }
 
 // security.txt: its Expires field. RFC 9116 section 2.5.5 makes Expires REQUIRED. Returns { ms } or { reason }.
@@ -132,10 +145,20 @@ export function checkRepository(root, nowMs) {
   // This pass judges the shape of a release-notes file that exists; a project with none is not checked here. The
   // criterion's own N/A is narrower (software that is not reused AND is delivered continuously), and this pass does not decide it.
   // One file under two names is judged once. An identity that cannot be read is a finding, never a silent skip.
+  // T-63: each name is read ONCE, through one descriptor: the text and the identity it is judged under come from the same
+  // open, so the dedupe key is the identity of the bytes this pass judges. A duplicate name is read too (bounded, and cheap
+  // next to the fault it removes) and is then skipped on the key.
   const judged = new Set();
   for (const dir of PLACES) {
     for (const rel of presentIn(root, dir, RELEASE_NOTES_RE)) {
-      const id = fileIdentity(path.join(root, rel));
+      const abs = path.join(root, rel);
+      const got = readRepoFileWithIdentity(abs, root, MAX_DOC_BYTES);
+      if (got === null) {
+        out.push({ check: 'release-notes-unreadable', criterion: 'release_notes', verdict: 'SUSPECTED', file: rel,
+          reason: unreadableReason(abs, rel) });
+        continue;
+      }
+      const id = identityKey(got.identity, abs);
       if (id === null) {
         out.push({ check: 'release-notes-unreadable', criterion: 'release_notes', verdict: 'SUSPECTED', file: rel,
           reason: `${rel} could not be identified, so it is not judged (fail closed)` });
@@ -143,13 +166,7 @@ export function checkRepository(root, nowMs) {
       }
       if (judged.has(id)) continue;
       judged.add(id);
-      const text = readRepoFileBounded(path.join(root, rel), root, MAX_DOC_BYTES);
-      if (text === null) {
-        out.push({ check: 'release-notes-unreadable', criterion: 'release_notes', verdict: 'SUSPECTED', file: rel,
-          reason: `${rel} could not be read under the ${MAX_DOC_BYTES / 1048576} MB bound (over it, or unreadable), so its shape is not judged` });
-        continue;
-      }
-      const at = rawLogLine(text.split(/\r?\n/));
+      const at = rawLogLine(got.text.split(/\r?\n/));
       if (at >= 0) {
         out.push({ check: 'release-notes-raw-log', criterion: 'release_notes', verdict: 'SUSPECTED',
           file: rel, line: at + 1, reason: `${rel} reads as raw git log output, not release notes` });
