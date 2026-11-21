@@ -260,6 +260,22 @@ function nearestExistingAncestor(p) {
   }
 }
 
+// 29mo (T-70): the refusal text for a write target that EXISTS as a plain file with no write bit, or whose name cannot be inspected.
+// Null when the target may be written. A run calls this on every target it will write BEFORE the first write, so a refused run
+// leaves nothing behind (a malformed backup is never written before a refusal). The text is the whole FAIL line's body.
+// POSIX limit: a point-in-time check; a file made read-only after it, and before the rename, is still replaced.
+export function readOnlyRefusal(target) {
+  let st;
+  try { st = fs.lstatSync(target); } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    return `${target}: could not be inspected (${e.code || 'unknown'}); nothing was written -- check that the file is reachable and run again`;
+  }
+  if (st.isFile() && (st.mode & 0o222) === 0) {
+    return `${target}: read-only; nothing was written -- make the file writable if you mean to change it`;
+  }
+  return null;
+}
+
 // Bounded, kind-gated, CONTAINED write on a repo-derived (or home-file) path. Refuses
 // (throws RepoWriteRefused, never silently skips a write the caller asked for) when:
 // the nearest existing ancestor's realpath escapes `root` (root = null skips this
@@ -284,12 +300,21 @@ export function writeRepoFile(target, content, root) {
     }
   }
   let existingKind;
+  let existingMode = 0o666;
   try {
     const st = fs.lstatSync(target);
     existingKind = st.isSymbolicLink() ? 'symlink' : st.isFile() ? 'file' : 'other';
+    existingMode = st.mode;
   } catch { existingKind = 'missing'; }
   if (existingKind === 'symlink') throw new RepoWriteRefused(target, 'it already exists and is a symlink');
   if (existingKind === 'other') throw new RepoWriteRefused(target, 'it already exists and is not a regular file');
+  // 29mo (T-70): a file the user made read-only (no write bit) is refused BEFORE the temp exists. The rename below needs only the
+  // folder's write bit on POSIX, so without this check the file is replaced. POSIX limit: a file made read-only after this check, and
+  // before the rename, is still replaced.
+  if (existingKind === 'file' && (existingMode & 0o222) === 0) {
+    throw new RepoWriteRefused(target, 'read-only; nothing was written', 'make the file writable if you mean to change it');
+  }
+
   // R12 bounce 1 F3: the temp name is predictable (pid alone) and a stale leftover from a
   // crashed earlier run blocks this one. A raw EEXIST from the open is not an actionable
   // message (security.md's problem-report MUST — "never a raw stack trace or an internal
@@ -316,6 +341,8 @@ export function writeRepoFile(target, content, root) {
   }
   fs.closeSync(fd);
   try {
+    // 29mo (T-70): the replacement keeps the mode the user gave the file (a 0600 config stays 0600; a rename would reset it to the umask).
+    if (existingKind === 'file') fs.chmodSync(temp, existingMode & 0o777);
     fs.renameSync(temp, target);
   } catch (e) {
     try { fs.unlinkSync(temp); } catch {}

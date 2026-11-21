@@ -44,7 +44,7 @@ import { fileURLToPath } from 'url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { parseJsonc } from './lib/jsonc.mjs';
 import { findProjectRoot, projectConfigPath, ownDirDefault, globalConfigPath } from './lib/config-load.mjs';
-import { readRepoFileBounded, readRepoFileOutcome, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
+import { readRepoFileBounded, readRepoFileOutcome, readOnlyRefusal, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
 import { spawnSync } from 'child_process';
 import { gitEnv } from './lib/git-env.mjs';
 
@@ -252,6 +252,8 @@ function main() {
   // containment, matching config-load.mjs's own readJsonc); root=projectRoot for the
   // project file (must resolve inside the project).
   const readRoot = isGlobal ? null : projectRoot;
+  // 29kz (T-59) / BB-533: a LEGACY file is read through one descriptor; its text is the snapshot the backup is compared with
+  // after the move. Taken before the BOM strip, so the compare is like with like.
   // 29mo (T-69): only "no file" (ENOENT) is an empty config. A file that EXISTS and cannot be read is a refusal here, before anything is
   // written: the run names the file and the code and exits 1, and the file, the new home and any .bak are left as they were.
   const readOut = readRepoFileOutcome(readPath, readRoot, MAX_CONFIG_BYTES);
@@ -267,6 +269,7 @@ function main() {
   const legacySnapshot = migrating && readOut.status === 'ok' ? { text: readOut.text } : null;
   let rawConfig = readOut.status === 'ok' ? readOut.text : null;
   if (rawConfig !== null && rawConfig.charCodeAt(0) === 0xfeff) rawConfig = rawConfig.slice(1);
+  let malformed = false; // 29mo (T-70): the malformed backup is written below, after every target is checked, never here
   if (rawConfig !== null) {
     try {
       hadComments = rawConfig.includes('//');
@@ -286,26 +289,10 @@ function main() {
         throw new Error('top-level config value is not a JSON object');
       }
       cfg = parsed;
-    } catch (e) {
-      // Fail loud (scripts-quality §1): a malformed config we silently overwrite is a
-      // partial failure the user must notice — flag the non-zero exit even though the
-      // run continues from defaults (the old config is backed up where possible).
-      process.exitCode = 1;
-      try {
-        // CWK-137: the .bak is written FROM THE BYTES ALREADY READ (rawConfig, via the
-        // bounded reader above), through the SAME contained writer the real config
-        // write uses below — never `fs.copyFileSync(readPath, readPath + '.bak')`,
-        // which re-opens readPath and would copy a SYMLINK TARGET's bytes into the
-        // backup (CoalMine's PoC-3: a `.bak` that way held `SECRET_TOKEN`). The target
-        // readPath itself is still refused the same way any other write target is —
-        // writeRepoFile throws on an existing symlink/non-file there, same as the real
-        // config write.
-        writeRepoFile(readPath + '.bak', rawConfig, readRoot);
-        console.warn(`Warning: existing config is malformed — backed it up to ${readPath}.bak and rebuilding.`);
-      } catch (bakErr) {
-        if (bakErr instanceof RepoWriteRefused) console.warn(`Warning: existing config is malformed, and its backup was refused (${bakErr.message}). Overwriting without a backup.`);
-        else console.warn('Warning: existing config is malformed. Overwriting.');
-      }
+    } catch {
+      // Fail loud (scripts-quality §1): a malformed config we silently overwrite is a partial failure the user must notice. The backup
+      // and the non-zero exit are written below, once every target of this run has been checked (29mo, T-70).
+      malformed = true;
     }
   }
 
@@ -331,6 +318,37 @@ function main() {
       return;
     }
     cfg[spec.key] = parsed.value;
+  }
+
+  // 29mo (T-70): every target this run will write is checked BEFORE the first write. A read-only config, a read-only malformed backup
+  // and a read-only migration backup each refuse the run by name, and then nothing is written at all (no new home, no .bak, no temp).
+  const backupPath = `${readPath}.bak`;
+  const targets = [];
+  if (migrating || malformed) targets.push(backupPath);
+  targets.push(writePath);
+  for (const target of new Set(targets)) {
+    const refusal = readOnlyRefusal(target);
+    if (refusal !== null) {
+      console.error(`FAIL ${refusal}`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+  if (malformed) {
+    // Fail loud: a malformed config the run overwrites is a partial failure the user must notice, so the exit code is set even though the
+    // run continues from defaults (the old config is backed up where possible).
+    process.exitCode = 1;
+    try {
+      // CWK-137: the .bak is written FROM THE BYTES ALREADY READ (rawConfig, via the bounded reader above), through the SAME contained
+      // writer the real config write uses below — never `fs.copyFileSync(readPath, readPath + '.bak')`, which re-opens readPath and would
+      // copy a SYMLINK TARGET's bytes into the backup (CoalMine's PoC-3: a `.bak` that way held `SECRET_TOKEN`). The target readPath
+      // itself is still refused the same way any other write target is — writeRepoFile throws on an existing symlink/non-file there.
+      writeRepoFile(backupPath, rawConfig, readRoot);
+      console.warn(`Warning: existing config is malformed — backed it up to ${backupPath} and rebuilding.`);
+    } catch (bakErr) {
+      if (bakErr instanceof RepoWriteRefused) console.warn(`Warning: existing config is malformed, and its backup was refused (${bakErr.message}). Overwriting without a backup.`);
+      else console.warn('Warning: existing config is malformed. Overwriting.');
+    }
   }
 
   try {

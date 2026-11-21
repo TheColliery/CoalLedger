@@ -49,6 +49,7 @@ const TESTS = [
   'scripts/configure.test.mjs',
   'scripts/lib/configure-migrate.test.mjs',
   'scripts/lib/configure-reader.test.mjs',
+  'scripts/lib/configure-readonly.test.mjs',
   'scripts/build-plugin.test.mjs',
   'scripts/agy-validate.test.mjs',
   'scripts/verify.test.mjs',
