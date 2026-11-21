@@ -2,6 +2,16 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.12] - 2026-11-21
+
+doc-standard reads the release-notes file through one descriptor
+
+### Fixed
+- **doc-standard's release-notes pass reads a file and its identity through one descriptor (`scripts/lib/repo-standard.mjs`, LOW).** The pass took a release-notes file's identity by name, then read its text by name in a second step, so a swap between the two could make the dedupe key and the judged text describe different files. It now opens the file once, takes the text and the identity from that one descriptor (`readRepoFileWithIdentity`), and dedupes on that identity. A name that cannot be checked is still reported as unreadable (SUSPECTED, fail closed). The pass is report-only. Test: `scripts/lib/repo-standard.test.mjs`.
+
+### Changed
+- **Repo tooling, not in the installed plugin.** The canon's secret scanner and gate (`scripts/lib/secret-scan.mjs`, `scripts/secret-gate.mjs` and `scripts/secret-gate.test.mjs`) are re-copied from `.github` at `3202fef`, and the pins in `scripts/lib/git-env-pins.mjs` and its test move to match. No shipped behaviour changes with it.
+
 ## [0.17.0-beta.11] - 2026-11-20
 
 the migration reads the legacy config through one descriptor
