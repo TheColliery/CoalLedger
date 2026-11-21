@@ -426,7 +426,8 @@ try {
       ['platform-configs/** (config JSON, not prose)', (f) => f.startsWith('platform-configs/')],
       ['hooks/hooks.json (JSON manifest, not prose)', (f) => f === 'hooks/hooks.json'],
       ['scripts/fixtures/*.md (planted-defect test fixtures, not real ship-text)', (f) => f.startsWith('scripts/fixtures/')],
-      ['root non-doc files (LICENSE, NOTICE, lint/git config)', (f) => ['LICENSE', 'NOTICE', '.markdownlint.json', '.gitignore', '.gitattributes'].includes(f)],
+      // 29mq (the icon form): the listing icon is a binary PNG at the root, not ship-text; it moved here from .claude-plugin/ (covered by that row above).
+      ['root non-doc files (LICENSE, NOTICE, lint/git config, the listing icon)', (f) => ['LICENSE', 'NOTICE', '.markdownlint.json', '.gitignore', '.gitattributes', 'icon.png'].includes(f)],
       // CWK-120 BOUNCE 1 (F1+F2) — three root files entered the TRACKED set in this
       // unit and this accounting block is the one declared-out row that is a ROSTER
       // rather than a predicate, so it takes the edit. The sibling shipped the same

@@ -34,8 +34,8 @@ const dist = path.join(repo, 'plugin');
 // carries that a user does not need.
 export const DIST_ITEMS = [
   path.join('.claude-plugin', 'plugin.json'),
-  // 29mh (BB-520 icon set): the marketplace listing icon rides beside the manifest, a PNG copied byte for byte (cpSync, never a text read).
-  path.join('.claude-plugin', 'icon.png'),
+  // 29mq (the icon form): the listing icon sits at the PLUGIN ROOT, where the manifest's "icon": "./icon.png" points, never inside .claude-plugin/. A PNG copied byte for byte (cpSync, never a text read).
+  'icon.png',
   'commands',
   'hooks',
   'skills',

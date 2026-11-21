@@ -20,7 +20,8 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // plugin for the dist-parity check).
 // order 29c: plugin.json, hooks.json and assets are the Antigravity DIST_ITEMS; without them the copy's plugin/ holds orphans with no source.
 const COPY = ['hooks', 'platform-configs', 'skills', 'commands', '.claude-plugin', 'scripts', 'plugin', '.github', 'plugin.json', 'hooks.json', 'assets'];
-const COPY_FILES = ['LICENSE', 'NOTICE'];
+// 29mq (the icon form): icon.png is a root DIST_ITEM now (it moved from .claude-plugin/); without it the copy's plugin/icon.png is an orphan.
+const COPY_FILES = ['LICENSE', 'NOTICE', 'icon.png'];
 
 // CWK2-055: each kind of scratch repo is built ONCE per file run (lazily, on its first case) and every case copies its template into its own fresh folder, so a case
 // that mutates its tree never reaches the template or another case, and the eight-directory copy and the two git spawns are paid once, not per case.
