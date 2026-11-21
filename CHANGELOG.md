@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.15] - 2026-11-22
+
+the plugin icon is named by the manifest's icon key
+
+### Changed
+- **The plugin icon sits at the plugin root, and the manifest names it (`icon.png`, `.claude-plugin/plugin.json`).** The icon moved from `.claude-plugin/icon.png` to the plugin root (`icon.png`, and `plugin/icon.png` in the dist), and `plugin.json` sets `"icon": "./icon.png"`, the key the vendor's plugins reference documents for the listing icon. The bytes are unchanged. What a user sees: nothing new in Claude Code, which does not read that key; the plugin's directory listing can show the icon once the listing is saved there. The Antigravity logo (`assets/logo.svg`) is unchanged. The build ships `icon.png` from the source root, and `scripts/verify.mjs` accounts for it. Test: `scripts/verify.test.mjs`.
+
 ## [0.17.0-beta.14] - 2026-11-22
 
 an unreadable config stops the run before anything is written
