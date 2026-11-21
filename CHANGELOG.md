@@ -2,6 +2,15 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.14] - 2026-11-22
+
+an unreadable config stops the run before anything is written
+
+### Fixed
+- **An unreadable config is left untouched and the run says so (`scripts/configure.mjs`, T-69).** A config that exists but cannot be read (an unreadable file, a directory at its path, a legacy file that cannot be read in full) used to be treated as empty: the run wrote the new config over it and exited 0, so the settings in it were lost. Now the run stops before anything is written: it names the file and the error code (`FAIL <file>: could not be read (<code>); nothing was written`), leaves the file as it was and exits 1. This holds for the project, global and legacy configs. Only a file that does not exist is an empty config. Test: `scripts/lib/configure-reader.test.mjs`.
+- **Behaviour change: an over-size config is refused, not rebuilt over (T-69).** A project config past the read bound used to be treated as absent and rebuilt from defaults with exit 0. It is now refused by name (`ECONFIGTOOLARGE`), exit 1, and left as it was. Test: `scripts/configure.test.mjs`.
+- **A read-only config or backup is refused by name and never replaced (`scripts/configure.mjs`, `scripts/lib/repo-fs.mjs`, T-70).** A config with no write bit, a read-only malformed backup and a read-only migration backup each stop the run with `FAIL <file>: read-only; nothing was written -- make the file writable if you mean to change it`, before the first write, so a refused run leaves no temp, no new home and no `.bak`. The replacement keeps the file's mode. Limit: the check is a point-in-time check; on POSIX a file made read-only after it and before the rename is still replaced. Test: `scripts/lib/configure-readonly.test.mjs`.
+
 ## [0.17.0-beta.13] - 2026-11-21
 
 the config migration moves the old file aside and removes nothing
