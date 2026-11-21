@@ -16,7 +16,6 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const CLI = path.join(repo, 'scripts', 'configure.mjs');
 const TMP_PREFIX = 'configure-migrate-';
 const LEGACY_BODY = '{ "language": "en" }\n';
-const APPEND_BODY = '{ "language": "en", "userEditMarker": "made-inside-the-window" }\n';
 const SAME_LEN_BODY = '{ "language": "fr" }\n'; // equal byte length to LEGACY_BODY, different bytes
 const EARLIER_BACKUP = '{ "language": "de" }\n';
 const WRITER_MARK = '\n"written-after-the-move": true\n';
