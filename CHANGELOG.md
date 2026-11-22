@@ -2,6 +2,14 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.17] - 2026-11-22
+
+the migration names a read-only config and the reader states its race
+
+### Changed
+- **The migration line says when the old config was read-only (`scripts/configure.mjs`, `scripts/lib/configure-migrate.test.mjs`).** A read-only legacy config is still moved to `<legacy path>.bak`, as before; the one success line now says it was read-only as it was. A writable legacy file's line is unchanged.
+- **The reader's folder-swap race is a stated limit, in the code and in SECURITY.md (`scripts/lib/repo-fs.mjs`, T-82).** A process on the same machine can time a folder swap against the reader and read a file outside the root. Node's file-system API has no handle-relative open, and on Windows and macOS no call names the file an open handle holds, so the window is not closed. The comment at the open says so; no code moved. The shipped comment moved the dist copies, hence this bump.
+
 ## [0.17.0-beta.16] - 2026-11-22
 
 the reader walks the folder chain before it opens a file
