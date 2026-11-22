@@ -243,3 +243,213 @@ test('C2h (T-88, kept refused): a folder swapped in before the entry lstat, back
   assert.equal(got.status, 'refused', `the multi-swap must be refused, got ${show(got)}`);
   assert.ok(!(got.text ?? '').includes('VICTIM'), `the victim bytes came back through the multi-swap: ${show(got)}`);
 });
+
+// ---- 29oc (T-92): the map's legs. A link's identity is the lstat of its resolved target, taken after that target's folder chain is walked again
+// under the root. The fixture: docs/target.md and docs/sub/t.md (inside), docs2/target.md (another inside folder), outside/target.md and
+// outside/sub/t.md (VICTIM). The hard-link form gives the fake-link seam its entry; the real-link form needs a file symlink (probed, skipped visibly).
+const T92_INSIDE = 'INSIDE-T92\n';
+const T92_INSIDE2 = 'INSIDE2-T92\n';
+
+function t92Base(t) {
+  const root = fs.mkdtempSync(path.join(TMP, PREFIX));
+  const real = fs.realpathSync.native(root);
+  if (path.dirname(real) !== TMP) throw new Error(`refusing: ${real} is not directly under ${TMP}`);
+  t.after(() => {
+    if (path.dirname(real) === TMP && path.basename(real).startsWith(PREFIX)) fs.rmSync(real, { recursive: true, force: true });
+  });
+  const proj = path.join(real, 'proj');
+  const outside = path.join(real, 'outside');
+  const fx = {
+    proj, outside,
+    docs: path.join(proj, 'docs'),
+    docs2: path.join(proj, 'docs2'),
+    sub: path.join(proj, 'docs', 'sub'),
+    target: path.join(proj, 'docs', 'target.md'),
+    link: path.join(proj, 'docs', 'link.md'),
+    subTarget: path.join(proj, 'docs', 'sub', 't.md'),
+    inside2: path.join(proj, 'docs2', 'target.md'),
+    inside2Link: path.join(proj, 'docs2', 'link.md'),
+    outDocs: outside,
+    outTarget: path.join(outside, 'target.md'),
+    outLink: path.join(outside, 'link.md'),
+    outSub: path.join(outside, 'sub'),
+    outSubTarget: path.join(outside, 'sub', 't.md'),
+  };
+  fs.mkdirSync(fx.sub, { recursive: true });
+  fs.mkdirSync(fx.docs2);
+  fs.mkdirSync(fx.outSub, { recursive: true });
+  fs.writeFileSync(fx.target, T92_INSIDE);
+  fs.writeFileSync(fx.subTarget, T92_INSIDE);
+  fs.writeFileSync(fx.inside2, T92_INSIDE2);
+  fs.writeFileSync(fx.outTarget, VICTIM);
+  fs.writeFileSync(fx.outSubTarget, VICTIM);
+  return fx;
+}
+
+// Hard-link form: the entry and the inside/outside names are one inode each, so an open by name reads the judged file.
+function t92Hard(fx) {
+  fs.linkSync(fx.target, fx.link);
+  fs.linkSync(fx.inside2, fx.inside2Link);
+  fs.linkSync(fx.outTarget, fx.outLink);
+}
+
+// Folder swap: `folder` is renamed aside and replaced by a link to `dest`; restoreFolder puts the real folder back (idempotent).
+function swapFolder(folder, dest, aside) {
+  fs.renameSync(folder, aside);
+  fs.symlinkSync(dest, folder, LINK_KIND);
+}
+function restoreFolder(folder, aside) {
+  try { fs.rmdirSync(folder); } catch { try { fs.unlinkSync(folder); } catch { /* not a link: nothing to remove */ } }
+  if (fs.existsSync(aside)) fs.renameSync(aside, folder);
+}
+
+// Runs `action` right after the FIRST realpath of `watch` returns (judgeEntry's second resolution). With `stubs` ({ link, target }) the seam's
+// lstat stub and entry realpath stub are installed too (the fake link). Every stub is restored in finally.
+function withAfterRealpath(watch, action, stubs, body) {
+  const realL = fs.lstatSync;
+  const realR = fs.realpathSync.native;
+  let fired = false;
+  const w = path.resolve(watch);
+  if (stubs) {
+    fs.lstatSync = function (q, ...rest) {
+      const st = realL.call(fs, q, ...rest);
+      if (typeof q === 'string' && path.resolve(q) === path.resolve(stubs.link)) {
+        return Object.assign(Object.create(Object.getPrototypeOf(st)), st, { isSymbolicLink: () => true });
+      }
+      return st;
+    };
+  }
+  fs.realpathSync.native = function (q, ...rest) {
+    const a = typeof q === 'string' ? path.resolve(q) : '';
+    if (stubs && a === path.resolve(stubs.link)) return stubs.target;
+    const r = realR.call(fs.realpathSync, q, ...rest);
+    if (!fired && a === w) { fired = true; action(); }
+    return r;
+  };
+  try { return body(); } finally {
+    fs.lstatSync = realL;
+    fs.realpathSync.native = realR;
+  }
+}
+
+// The fake target link: the target reports as a link at its first lstat (the stat the map's step 1 takes), and the entry is a fake link.
+function withT92b(fx, body) {
+  const realL = fs.lstatSync;
+  const realR = fs.realpathSync.native;
+  fs.lstatSync = function (q, ...rest) {
+    const st = realL.call(fs, q, ...rest);
+    const a = typeof q === 'string' ? path.resolve(q) : '';
+    if (a === path.resolve(fx.link) || a === path.resolve(fx.target)) {
+      // A link reports as a link only: not a file, not a folder (the stub must say what a real link's lstat says).
+      return Object.assign(Object.create(Object.getPrototypeOf(st)), st, { isSymbolicLink: () => true, isFile: () => false, isDirectory: () => false });
+    }
+    return st;
+  };
+  fs.realpathSync.native = function (q, ...rest) {
+    if (typeof q === 'string' && path.resolve(q) === path.resolve(fx.link)) return fx.target;
+    return realR.call(fs.realpathSync, q, ...rest);
+  };
+  try { return body(); } finally {
+    fs.lstatSync = realL;
+    fs.realpathSync.native = realR;
+  }
+}
+
+// The privileged forms probe their capability and skip visibly where this account cannot make the link.
+function canT92Real(fx) { return canSymlink(fx.proj) && canFolderLink(fx.proj); }
+
+test('T-92a INSIDE: a folder swapped for a link to another folder inside the root, after the entry realpath(dirname), is refused (a link in the chain is refused wherever it points)', (t) => {
+  const fx = t92Base(t);
+  t92Hard(fx);
+  if (!canFolderLink(fx.proj)) { t.skip(`this account cannot make a ${LINK_KIND} (capability probe): the folder-swap leg needs it to run`); return; }
+  const aside = path.join(fx.proj, 'docs-real');
+  let got;
+  try {
+    got = withAfterRealpath(fx.docs, () => swapFolder(fx.docs, fx.docs2, aside), { link: fx.link, target: fx.target },
+      () => readRepoFileOutcome(fx.link, fx.proj, BOUND));
+  } finally { restoreFolder(fx.docs, aside); }
+  assert.equal(got.status, 'refused', `a folder swapped inside the root after the chain walk must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('INSIDE2'), `the swapped-in folder's bytes came back: ${show(got)}`);
+});
+
+test('T-92a OUTSIDE: a folder swapped for a link to an outside tree with the same names, after the entry realpath(dirname), is refused and no outside byte comes back', (t) => {
+  const fx = t92Base(t);
+  t92Hard(fx);
+  if (!canFolderLink(fx.proj)) { t.skip(`this account cannot make a ${LINK_KIND} (capability probe): the folder-swap leg needs it to run`); return; }
+  const aside = path.join(fx.proj, 'docs-real');
+  let got;
+  try {
+    got = withAfterRealpath(fx.docs, () => swapFolder(fx.docs, fx.outDocs, aside), { link: fx.link, target: fx.target },
+      () => readRepoFileOutcome(fx.link, fx.proj, BOUND));
+  } finally { restoreFolder(fx.docs, aside); }
+  assert.equal(got.status, 'refused', `a folder swapped outside the root after the chain walk must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('VICTIM'), `the outside bytes came back through the swapped folder: ${show(got)}`);
+});
+
+test('T-92a subfolder (real link): the target in docs/sub/t.md with sub swapped after the entry realpath(dirname) is refused by the re-walk under the root (capability-gated; skipped visibly here)', (t) => {
+  const fx = t92Base(t);
+  if (!canT92Real(fx)) { t.skip(`this account cannot make a file symlink and a ${LINK_KIND} (capability probe): the subfolder leg needs both`); return; }
+  fs.symlinkSync(fx.subTarget, fx.link, 'file');
+  const aside = path.join(fx.docs, 'sub-real');
+  let got;
+  try {
+    got = withAfterRealpath(fx.docs, () => swapFolder(fx.sub, fx.outSub, aside), null,
+      () => readRepoFileOutcome(fx.link, fx.proj, BOUND));
+  } finally { restoreFolder(fx.sub, aside); }
+  assert.equal(got.status, 'refused', `a subfolder of the entry's folder swapped after the realpath must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('VICTIM'), `the outside bytes came back through the subfolder: ${show(got)}`);
+});
+
+test('T-92b INSIDE: a resolved target that reports as a link at its first lstat is refused (the handle is never read through a link)', (t) => {
+  const fx = t92Base(t);
+  t92Hard(fx);
+  const got = withT92b(fx, () => readRepoFileOutcome(fx.link, fx.proj, BOUND));
+  assert.equal(got.status, 'refused', `a resolved target that is a link must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('INSIDE-T92'), `the target's bytes came back through the link: ${show(got)}`);
+});
+
+test('T-92b OUTSIDE: a resolved target that is an outside file and reports as a link at its first lstat is refused, and no outside byte comes back', (t) => {
+  const fx = t92Base(t);
+  fs.unlinkSync(fx.target);
+  fs.linkSync(fx.outTarget, fx.target);
+  t92Hard(fx);
+  const got = withT92b(fx, () => readRepoFileOutcome(fx.link, fx.proj, BOUND));
+  assert.equal(got.status, 'refused', `an outside resolved target reported as a link must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('VICTIM'), `the outside bytes came back through the resolved target: ${show(got)}`);
+});
+
+test('T-92 real link, parent swapped: a real in-folder file link whose folder is swapped after the entry realpath(dirname) is refused (capability-gated; skipped visibly here)', (t) => {
+  const fx = t92Base(t);
+  if (!canT92Real(fx)) { t.skip(`this account cannot make a file symlink and a ${LINK_KIND} (capability probe): the real-link leg needs both`); return; }
+  fs.symlinkSync(fx.target, fx.link, 'file');
+  fs.symlinkSync(fx.outTarget, fx.outLink, 'file');
+  const aside = path.join(fx.proj, 'docs-real');
+  let got;
+  try {
+    got = withAfterRealpath(fx.docs, () => swapFolder(fx.docs, fx.outDocs, aside), null,
+      () => readRepoFileOutcome(fx.link, fx.proj, BOUND));
+  } finally { restoreFolder(fx.docs, aside); }
+  assert.equal(got.status, 'refused', `a real link whose folder is swapped after the realpath must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('VICTIM'), `the outside bytes came back through the real link: ${show(got)}`);
+});
+
+test('T-92 real link, leaf replaced: a real link whose target leaf becomes a symlink to an outside file after the entry realpath is refused (capability-gated; skipped visibly here)', (t) => {
+  const fx = t92Base(t);
+  if (!canSymlink(fx.proj)) { t.skip('this account cannot make a file symlink (capability probe): the leaf-replaced leg needs it to run'); return; }
+  fs.symlinkSync(fx.target, fx.link, 'file');
+  const got = withAfterRealpath(fx.link, () => {
+    fs.unlinkSync(fx.target);
+    fs.symlinkSync(fx.outTarget, fx.target, 'file');
+  }, null, () => readRepoFileOutcome(fx.link, fx.proj, BOUND));
+  assert.equal(got.status, 'refused', `a real link whose leaf became a link must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('VICTIM'), `the outside bytes came back through the replaced leaf: ${show(got)}`);
+});
+
+test('T-92 real link CONTROL: an unchanged in-folder file link reads its target bytes (capability-gated; skipped visibly here)', (t) => {
+  const fx = t92Base(t);
+  if (!canSymlink(fx.proj)) { t.skip('this account cannot make a file symlink (capability probe): the real-link control needs it to run'); return; }
+  fs.symlinkSync(fx.target, fx.link, 'file');
+  const got = readRepoFileOutcome(fx.link, fx.proj, BOUND);
+  assert.equal(got.status, 'ok', `the unchanged real link must read, got ${show(got)}`);
+  assert.equal(got.text, T92_INSIDE, `the unchanged real link read the wrong bytes: ${show(got)}`);
+});
