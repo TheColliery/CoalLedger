@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.18] - 2026-11-22
+
+a file link's identity comes from the check that judged it
+
+### Fixed
+- **A link retargeted between the kind check and the read is refused (`scripts/lib/repo-fs.mjs`, T-82).** The reader judged a file link's kind by resolving the name, then took the identity the handle had to have from a second stat of the name, so a link retargeted in between was identified by the file it now pointed at, and the read returned that file's bytes. Now one pass (`judgeEntry`) resolves the name once: the containment checks and the identity both come from that resolved target, and the reader's own lstat serves only the absent and inspect answers. Test: `scripts/lib/repo-fs-expected.test.mjs` (red before the fix: the inside and outside bytes came back; green after). The stated limit now covers only the timed multi-swap of a folder in the chain.
+
 ## [0.17.0-beta.17] - 2026-11-22
 
 the migration names a read-only config and the reader states its race
