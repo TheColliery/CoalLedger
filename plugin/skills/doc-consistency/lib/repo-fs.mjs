@@ -87,20 +87,21 @@ function folderChainIsPlain(p, root) {
   }
   return true;
 }
-// T-82 (a stated limit) and T-92 (29oc). The fstat compare at the open proves the handle is the file whose identity the kind check took: for a plain
-// file, the entry's own lstat, which must agree with the stat of its resolved path; for a file link, the lstat of the resolved target, which must be a
-// regular file, taken after its folder chain is re-walked under the root. Any single swap of the entry, of a file link's target, or of a folder in the
-// chain, made at any point and kept, is refused: by the chain walk, the agreement, the re-walk or the compare. It cannot prove the handle's file lies
-// under the walked folders when a process on the same machine times several swaps of a folder in the chain: swapped for a link when the kind check
-// looks at the file, swapped back while a chain is walked, and swapped in again for the resolution and the open. Node's fs has no handle-relative open
-// (no openat; O_NOFOLLOW guards the last component only and is absent on Windows), and on Windows and macOS no call names the file an open handle
-// holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0, the agreement and
-// the compare cannot tell two files apart, and the name checks stand.
+// T-82, a stated limit. Every call in one pass that resolves the same name must find the same file: for a plain file, the entry's own lstat must agree
+// with the stat of its resolved path; for a file link, the stat and the lstat of the resolved target must agree, the target must be a regular file, its
+// folder chain is re-walked under the root, and the entry's own lstat, taken again, must still be the link the kind check saw. The fstat compare at the
+// open then proves the handle is that file. So any single swap of the entry, of a file link's target or of a folder in the chain, to a link, a folder,
+// another file or nothing, kept in place, is refused, or, when it lands after the open, leaves the read on the judged file. It cannot prove the handle's
+// file lies under the walked folders when a process on the same machine times several swaps of a folder in the chain: swapped for a link before one of
+// the calls that judge the file, swapped back while a chain is walked, and swapped in again for the calls after it and the open. Node's fs has no
+// handle-relative open (no openat; O_NOFOLLOW guards the last component only and is absent on Windows), and on Windows and macOS no call names the file
+// an open handle holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0,
+// the agreements, the re-check and the compare cannot tell two files apart, and the name checks stand.
 // Returns { kind, identity }: kind is 'missing' | 'dir' | 'file' | 'other'; identity is the bigint stat the kind check took, when kind is 'file'.
 function judgeEntry(p, root) {
   const other = { kind: 'other', identity: null };
   let lst;
-  try { lst = fs.lstatSync(p, { bigint: true }); } catch { return { kind: 'missing', identity: null }; }
+  try { lst = fs.lstatSync(p, { bigint: true }); } catch (e) { return { kind: 'missing', identity: null, code: e && e.code }; }
   if (root != null && !folderChainIsPlain(p, root)) return other;
   let real, realFolder;
   try {
@@ -119,6 +120,7 @@ function judgeEntry(p, root) {
     // T-92 (29oc): the identity is the lstat of the resolved target, taken after that target's folder chain is walked again under the root.
     let lrst; try { lrst = fs.lstatSync(real, { bigint: true }); } catch { return other; }
     if (!lrst.isFile()) return other;
+    if (rst.dev !== lrst.dev || rst.ino !== lrst.ino) return other; // T-94: stat and lstat of the target name one file
     if (root != null) {
       let rr; try { rr = fs.realpathSync.native(root); } catch { return other; }
       let cur = rr;
@@ -127,6 +129,9 @@ function judgeEntry(p, root) {
         if (s.isSymbolicLink() || !s.isDirectory()) return other;
       }
     }
+    // The entry itself must still be the link the kind check saw (a swap of F after R is caught here).
+    let again; try { again = fs.lstatSync(p, { bigint: true }); } catch { return other; }
+    if (!again.isSymbolicLink() || again.dev !== lst.dev || again.ino !== lst.ino) return other;
     return { kind: 'file', identity: lrst };
   }
   if (lst.isDirectory()) return { kind: 'dir', identity: null };
@@ -180,20 +185,22 @@ export function readRepoFileOutcome(file, root, maxBytes) {
   }
   // (3) ONE pass judges the kind and takes the identity the handle must have (judgeEntry, T-82 candidate 5, 29nx): the target the check resolved.
   const judged = judgeEntry(file, root);
-  if (judged.kind === 'missing') return { status: 'absent' }; // the name went away between the lstat and this check
+  // The name went away between the lstat and this check (ENOENT only); any other error from that lstat is a refusal, never an absence.
+  if (judged.kind === 'missing') return judged.code === 'ENOENT' ? { status: 'absent' } : refusedRead(file, judged.code || 'EREAD', 'inspect');
   if (judged.kind === 'dir') return refusedRead(file, 'EISDIR', 'read');
   if (judged.kind !== 'file') return refusedRead(file, 'ENOTFILE', 'read');
   const expected = judged.identity;
   let fd;
-  // T-82, a stated limit. The fstat compare below proves the handle is the file whose identity the kind check took: for a plain file, the entry's own
-  // lstat, which must agree with the stat of its resolved path; for a file link, the lstat of the resolved target, which must be a regular file, taken
-  // after its folder chain is re-walked under the root. Any single swap of the entry, of a file link's target, or of a folder in the chain, made at any
-  // point and kept, is refused: by the chain walk, the agreement, the re-walk or the compare. It cannot prove the handle's file lies under the walked
-  // folders when a process on the same machine times several swaps of a folder in the chain: swapped for a link when the kind check looks at the file,
-  // swapped back while a chain is walked, and swapped in again for the resolution and the open. Node's fs has no handle-relative open (no openat;
-  // O_NOFOLLOW guards the last component only and is absent on Windows), and on Windows and macOS no call names the file an open handle holds, so no
-  // check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0, the agreement and the
-  // compare cannot tell two files apart, and the name checks stand.
+  // T-82, a stated limit. Every call in one pass that resolves the same name must find the same file: for a plain file, the entry's own lstat must agree
+  // with the stat of its resolved path; for a file link, the stat and the lstat of the resolved target must agree, the target must be a regular file, its
+  // folder chain is re-walked under the root, and the entry's own lstat, taken again, must still be the link the kind check saw. The fstat compare at the
+  // open then proves the handle is that file. So any single swap of the entry, of a file link's target or of a folder in the chain, to a link, a folder,
+  // another file or nothing, kept in place, is refused, or, when it lands after the open, leaves the read on the judged file. It cannot prove the handle's
+  // file lies under the walked folders when a process on the same machine times several swaps of a folder in the chain: swapped for a link before one of
+  // the calls that judge the file, swapped back while a chain is walked, and swapped in again for the calls after it and the open. Node's fs has no
+  // handle-relative open (no openat; O_NOFOLLOW guards the last component only and is absent on Windows), and on Windows and macOS no call names the file
+  // an open handle holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0,
+  // the agreements, the re-check and the compare cannot tell two files apart, and the name checks stand.
   try { fd = fs.openSync(file, REPO_READ_FLAGS); } catch (e) {
     if (e.code === 'ENOENT') return { status: 'absent' };
     return refusedRead(file, e.code, 'read');

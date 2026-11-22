@@ -42,7 +42,7 @@ function sandbox(t) {
     outside: path.join(outside, 'secret.json'),
   };
   fs.writeFileSync(fx.entry, VICTIM);
-  fs.linkSync(fx.entry, fx.target);
+  // The hard link to the target is made by each test that needs it, AFTER its canHardLink probe (29of T-91): a volume without hard links skips visibly.
   fs.writeFileSync(fx.inside, INSIDE);
   fs.writeFileSync(fx.outside, OUTSIDE);
   return fx;
@@ -120,6 +120,7 @@ function withRealLink(fx, next, body) {
 test('a fake link whose name is retargeted INSIDE the root after the kind check is refused: the handle is not the file the check judged', (t) => {
   const fx = sandbox(t);
   if (!canHardLink(fx.proj)) { t.skip('this account cannot make a hard link (the name-swap shim): the inside swap is not reproduced here'); return; }
+  fs.linkSync(fx.entry, fx.target);
   const got = withFakeLink(fx, 'inside', () => readRepoFileOutcome(fx.entry, fx.proj, BOUND));
   assert.equal(got.status, 'refused', `a name swapped inside the root after the kind check must be refused, got ${show(got)}`);
   assert.ok(!(got.text ?? '').includes('INSIDE'), `the swapped-in file's bytes came back: ${show(got)}`);
@@ -128,6 +129,7 @@ test('a fake link whose name is retargeted INSIDE the root after the kind check 
 test('a fake link whose name is retargeted OUTSIDE the root after the kind check is refused, and no outside byte comes back', (t) => {
   const fx = sandbox(t);
   if (!canHardLink(fx.proj)) { t.skip('this account cannot make a hard link (the name-swap shim): the outside swap is not reproduced here'); return; }
+  fs.linkSync(fx.entry, fx.target);
   const got = withFakeLink(fx, 'outside', () => readRepoFileOutcome(fx.entry, fx.proj, BOUND));
   assert.equal(got.status, 'refused', `a name swapped outside the root after the kind check must be refused, got ${show(got)}`);
   assert.ok(!(got.text ?? '').includes('OUTSIDE'), `the outside bytes came back: ${show(got)}`);
@@ -136,6 +138,7 @@ test('a fake link whose name is retargeted OUTSIDE the root after the kind check
 test('CONTROL: with no swap the entry reads its own bytes (the same leg passes before and after the fix)', (t) => {
   const fx = sandbox(t);
   if (!canHardLink(fx.proj)) { t.skip('this account cannot make a hard link: the control needs the same shape as the swap legs'); return; }
+  fs.linkSync(fx.entry, fx.target);
   const got = withFakeLink(fx, 'none', () => readRepoFileOutcome(fx.entry, fx.proj, BOUND));
   assert.equal(got.status, 'ok', `the control must read, got ${show(got)}`);
   assert.equal(got.text, VICTIM, `the control read the wrong bytes: ${show(got)}`);
@@ -144,6 +147,7 @@ test('CONTROL: with no swap the entry reads its own bytes (the same leg passes b
 test('REAL-LINK: a real symlink retargeted to an inside file after the kind check is refused (capability-gated; skipped visibly where a file symlink cannot be made)', (t) => {
   const fx = sandbox(t);
   if (!canSymlink(fx.proj)) { t.skip('this account cannot make a file symlink (capability probe): the real-link leg needs that privilege to run'); return; }
+  fs.linkSync(fx.entry, fx.target);
   fs.unlinkSync(fx.entry);
   fs.symlinkSync(fx.target, fx.entry, 'file');
   const got = withRealLink(fx, fx.inside, () => readRepoFileOutcome(fx.entry, fx.proj, BOUND));
@@ -452,4 +456,174 @@ test('T-92 real link CONTROL: an unchanged in-folder file link reads its target 
   const got = readRepoFileOutcome(fx.link, fx.proj, BOUND);
   assert.equal(got.status, 'ok', `the unchanged real link must read, got ${show(got)}`);
   assert.equal(got.text, T92_INSIDE, `the unchanged real link read the wrong bytes: ${show(got)}`);
+});
+
+// ---- 29of (T-94, T-93, T-81): the placeholder seam of the repaired map (scratchpad/29of/map.md, section 5, modelled on map-run.mjs). The link
+// is a placeholder FILE: the lstat stub reports it as a symlink (isFile false) while cur.isLink holds, and the realpath and open stubs follow
+// cur.target. So a link replaced, retargeted or moved with its folder is modelled without the symlink privilege. Each swap is one hook at one call.
+let of29Seq = 0;
+function of29Write(p, s) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, s); }
+
+function of29Fixture(t) {
+  const root = fs.mkdtempSync(path.join(TMP, PREFIX));
+  const real = fs.realpathSync.native(root);
+  if (path.dirname(real) !== TMP) throw new Error(`refusing: ${real} is not directly under ${TMP}`);
+  t.after(() => {
+    if (path.dirname(real) === TMP && path.basename(real).startsWith(PREFIX)) fs.rmSync(real, { recursive: true, force: true });
+  });
+  const proj = path.join(real, 'proj');
+  const docs = path.join(proj, 'docs');
+  of29Write(path.join(docs, 'target.md'), 'INSIDE\n');
+  of29Write(path.join(docs, 'target2.md'), 'OTHER\n');
+  of29Write(path.join(docs, 'x.md'), 'INSIDE\n');
+  of29Write(path.join(docs, 'sub', 't.md'), 'INSIDE\n');
+  of29Write(path.join(docs, 'link.md'), 'PLACEHOLDER\n');
+  return {
+    proj, docs, sub: path.join(docs, 'sub'),
+    link: path.join(docs, 'link.md'), target: path.join(docs, 'target.md'), target2: path.join(docs, 'target2.md'),
+    subT: path.join(docs, 'sub', 't.md'), plain: path.join(docs, 'x.md'),
+  };
+}
+
+// Another REAL folder at the same name: the same file names, other bytes, inside the root. The old folder is moved aside under a unique name.
+function of29ReplaceFolder(dir, tag) {
+  fs.renameSync(dir, `${dir}-old${of29Seq++}`);
+  of29Write(path.join(dir, 'target.md'), `${tag}\n`);
+  of29Write(path.join(dir, 'x.md'), `${tag}\n`);
+  of29Write(path.join(dir, 't.md'), `${tag}\n`);
+  of29Write(path.join(dir, 'link.md'), 'PLACEHOLDER2\n');
+  of29Write(path.join(dir, 'sub', 't.md'), `${tag}\n`);
+}
+
+// One swap, at one call. `row.before` fires before the call, `row.after` after it returns (the call's own result is taken first).
+function runPlaceholder(read, fx, row) {
+  const cur = { isLink: true, target: row.sub ? fx.subT : fx.target };
+  const who = {
+    link: fx.link, docs: fx.docs, proj: fx.proj,
+    targetReal: fs.realpathSync.native(fx.target), subTReal: fs.realpathSync.native(fx.subT),
+  };
+  const realL = fs.lstatSync;
+  const realR = fs.realpathSync.native;
+  const realO = fs.openSync;
+  let fired = false;
+  const fire = (spec, op, a, o) => {
+    if (!spec || fired || spec.op !== op || who[spec.who] !== a) return;
+    if (spec.big !== undefined && !!(o && o.bigint) !== spec.big) return;
+    fired = true;
+    spec.act(fx, cur);
+  };
+  const isFake = (a) => a === path.resolve(fx.link) && cur.isLink;
+  fs.lstatSync = function (p, o) {
+    const a = path.resolve(String(p));
+    fire(row.before, 'lstat', a, o);
+    const st = realL.call(fs, p, o);
+    const res = isFake(a)
+      ? Object.assign(Object.create(Object.getPrototypeOf(st)), st, { isSymbolicLink: () => true, isFile: () => false })
+      : st;
+    fire(row.after, 'lstat', a, o);
+    return res;
+  };
+  fs.realpathSync.native = function (p, ...rest) {
+    const a = path.resolve(String(p));
+    fire(row.before, 'rp', a);
+    const res = isFake(a) ? realR.call(fs.realpathSync, cur.target, ...rest) : realR.call(fs.realpathSync, p, ...rest);
+    fire(row.after, 'rp', a);
+    return res;
+  };
+  fs.openSync = function (p, ...rest) {
+    const a = path.resolve(String(p));
+    fire(row.before, 'open', a);
+    return isFake(a) ? realO.call(fs, cur.target, ...rest) : realO.call(fs, p, ...rest);
+  };
+  try {
+    return read(fx.link, fx.proj, BOUND);
+  } finally {
+    fs.lstatSync = realL;
+    fs.realpathSync.native = realR;
+    fs.openSync = realO;
+  }
+}
+
+// The seven legs of the map's section 5, in its order. Each swap is kept in place, and each must read on d174959 and be refused after the fix.
+const OF29_LEGS = [
+  {
+    name: 'T-94 KT-R-g', swapped: 'REPLACED',
+    row: { before: { op: 'lstat', who: 'targetReal', big: true, act: (fx) => { fs.unlinkSync(fx.target); of29Write(fx.target, 'REPLACED\n'); } } },
+  },
+  {
+    name: 'T-93 KTs-D-g (the subfolder, placeholder form)', swapped: 'NEWSUB',
+    row: { sub: true, before: { op: 'lstat', who: 'subTReal', big: true, act: (fx) => of29ReplaceFolder(fx.sub, 'NEWSUB') } },
+  },
+  {
+    name: 'KD-D-g', swapped: 'NEWDIR',
+    row: { before: { op: 'lstat', who: 'targetReal', big: true, act: (fx) => of29ReplaceFolder(fx.docs, 'NEWDIR') } },
+  },
+  {
+    name: 'KF-R-c', swapped: 'REPLACED',
+    row: { after: { op: 'lstat', who: 'link', big: true, act: (fx, cur) => { fs.unlinkSync(fx.link); of29Write(fx.link, 'REPLACED\n'); cur.isLink = false; } } },
+  },
+  {
+    name: 'KF-L-c', swapped: 'OTHER',
+    row: { after: { op: 'lstat', who: 'link', big: true, act: (fx, cur) => { fs.unlinkSync(fx.link); of29Write(fx.link, 'PLACEHOLDER3\n'); cur.target = fx.target2; } } },
+  },
+  {
+    name: 'KD-D-c', swapped: 'NEWDIR',
+    row: { after: { op: 'lstat', who: 'link', big: true, act: (fx) => of29ReplaceFolder(fx.docs, 'NEWDIR') } },
+  },
+  {
+    name: 'KD-D-e', swapped: 'NEWDIR',
+    row: { after: { op: 'rp', who: 'link', act: (fx) => of29ReplaceFolder(fx.docs, 'NEWDIR') } },
+  },
+];
+for (const leg of OF29_LEGS) {
+  test(`${leg.name}: the swap lands in one gap of the reader's pass and the read is refused, no swapped byte returned`, (t) => {
+    const fx = of29Fixture(t);
+    const got = runPlaceholder(readRepoFileOutcome, fx, leg.row);
+    assert.equal(got.status, 'refused', `${leg.name}: the swapped-in file must be refused, got ${show(got)}`);
+    assert.ok(!(got.text ?? '').includes(leg.swapped), `${leg.name}: the swapped-in bytes came back: ${show(got)}`);
+  });
+}
+
+// The kept legs: the CONTROL reads the target, and the two swaps at the open are refused on both sides of the fix (the window after the re-check is pinned).
+test('CONTROL (placeholder): with no swap the placeholder link reads its target bytes, before and after the fix', (t) => {
+  const fx = of29Fixture(t);
+  const got = runPlaceholder(readRepoFileOutcome, fx, {});
+  assert.equal(got.status, 'ok', `the control must read, got ${show(got)}`);
+  assert.equal(got.text, 'INSIDE\n', `the control read the wrong bytes: ${show(got)}`);
+});
+
+test('KF-R-k (kept): the link replaced by a regular file just before the open is refused, the new file is not read', (t) => {
+  const fx = of29Fixture(t);
+  const got = runPlaceholder(readRepoFileOutcome, fx, {
+    before: { op: 'open', who: 'link', act: (f, cur) => { fs.unlinkSync(f.link); of29Write(f.link, 'REPLACED\n'); cur.isLink = false; } },
+  });
+  assert.equal(got.status, 'refused', `the replaced link must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('REPLACED'), `the replacement's bytes came back: ${show(got)}`);
+});
+
+test('KD-D-k (kept): the folder swapped for another real folder just before the open is refused, the new bytes are not read', (t) => {
+  const fx = of29Fixture(t);
+  const got = runPlaceholder(readRepoFileOutcome, fx, {
+    before: { op: 'open', who: 'link', act: (f) => of29ReplaceFolder(f.docs, 'NEWDIR') },
+  });
+  assert.equal(got.status, 'refused', `the replaced folder must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('NEWDIR'), `the replacement folder's bytes came back: ${show(got)}`);
+});
+
+// T-81: the reader's own lstat (no bigint) succeeds, then judgeEntry's bigint lstat throws EACCES. The read is refused with that code, phase
+// inspect; it is never reported as absent (absent is the ENOENT answer only).
+test('T-81: an lstat that fails with EACCES inside the judgement refuses the read with that code, phase inspect, never absent', (t) => {
+  const fx = of29Fixture(t);
+  const realL = fs.lstatSync;
+  fs.lstatSync = function (p, o) {
+    if (o && o.bigint && path.resolve(String(p)) === path.resolve(fx.plain)) {
+      throw Object.assign(new Error(`EACCES: permission denied, lstat '${fx.plain}'`), { code: 'EACCES' });
+    }
+    return realL.call(fs, p, o);
+  };
+  let got;
+  try { got = readRepoFileOutcome(fx.plain, fx.proj, BOUND); } finally { fs.lstatSync = realL; }
+  assert.equal(got.status, 'refused', `an EACCES inside the judgement must refuse, got ${show(got)}`);
+  assert.equal(got.code, 'EACCES', `the refusal must carry the lstat's code, got ${show(got)}`);
+  assert.equal(got.phase, 'inspect', `the refusal must be phase inspect, got ${show(got)}`);
 });
