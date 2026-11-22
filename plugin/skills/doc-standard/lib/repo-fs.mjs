@@ -136,8 +136,21 @@ const REPO_READ_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0);
 // 'inspect' (the name could not be lstat'ed) or 'read' (a directory, a non-file or an escaping link is ENOTFILE; a failed open or
 // read carries its own code; an over-bound file is ECONFIGTOOLARGE; a short read is EIO). Same kind gate, flags, fstat re-check,
 // bound and short-read refusal as before: only the shape of the answer is new.
+// 29nd (T-76): the chain and then the handle, in this order. (1) Where a root is given, the folder chain from the root to the file is walked
+// by lstat FIRST: a link or a non-folder in the chain refuses (ENOTFILE, phase 'read'), a missing folder is absent, and nothing resolves the
+// target before this walk. (2) The target's own lstat, then the kind gate (repoEntryKind, as before). (3) The identity the handle must have:
+// the last lstat of the target, or for a symlink the statSync of the target the kind gate judged inside the root. (4) The open. (5) fstat of
+// the handle, compared with (3): a mismatch closes the handle and refuses (ECHANGED, phase 'read'), fail closed. The compare is skipped only
+// where a volume reports ino 0 (no inode tells two files apart): then the name judgement stands, as it did before 29nd (the choice, stated).
+// The read, the bound, the short-read check and the identity all come from that one handle, and every exit path closes it.
 export function readRepoFileOutcome(file, root, maxBytes) {
-  try { fs.lstatSync(file); } catch (e) {
+  if (root != null) {
+    const chain = walkFolderChain(file, root);
+    if (chain === 'absent') return { status: 'absent' };
+    if (chain === 'refused') return refusedRead(file, 'ENOTFILE', 'read');
+  }
+  let tst;
+  try { tst = fs.lstatSync(file, { bigint: true }); } catch (e) {
     if (e.code === 'ENOENT') return { status: 'absent' };
     return refusedRead(file, e.code, 'inspect');
   }
@@ -145,33 +158,61 @@ export function readRepoFileOutcome(file, root, maxBytes) {
   if (kind === 'missing') return { status: 'absent' }; // the name went away between the lstat and this check
   if (kind === 'dir') return refusedRead(file, 'EISDIR', 'read');
   if (kind !== 'file') return refusedRead(file, 'ENOTFILE', 'read');
+  let expected;
+  try { expected = tst.isSymbolicLink() ? fs.statSync(file, { bigint: true }) : tst; } catch (e) {
+    return refusedRead(file, e.code || 'EREAD', 'read');
+  }
   let fd;
   try { fd = fs.openSync(file, REPO_READ_FLAGS); } catch (e) {
     if (e.code === 'ENOENT') return { status: 'absent' };
     return refusedRead(file, e.code, 'read');
   }
-  try {
-    // 29mh (T-67): the identity is BIGINT (fstat with bigint), so a key built from it is exact where a volume's file IDs pass 2^53
-    // (NTFS does; a Number rounds them). The byte count stays a Number for the buffer and the bound.
-    const fst = fs.fstatSync(fd, { bigint: true }); // re-check AFTER open -- the TOCTOU window the O_NONBLOCK flag also guards
-    if (!fst.isFile()) return refusedRead(file, 'ENOTFILE', 'read');
-    const size = Number(fst.size);
-    if (size > maxBytes) return refusedRead(file, 'ECONFIGTOOLARGE', 'read');
-    const buf = Buffer.alloc(size);
-    let readSoFar = 0;
-    while (readSoFar < size) {
-      const n = fs.readSync(fd, buf, readSoFar, size - readSoFar, readSoFar);
-      if (n <= 0) break;
-      readSoFar += n;
-    }
-    // R12 bounce 1 F2: a short read (the file shrank between fstat and here) must be
-    // SKIPPED, never returned as a truncated prefix -- the header above says exactly this
-    // and the old code violated it: a truncated config parses as "malformed JSON" (a wrong
-    // diagnosis) and a truncated doc half-scans silently (worse than a skip).
-    if (readSoFar !== size) return refusedRead(file, 'EIO', 'read');
-    return { status: 'ok', text: buf.slice(0, readSoFar).toString('utf8'), identity: { dev: fst.dev, ino: fst.ino, size: fst.size, mtimeMs: fst.mtimeMs } };
-  } catch (e) { return refusedRead(file, e.code || 'EREAD', 'read'); }
-  finally { try { fs.closeSync(fd); } catch {} }
+  let out;
+  try { out = readHandle(fd, file, expected, maxBytes); }
+  catch (e) { out = refusedRead(file, e.code || 'EREAD', 'read'); }
+  try { fs.closeSync(fd); }
+  catch (e) { if (out.status === 'ok') return refusedRead(file, e.code || 'ECLOSE', 'read'); } // a close that fails after a good read is a refusal, never a success
+  return out;
+}
+
+// The folder chain walked by lstat ONLY: it never opens and never resolves the target. A parent that is a link or not a folder is 'refused';
+// a parent that does not exist is 'absent'; the root itself, or a path outside it, is 'refused'.
+function walkFolderChain(p, root) {
+  const rel = path.relative(root, p);
+  if (rel === '' || escapesRoot(rel)) return 'refused';
+  const parents = rel.split(path.sep).slice(0, -1);
+  let cur = root;
+  for (const part of parents) {
+    cur = path.join(cur, part);
+    let st;
+    try { st = fs.lstatSync(cur); } catch (e) { return e.code === 'ENOENT' ? 'absent' : 'refused'; }
+    if (st.isSymbolicLink() || !st.isDirectory()) return 'refused';
+  }
+  return 'ok';
+}
+
+// The read through one handle: its own kind and identity are compared with the expected identity of the target. A mismatch refuses.
+function readHandle(fd, file, expected, maxBytes) {
+  const fst = fs.fstatSync(fd, { bigint: true });
+  if (fst.isDirectory()) return refusedRead(file, 'EISDIR', 'read');
+  if (!fst.isFile()) return refusedRead(file, 'ENOTFILE', 'read');
+  // ino 0 on either side: no inode tells two files apart, so the name judgement stands (the choice, stated in the commit and the return).
+  if (expected.ino !== 0n && fst.ino !== 0n && (fst.dev !== expected.dev || fst.ino !== expected.ino)) {
+    return refusedRead(file, 'ECHANGED', 'read');
+  }
+  // 29mh (T-67): the identity is BIGINT, so a key built from it is exact where a volume's file IDs pass 2^53.
+  const size = Number(fst.size);
+  if (size > maxBytes) return refusedRead(file, 'ECONFIGTOOLARGE', 'read');
+  const buf = Buffer.alloc(size);
+  let readSoFar = 0;
+  while (readSoFar < size) {
+    const n = fs.readSync(fd, buf, readSoFar, size - readSoFar, readSoFar);
+    if (n <= 0) break;
+    readSoFar += n;
+  }
+  // R12 bounce 1 F2 (kept): a short read is refused, never returned as a truncated prefix.
+  if (readSoFar !== size) return refusedRead(file, 'EIO', 'read');
+  return { status: 'ok', text: buf.slice(0, readSoFar).toString('utf8'), identity: { dev: fst.dev, ino: fst.ino, size: fst.size, mtimeMs: fst.mtimeMs } };
 }
 
 function refusedRead(file, code, phase) {

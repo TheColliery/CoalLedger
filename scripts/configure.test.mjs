@@ -330,7 +330,9 @@ test('configure 16f A: a .claude junction to OUTSIDE the project is refused and 
   fs.symlinkSync(outside, path.join(proj, '.claude'), 'junction');
   const r = run(['--severityFloor', 'high'], { home, proj });
   assert.strictEqual(r.status, 1, `the write must be refused with exit 1; got ${r.status}\n${r.stdout}${r.stderr}`);
-  assert.match(r.stderr, /\[refused\]/);
+  // 29nd (T-76): the walk of the folder chain refuses the junction at the READ, before the write guard is reached: the reader's line.
+  const failLine = `${r.stdout}\n${r.stderr}`.split(/\r?\n/).find((l) => l.startsWith('FAIL ') && l.includes('coalledger.json'));
+  assert.ok(failLine && failLine.endsWith('could not be read (ENOTFILE); nothing was written'), `the refusal at the link is the reader's line: ${failLine}`);
   assert.deepStrictEqual(fs.readdirSync(outside), [], 'a refused target makes nothing outside the project');
 });
 test('configure 16f A: a .claude/coal junction (the second component) to OUTSIDE is refused and NOTHING is made outside', (t) => {
@@ -342,7 +344,9 @@ test('configure 16f A: a .claude/coal junction (the second component) to OUTSIDE
   fs.symlinkSync(outside, path.join(proj, '.claude', 'coal'), 'junction');
   const r = run(['--severityFloor', 'high'], { home, proj });
   assert.strictEqual(r.status, 1, `exit ${r.status}\n${r.stdout}${r.stderr}`);
-  assert.match(r.stderr, /\[refused\]/);
+  // 29nd (T-76): the walk refuses the second component at the READ: the reader's line, as in the first leg.
+  const failLine = `${r.stdout}\n${r.stderr}`.split(/\r?\n/).find((l) => l.startsWith('FAIL ') && l.includes('coalledger.json'));
+  assert.ok(failLine && failLine.endsWith('could not be read (ENOTFILE); nothing was written'), `the refusal at the second link is the reader's line: ${failLine}`);
   assert.deepStrictEqual(fs.readdirSync(outside), [], 'nothing is written through the second component either');
 });
 test('configure 16f A: a .claude junction whose target stays INSIDE the project is refused too (the folder pin is literal, as for reads)', (t) => {
