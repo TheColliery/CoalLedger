@@ -340,7 +340,7 @@ export function writeRepoFile(target, content, root) {
     }
   }
   let existingKind;
-  let existingMode = 0o666;
+  let existingMode; // read only in the existingKind === 'file' branches below, where lstat set it
   try {
     const st = fs.lstatSync(target);
     existingKind = st.isSymbolicLink() ? 'symlink' : st.isFile() ? 'file' : 'other';

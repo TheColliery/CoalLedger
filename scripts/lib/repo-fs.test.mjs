@@ -231,6 +231,20 @@ test('writeRepoFile: REPLACES an existing regular file (not an append, not a mer
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// E2 TM3 (29nd): a NEW file takes the platform's default mode, the same one a plain write gets. The temp open passes no mode, so
+// it is 0o666 before the umask on POSIX; this pins that, so a later explicit mode on the temp cannot widen a new config unnoticed.
+test('writeRepoFile: a brand-new file takes the same mode a plain write gets (POSIX; visibly skipped on Windows, where mode bits are not the access model)', (t) => {
+  if (process.platform === 'win32') { t.skip('Windows: POSIX mode bits are not the access model here'); return; }
+  const dir = scratch('cl-write-newmode-');
+  try {
+    const baseline = path.join(dir, 'plain.json');
+    const target = path.join(dir, 'config.json');
+    fs.writeFileSync(baseline, 'x');
+    writeRepoFile(target, 'x', dir);
+    assert.equal(fs.statSync(target).mode & 0o777, fs.statSync(baseline).mode & 0o777);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('writeRepoFile: no temp file is left behind on a successful write', () => {
   const dir = scratch('cl-write-notemp-');
   try {
