@@ -150,3 +150,96 @@ test('REAL-LINK: a real symlink retargeted to an inside file after the kind chec
   assert.equal(got.status, 'refused', `a real link retargeted inside the root after the kind check must be refused, got ${show(got)}`);
   assert.ok(!(got.text ?? '').includes('INSIDE'), `the swapped-in file's bytes came back through the real link: ${show(got)}`);
 });
+
+// 29nx bounce 1 (T-88): a folder in the chain swapped for a link AFTER the chain walk, kept in place through the kind check and the open. The
+// folder is the one a plain entry sits in. Windows: a junction; POSIX: a directory symlink. Each leg skips visibly where the account cannot make one.
+const DOCS_INSIDE = 'DOCS-INSIDE\n';
+const LINK_KIND = process.platform === 'win32' ? 'junction' : 'dir';
+
+// proj/docs/x.md is the plain entry; outside/x.md holds the victim bytes. The entry's folder is proj/docs.
+function folderFixture(t) {
+  const root = fs.mkdtempSync(path.join(TMP, PREFIX));
+  const real = fs.realpathSync.native(root);
+  if (path.dirname(real) !== TMP) throw new Error(`refusing: ${real} is not directly under ${TMP}`);
+  t.after(() => {
+    if (path.dirname(real) === TMP && path.basename(real).startsWith(PREFIX)) fs.rmSync(real, { recursive: true, force: true });
+  });
+  const proj = path.join(real, 'proj');
+  const outside = path.join(real, 'outside');
+  fs.mkdirSync(path.join(proj, 'docs'), { recursive: true });
+  fs.mkdirSync(outside);
+  const fx = { proj, outside, docs: path.join(proj, 'docs'), target: path.join(proj, 'docs', 'x.md') };
+  fs.writeFileSync(fx.target, DOCS_INSIDE);
+  fs.writeFileSync(path.join(outside, 'x.md'), VICTIM);
+  return fx;
+}
+
+// Can this account make a folder link of the kind the swap uses? (probe in its own folder, removed by name)
+function canFolderLink(dir) {
+  const a = path.join(dir, 'folderlink-probe-target');
+  const b = path.join(dir, 'folderlink-probe-link');
+  fs.mkdirSync(a);
+  try { fs.symlinkSync(a, b, LINK_KIND); return true; } catch { return false; } finally {
+    try { fs.rmdirSync(b); } catch { /* the probe link may be absent */ }
+    fs.rmdirSync(a);
+  }
+}
+
+// The swap: docs is renamed aside and replaced by a link to outside. swapBack restores the real folder (the link is removed first).
+function swapIn(fx) {
+  fs.renameSync(fx.docs, path.join(fx.proj, 'docs-real'));
+  fs.symlinkSync(fx.outside, fx.docs, LINK_KIND);
+}
+function swapBack(fx) {
+  try { fs.rmdirSync(fx.docs); } catch { try { fs.unlinkSync(fx.docs); } catch { /* not a link: nothing to remove */ } }
+  if (fs.existsSync(path.join(fx.proj, 'docs-real'))) fs.renameSync(path.join(fx.proj, 'docs-real'), fx.docs);
+}
+
+test('C4 (T-88): a folder swapped for a link after the chain walk, and kept there, is refused: the victim bytes do not come back', (t) => {
+  const fx = folderFixture(t);
+  if (!canFolderLink(fx.proj)) { t.skip(`this account cannot make a ${LINK_KIND} (capability probe): the one-swap leg needs it to run`); return; }
+  const realR = fs.realpathSync.native;
+  let fired = false;
+  // The swap fires at the FIRST realpath of the entry, which judgeEntry takes after its chain walk.
+  fs.realpathSync.native = function (p, ...rest) {
+    if (!fired && typeof p === 'string' && path.resolve(p) === path.resolve(fx.target)) { fired = true; swapIn(fx); }
+    return realR.call(fs.realpathSync, p, ...rest);
+  };
+  let got;
+  try { got = readRepoFileOutcome(fx.target, fx.proj, BOUND); } finally {
+    fs.realpathSync.native = realR;
+    if (fired) swapBack(fx);
+  }
+  assert.equal(got.status, 'refused', `a folder swapped for a link after the chain walk must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('VICTIM'), `the victim bytes came back through the swapped folder: ${show(got)}`);
+});
+
+test('C2h (T-88, kept refused): a folder swapped in before the entry lstat, back at the chain lstat, and in again before the open is refused', (t) => {
+  const fx = folderFixture(t);
+  if (!canFolderLink(fx.proj)) { t.skip(`this account cannot make a ${LINK_KIND} (capability probe): the multi-swap leg needs it to run`); return; }
+  const realL = fs.lstatSync;
+  const realO = fs.openSync;
+  let phase = 0;
+  // phase 0 -> 1: the judgement's bigint lstat of the entry, with the folder swapped in before the stat runs.
+  // phase 1 -> 2: the chain lstat of the folder, with the folder swapped back before the stat runs.
+  // phase 2 -> 3: the open of the entry, with the folder swapped in again before the open runs.
+  fs.lstatSync = function (p, o) {
+    const a = typeof p === 'string' ? path.resolve(p) : '';
+    if (phase === 0 && o && o.bigint && a === path.resolve(fx.target)) { swapIn(fx); phase = 1; }
+    else if (phase === 1 && a === path.resolve(fx.docs)) { swapBack(fx); phase = 2; }
+    return realL.call(fs, p, o);
+  };
+  fs.openSync = function (p, ...rest) {
+    if (phase === 2 && typeof p === 'string' && path.resolve(p) === path.resolve(fx.target)) { swapIn(fx); phase = 3; }
+    return realO.call(fs, p, ...rest);
+  };
+  let got;
+  try { got = readRepoFileOutcome(fx.target, fx.proj, BOUND); } finally {
+    fs.lstatSync = realL;
+    fs.openSync = realO;
+    if (phase >= 1) swapBack(fx);
+  }
+  assert.ok(phase >= 2, `the multi-swap did not reach its second swap (phase ${phase}): the leg proves nothing`);
+  assert.equal(got.status, 'refused', `the multi-swap must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('VICTIM'), `the victim bytes came back through the multi-swap: ${show(got)}`);
+});

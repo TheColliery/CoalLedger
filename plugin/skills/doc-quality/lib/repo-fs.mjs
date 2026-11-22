@@ -111,7 +111,11 @@ function judgeEntry(p, root) {
   try { rst = fs.statSync(real, { bigint: true }); } catch { return other; }
   if (lst.isSymbolicLink()) return rst.isFile() ? { kind: 'file', identity: rst } : other;
   if (lst.isDirectory()) return { kind: 'dir', identity: null };
-  return lst.isFile() ? { kind: 'file', identity: rst } : other; // FIFO/socket/device/block-or-char-special -> 'other'
+  if (!lst.isFile()) return other; // FIFO/socket/device/block-or-char-special -> 'other'
+  // T-88 (29nx bounce 1): the entry's own lstat and the stat of the resolved path must name one file. A folder swapped for a link after the chain
+  // walk and kept there makes the resolved path lie outside the root, while the lstat, taken before that realpath, still names the inside file.
+  if (rst.dev !== lst.dev || rst.ino !== lst.ino) return other;
+  return { kind: 'file', identity: rst };
 }
 
 export function repoEntryKind(p, root) {
@@ -162,7 +166,7 @@ export function readRepoFileOutcome(file, root, maxBytes) {
   if (judged.kind !== 'file') return refusedRead(file, 'ENOTFILE', 'read');
   const expected = judged.identity;
   let fd;
-  // T-82, a stated limit. The fstat compare below proves the handle is the file the last lstat (or, for a file link, the target the kind check approved)
+  // T-82, a stated limit. The fstat compare below proves the handle is the file the kind check's lstat and stat both named (for a file link, the target the check resolved)
   // saw: a swap after that is refused (ECHANGED). It cannot prove that file lies under the walked folders. A process on the same
   // machine that swaps a folder in the chain for a link before that lstat, back for the kind check, and in again before this open,
   // makes the lstat and the open agree on a file outside the root, and the read goes through. Node's fs has no handle-relative open
