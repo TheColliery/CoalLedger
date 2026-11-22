@@ -650,6 +650,36 @@ test('T-96: the re-check\'s own lstat fails with EACCES and the read is refused,
   assert.ok(!(got.text ?? '').includes('INSIDE'), `the target's bytes came back past a failing re-check: ${show(got)}`);
 });
 
+// T-97 (29of bounce 3): a PLAIN entry whose folder is swapped for a junction to an outside tree, right after the chain walk, is read from OUTSIDE the root
+// wherever the identity measure is blind. Every bigint lstat, stat and fstat carries one ino (as the reviewer's reuse-witness.mjs does), so the dev/ino
+// agreement and the compare both pass; only the containment check against the root can refuse. The escape check ran for links only.
+test('T-97 P-OUT: a plain entry whose folder becomes a junction to an outside tree is refused even when every ino is equal, and no outside byte comes back', (t) => {
+  const fx = of29Fixture(t);
+  if (!canFolderLink(fx.proj)) { t.skip(`this account cannot make a ${LINK_KIND} (capability probe): the P-OUT leg needs it to run`); return; }
+  const outside = path.join(path.dirname(fx.proj), 'outside');
+  of29Write(path.join(outside, 'x.md'), 'VICTIM\n');
+  const reuse = (st) => (st && typeof st.ino === 'bigint' ? Object.assign(Object.create(Object.getPrototypeOf(st)), st, { ino: 7n }) : st);
+  const realL = fs.lstatSync, realS = fs.statSync, realF = fs.fstatSync, realR = fs.realpathSync.native;
+  let swapped = false;
+  fs.lstatSync = function (p, o) { const st = realL.call(fs, p, o); return o && o.bigint ? reuse(st) : st; };
+  fs.statSync = function (p, o) { const st = realS.call(fs, p, o); return o && o.bigint ? reuse(st) : st; };
+  fs.fstatSync = function (fd, o) { const st = realF.call(fs, fd, o); return o && o.bigint ? reuse(st) : st; };
+  fs.realpathSync.native = function (p, ...rest) {
+    if (!swapped && path.resolve(String(p)) === path.resolve(fx.plain)) {
+      swapped = true; // the first resolution of the entry, after the chain walk
+      fs.renameSync(fx.docs, `${fx.docs}-real`);
+      fs.symlinkSync(outside, fx.docs, LINK_KIND);
+    }
+    return realR.call(fs.realpathSync, p, ...rest);
+  };
+  let got;
+  try { got = readRepoFileOutcome(fx.plain, fx.proj, BOUND); } finally {
+    fs.lstatSync = realL; fs.statSync = realS; fs.fstatSync = realF; fs.realpathSync.native = realR;
+  }
+  assert.equal(got.status, 'refused', `a plain entry read through a junction to an outside tree must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('VICTIM'), `the outside bytes came back: ${show(got)}`);
+});
+
 // T-81: the reader's own lstat (no bigint) succeeds, then judgeEntry's bigint lstat throws EACCES. The read is refused with that code, phase
 // inspect; it is never reported as absent (absent is the ENOENT answer only).
 test('T-81: an lstat that fails with EACCES inside the judgement refuses the read with that code, phase inspect, never absent', (t) => {

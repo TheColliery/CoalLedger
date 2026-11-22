@@ -109,7 +109,7 @@ function judgeEntry(p, root) {
     if (root != null) realFolder = fs.realpathSync.native(path.dirname(p));
   } catch { return other; }
   if (root != null && !isContained(real, realFolder)) return other; // the entry stays inside its own folder
-  if (lst.isSymbolicLink() && root != null) {
+  if (root != null) {
     let realRoot;
     try { realRoot = fs.realpathSync.native(root); } catch { return other; }
     if (real !== realRoot && !isContained(real, realRoot)) return other; // escaping link
