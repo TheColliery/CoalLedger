@@ -495,6 +495,13 @@ function of29ReplaceFolder(dir, tag) {
   of29Write(path.join(dir, 'sub', 't.md'), `${tag}\n`);
 }
 
+// A replaced regular file: the old one is RENAMED aside inside the root, not unlinked, so its inode stays allocated and no new file can take its number
+// (ext4 reuses a freed inode number at once; NTFS and APFS do not). The aside file lives under the fixture root, removed with it.
+function of29ReplaceFile(file, body) {
+  fs.renameSync(file, `${file}-old${of29Seq++}`);
+  of29Write(file, body);
+}
+
 // One swap, at one call. `row.before` fires before the call, `row.after` after it returns (the call's own result is taken first).
 function runPlaceholder(read, fx, row) {
   const cur = { isLink: true, target: row.sub ? fx.subT : fx.target };
@@ -552,7 +559,7 @@ function runPlaceholder(read, fx, row) {
 const OF29_LEGS = [
   {
     name: 'T-94 KT-R-g', swapped: 'REPLACED',
-    row: { before: { op: 'lstat', who: 'targetReal', big: true, act: (fx) => { fs.unlinkSync(fx.target); of29Write(fx.target, 'REPLACED\n'); } } },
+    row: { before: { op: 'lstat', who: 'targetReal', big: true, act: (fx) => of29ReplaceFile(fx.target, 'REPLACED\n') } },
   },
   {
     name: 'T-93 KTs-D-g (the subfolder, placeholder form)', swapped: 'NEWSUB',
@@ -564,11 +571,11 @@ const OF29_LEGS = [
   },
   {
     name: 'KF-R-c', swapped: 'REPLACED',
-    row: { after: { op: 'lstat', who: 'link', big: true, act: (fx, cur) => { fs.unlinkSync(fx.link); of29Write(fx.link, 'REPLACED\n'); cur.isLink = false; } } },
+    row: { after: { op: 'lstat', who: 'link', big: true, act: (fx, cur) => { of29ReplaceFile(fx.link, 'REPLACED\n'); cur.isLink = false; } } },
   },
   {
     name: 'KF-L-c', swapped: 'OTHER',
-    row: { after: { op: 'lstat', who: 'link', big: true, act: (fx, cur) => { fs.unlinkSync(fx.link); of29Write(fx.link, 'PLACEHOLDER3\n'); cur.target = fx.target2; } } },
+    row: { after: { op: 'lstat', who: 'link', big: true, act: (fx, cur) => { of29ReplaceFile(fx.link, 'PLACEHOLDER3\n'); cur.target = fx.target2; } } },
   },
   {
     name: 'KD-D-c', swapped: 'NEWDIR',
@@ -599,7 +606,7 @@ test('CONTROL (placeholder): with no swap the placeholder link reads its target 
 test('KF-R-k (kept): the link replaced by a regular file just before the open is refused, the new file is not read', (t) => {
   const fx = of29Fixture(t);
   const got = runPlaceholder(readRepoFileOutcome, fx, {
-    before: { op: 'open', who: 'link', act: (f, cur) => { fs.unlinkSync(f.link); of29Write(f.link, 'REPLACED\n'); cur.isLink = false; } },
+    before: { op: 'open', who: 'link', act: (f, cur) => { of29ReplaceFile(f.link, 'REPLACED\n'); cur.isLink = false; } },
   });
   assert.equal(got.status, 'refused', `the replaced link must be refused, got ${show(got)}`);
   assert.ok(!(got.text ?? '').includes('REPLACED'), `the replacement's bytes came back: ${show(got)}`);
