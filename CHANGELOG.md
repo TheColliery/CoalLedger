@@ -2,6 +2,16 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.16] - 2026-11-22
+
+the reader walks the folder chain before it opens a file
+
+### Fixed
+- **A file swapped between the check and the open is refused (`scripts/lib/repo-fs.mjs`, T-76).** The reader checked a name and then opened it by name, so a link in the folder chain was followed before any refusal, and a name swapped in between was read through: bytes of a file outside the root came back. Now the folder chain from the root to the file is walked by lstat before anything is opened, and a link or a non-folder parent is refused (ENOTFILE) with no open. The handle that is read is then compared (`dev` and `ino`) with the last lstat of the file; a mismatch closes it and refuses (ECHANGED), fail closed. Limit: where a volume reports `ino` 0 (FAT and some network volumes), no inode tells two files apart, so the identity compare is skipped and only the name check stands; that window is not closed on those volumes. Test: `scripts/lib/repo-fs-toctou.test.mjs` (red before the fix: the outside bytes came back in 2 of its 3 legs; green after).
+
+### Changed
+- **The writer's unused default mode is removed (`scripts/lib/repo-fs.mjs`, E2 TM3).** A new file keeps the platform's mode, as before; the POSIX pin test (`scripts/lib/repo-fs.test.mjs`) is skipped on Windows.
+
 ## [0.17.0-beta.15] - 2026-11-22
 
 the plugin icon is named by the manifest's icon key
