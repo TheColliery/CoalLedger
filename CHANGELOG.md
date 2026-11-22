@@ -2,6 +2,15 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.20] - 2026-11-23
+
+a kept swap to another file or folder is refused
+
+### Fixed
+- **Every call in the reader's pass that resolves one name must find one file (`scripts/lib/repo-fs.mjs`, T-94).** A file link's target must now agree between its stat and its lstat, and the link itself is looked at again before the identity is accepted, so a single kept swap of the link, its folder or its target to another regular file or a real folder is refused. Seven shapes, all inside the root. Test: `scripts/lib/repo-fs-expected.test.mjs`.
+- **An lstat error other than ENOENT on the kind check refuses the read (`scripts/lib/repo-fs.mjs`, T-81).** The refusal carries the error code and phase `inspect`, and is never answered as an absent file. Test: `scripts/lib/repo-fs-expected.test.mjs`.
+- **Correction to beta.19.** Beta.19 said a single kept swap of the link's folder or of its target leaf is refused. That held for swaps to a link; it did not hold for a swap to another regular file or a real folder, which this release closes.
+
 ## [0.17.0-beta.19] - 2026-11-22
 
 a file link's identity is the lstat of its resolved target
