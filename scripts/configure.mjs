@@ -83,6 +83,9 @@ function moveLegacyAside(legacy, writePath, root, snapshot) {
   const tracked = trackedByGit(legacy, root);
   let replaced = false;
   try { fs.lstatSync(bak); replaced = true; } catch { /* no earlier backup */ }
+  // 29np (BB-533, main's ruling 6): the mode is read BEFORE the rename, since the legacy name is gone after it. The room's one write-bit
+  // test answers (readOnlyRefusal, repo-fs.mjs); the link case returned above, so st is a plain entry here or null (absent).
+  const wasReadOnly = st !== null && readOnlyRefusal(legacy) !== null;
   try {
     fs.renameSync(legacy, bak);
   } catch (e) {
@@ -106,7 +109,7 @@ function moveLegacyAside(legacy, writePath, root, snapshot) {
     console.error(`Warning: ${legacy} changed while migrating: the backup ${bak} holds a change the new config at ${writePath} does not include; merge it by hand, then delete the backup.`);
     return;
   }
-  console.log(`Migrated the project config to ${writePath}; the old file is kept as ${bak} ${replaced ? '(replaced an earlier backup)' : '(no earlier backup)'}.`);
+  console.log(`Migrated the project config to ${writePath}; the old file is kept as ${bak}${wasReadOnly ? ', read-only as it was' : ''} ${replaced ? '(replaced an earlier backup)' : '(no earlier backup)'}.`);
   if (tracked) console.log(`${legacy} is tracked by git: commit its removal (git add -A -- ${legacy}). ${bak} is untracked and yours to keep or delete.`);
 }
 

@@ -278,3 +278,37 @@ test('a git-tracked legacy file gets the tracked line: commit its removal; the b
   assert.equal(r.status, 0, `configure exited ${r.status}:\n${r.stdout}\n${r.stderr}`);
   assert.ok(lines(r).includes(`${sb.legacy} is tracked by git: commit its removal (git add -A -- ${sb.legacy}). ${sb.bak} is untracked and yours to keep or delete.`), `the tracked line is not as the form states:\n${r.stdout}\n${r.stderr}`);
 });
+
+// 29np (BB-533, main's ruling 6 on card c195): a read-only legacy file is still moved to <legacy>.bak, and the one success
+// line says the old file was read-only as it was. On Windows the read-only attribute reads as mode 0o444; the leg runs everywhere.
+test('a read-only legacy file is still moved to its .bak, and the success line says it was read-only as it was', (t) => {
+  const sb = sandbox(t);
+  fs.chmodSync(sb.legacy, 0o444);
+  try {
+    const r = runConfigure(sb, null);
+    assert.equal(r.error, undefined, `the child did not run: ${r.error && r.error.message}`);
+    assert.equal(r.status, 0, `configure exited ${r.status}:\n${r.stdout}\n${r.stderr}`);
+    assert.equal(fs.existsSync(sb.legacy), false, 'the read-only legacy file was not moved aside');
+    assert.equal(fs.readFileSync(sb.bak, 'utf8'), LEGACY_BODY, 'the backup does not hold the bytes of the read-only file');
+    const line = lines(r).find((l) => l.startsWith('Migrated the project config to'));
+    assert.ok(line, `no success line was printed:\n${r.stdout}\n${r.stderr}`);
+    assert.ok(line.includes(`kept as ${sb.bak}, read-only as it was`), `the success line does not say the old file was read-only:\n${line}`);
+  } finally {
+    if (fs.existsSync(sb.bak)) fs.chmodSync(sb.bak, 0o666);
+  }
+});
+
+// The writable leg (guard): the success line of an ordinary migration never says read-only. The backup path and the new
+// config path are stripped before the word check, so a temp root or a file name holding the word cannot flip the verdict.
+test('a writable legacy file: the success line does not say read-only', (t) => {
+  const sb = sandbox(t);
+  const r = runConfigure(sb, null);
+  assert.equal(r.error, undefined, `the child did not run: ${r.error && r.error.message}`);
+  assert.equal(r.status, 0, `configure exited ${r.status}:\n${r.stdout}\n${r.stderr}`);
+  const line = lines(r).find((l) => l.startsWith('Migrated the project config to'));
+  assert.ok(line, `no success line was printed:\n${r.stdout}\n${r.stderr}`);
+  const cfg = newConfigFile(sb.proj);
+  assert.ok(cfg, 'the new config file was not written');
+  const judged = line.split(sb.bak).join('').split(cfg).join('');
+  assert.ok(!/read-only/i.test(judged), `the success line of a writable legacy says read-only:\n${line}`);
+});
