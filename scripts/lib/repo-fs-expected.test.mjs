@@ -506,6 +506,7 @@ function runPlaceholder(read, fx, row) {
   const realR = fs.realpathSync.native;
   const realO = fs.openSync;
   let fired = false;
+  let linkBigLstats = 0; // T-96: the entry's bigint lstats, counted so the nth one can be made to fail
   const fire = (spec, op, a, o) => {
     if (!spec || fired || spec.op !== op || who[spec.who] !== a) return;
     if (spec.big !== undefined && !!(o && o.bigint) !== spec.big) return;
@@ -516,6 +517,9 @@ function runPlaceholder(read, fx, row) {
   fs.lstatSync = function (p, o) {
     const a = path.resolve(String(p));
     fire(row.before, 'lstat', a, o);
+    if (row.failAt && isFake(a) && o && o.bigint && ++linkBigLstats === row.failAt.nth) {
+      throw Object.assign(new Error(`${row.failAt.code}: lstat '${p}'`), { code: row.failAt.code });
+    }
     const st = realL.call(fs, p, o);
     const res = isFake(a)
       ? Object.assign(Object.create(Object.getPrototypeOf(st)), st, { isSymbolicLink: () => true, isFile: () => false })
@@ -608,6 +612,35 @@ test('KD-D-k (kept): the folder swapped for another real folder just before the 
   });
   assert.equal(got.status, 'refused', `the replaced folder must be refused, got ${show(got)}`);
   assert.ok(!(got.text ?? '').includes('NEWDIR'), `the replacement folder's bytes came back: ${show(got)}`);
+});
+
+// T-93 (29of bounce 1): the target's subfolder is swapped for a junction right after the entry folder's realpath returns (gap e, kind L on the subfolder).
+// HEAD's re-walk runs from the target's own folder and refuses the junction. A re-walk from the entry's folder would not see it, and the open would
+// read the junction's bytes.
+test('T-93 KTs-L-e (the subfolder swapped for a junction after realpath(dirname), placeholder form): the read is refused, no swapped byte returned', (t) => {
+  const fx = of29Fixture(t);
+  if (!canFolderLink(fx.proj)) { t.skip(`this account cannot make a ${LINK_KIND} (capability probe): the subfolder junction leg needs it to run`); return; }
+  const got = runPlaceholder(readRepoFileOutcome, fx, {
+    sub: true,
+    after: {
+      op: 'rp', who: 'docs',
+      act: (f) => {
+        fs.renameSync(f.sub, `${f.sub}-old${of29Seq++}`);
+        of29Write(path.join(f.docs, 'sub-new', 't.md'), 'NEWSUB\n');
+        fs.symlinkSync(path.join(f.docs, 'sub-new'), f.sub, LINK_KIND);
+      },
+    },
+  });
+  assert.equal(got.status, 'refused', `the junction-swapped subfolder must be refused, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('NEWSUB'), `the junction's bytes came back: ${show(got)}`);
+});
+
+// T-96 (29of bounce 1): the re-check is the entry's second bigint lstat. When that call throws, the read is refused and no byte of the target comes back.
+test('T-96: the re-check\'s own lstat fails with EACCES and the read is refused, no bytes returned', (t) => {
+  const fx = of29Fixture(t);
+  const got = runPlaceholder(readRepoFileOutcome, fx, { failAt: { nth: 2, code: 'EACCES' } });
+  assert.equal(got.status, 'refused', `a failing re-check must refuse, got ${show(got)}`);
+  assert.ok(!(got.text ?? '').includes('INSIDE'), `the target's bytes came back past a failing re-check: ${show(got)}`);
 });
 
 // T-81: the reader's own lstat (no bigint) succeeds, then judgeEntry's bigint lstat throws EACCES. The read is refused with that code, phase

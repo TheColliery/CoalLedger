@@ -129,7 +129,7 @@ function judgeEntry(p, root) {
         if (s.isSymbolicLink() || !s.isDirectory()) return other;
       }
     }
-    // The entry itself must still be the link the kind check saw (a swap of F after R is caught here).
+    // The entry itself must still be the link the kind check saw: a swap of the entry or its folder that lands before this call is caught here; a swap after it is caught by the fstat compare at the open.
     let again; try { again = fs.lstatSync(p, { bigint: true }); } catch { return other; }
     if (!again.isSymbolicLink() || again.dev !== lst.dev || again.ino !== lst.ino) return other;
     return { kind: 'file', identity: lrst };
