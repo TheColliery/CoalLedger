@@ -163,6 +163,13 @@ export function readRepoFileOutcome(file, root, maxBytes) {
     return refusedRead(file, e.code || 'EREAD', 'read');
   }
   let fd;
+  // T-82, a stated limit. The fstat compare below proves the handle is the file the last lstat (or, for a file link, the last stat)
+  // saw: a swap after that is refused (ECHANGED). It cannot prove that file lies under the walked folders. A process on the same
+  // machine that swaps a folder in the chain for a link before that lstat, back for the kind check, and in again before this open,
+  // makes the lstat and the open agree on a file outside the root, and the read goes through. Node's fs has no handle-relative open
+  // (no openat, and O_NOFOLLOW guards the last component only, absent on Windows), and on Windows and macOS no call that names the
+  // file an open handle holds, so no check here closes the window; on Linux /proc/self/fd could, and is not used (a stated choice).
+  // Where a volume reports inode 0, the compare is skipped and the name check stands.
   try { fd = fs.openSync(file, REPO_READ_FLAGS); } catch (e) {
     if (e.code === 'ENOENT') return { status: 'absent' };
     return refusedRead(file, e.code, 'read');
