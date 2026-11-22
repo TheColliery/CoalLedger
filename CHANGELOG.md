@@ -2,6 +2,14 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.19] - 2026-11-22
+
+a file link's identity is the lstat of its resolved target
+
+### Fixed
+- **A file link's identity is the lstat of its resolved target, taken after that target's folder chain is walked again under the root (`scripts/lib/repo-fs.mjs`, T-92).** The identity came from the stat of the resolved path, which follows every component, so a folder in the chain swapped for a link after the kind check made the read go outside the root. Now a link's target must be a regular file by its own lstat, and every folder from the root to the target's folder is walked by lstat again (a link or a non-folder refuses). A single kept swap of the link's folder or of its target leaf is refused. Test: `scripts/lib/repo-fs-expected.test.mjs` (red before the fix: the outside bytes came back for the folder swap and for the target-leaf swap; green after).
+- **Correction to beta.18's last sentence.** Beta.18 said only the timed multi-swap of a folder in the chain was left. That held for plain files only; from this release it holds for file links too.
+
 ## [0.17.0-beta.18] - 2026-11-22
 
 a file link's identity comes from the check that judged it
