@@ -51,6 +51,7 @@ const TESTS = [
   'scripts/lib/configure-reader.test.mjs',
   'scripts/lib/configure-readonly.test.mjs',
   'scripts/lib/repo-fs-toctou.test.mjs',
+  'scripts/lib/repo-fs-expected.test.mjs',
   'scripts/build-plugin.test.mjs',
   'scripts/agy-validate.test.mjs',
   'scripts/verify.test.mjs',

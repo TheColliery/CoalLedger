@@ -87,34 +87,35 @@ function folderChainIsPlain(p, root) {
   }
   return true;
 }
-function entryInsideItsFolder(p, root) {
-  if (!folderChainIsPlain(p, root)) return false;
-  let realFolder, real;
+// T-82 (29nx, candidate 5): ONE pass judges an entry's kind and takes its identity from the SAME resolution the containment checks judged.
+// The name is resolved once (realpath); the containment checks and the identity both come from that resolved path, never from a second
+// resolution or a second stat of the name, so a link retargeted after its check is not the file the identity names. Returns { kind, identity }:
+// kind is 'missing' | 'dir' | 'file' | 'other'; identity is the bigint stat of the resolved target when kind is 'file', else null.
+function judgeEntry(p, root) {
+  const other = { kind: 'other', identity: null };
+  let lst;
+  try { lst = fs.lstatSync(p, { bigint: true }); } catch { return { kind: 'missing', identity: null }; }
+  if (root != null && !folderChainIsPlain(p, root)) return other;
+  let real, realFolder;
   try {
-    realFolder = fs.realpathSync.native(path.dirname(p));
-    real = fs.realpathSync.native(p);
-  } catch { return false; }
-  return isContained(real, realFolder); // the entry stays inside the folder itself
+    real = fs.realpathSync.native(p); // the one resolution of the name (a dangling link throws here)
+    if (root != null) realFolder = fs.realpathSync.native(path.dirname(p));
+  } catch { return other; }
+  if (root != null && !isContained(real, realFolder)) return other; // the entry stays inside its own folder
+  if (lst.isSymbolicLink() && root != null) {
+    let realRoot;
+    try { realRoot = fs.realpathSync.native(root); } catch { return other; }
+    if (real !== realRoot && !isContained(real, realRoot)) return other; // escaping link
+  }
+  let rst;
+  try { rst = fs.statSync(real, { bigint: true }); } catch { return other; }
+  if (lst.isSymbolicLink()) return rst.isFile() ? { kind: 'file', identity: rst } : other;
+  if (lst.isDirectory()) return { kind: 'dir', identity: null };
+  return lst.isFile() ? { kind: 'file', identity: rst } : other; // FIFO/socket/device/block-or-char-special -> 'other'
 }
 
 export function repoEntryKind(p, root) {
-  let st;
-  try { st = fs.lstatSync(p); } catch { return 'missing'; }
-  if (root != null && !entryInsideItsFolder(p, root)) return 'other';
-  if (st.isSymbolicLink()) {
-    let real;
-    try { real = fs.realpathSync.native(p); } catch { return 'other'; } // dangling link
-    if (root != null) {
-      let realRoot;
-      try { realRoot = fs.realpathSync.native(root); } catch { return 'other'; }
-      if (real !== realRoot && !isContained(real, realRoot)) return 'other'; // escaping link
-    }
-    let rst;
-    try { rst = fs.statSync(real); } catch { return 'other'; }
-    return rst.isFile() ? 'file' : 'other';
-  }
-  if (st.isDirectory()) return 'dir';
-  return st.isFile() ? 'file' : 'other'; // FIFO/socket/device/block-or-char-special -> 'other'
+  return judgeEntry(p, root).kind;
 }
 
 // O_NONBLOCK: belt-and-suspenders on top of the lstat gate above, for the TOCTOU window
@@ -138,8 +139,8 @@ const REPO_READ_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0);
 // bound and short-read refusal as before: only the shape of the answer is new.
 // 29nd (T-76): the chain and then the handle, in this order. (1) Where a root is given, the folder chain from the root to the file is walked
 // by lstat FIRST: a link or a non-folder in the chain refuses (ENOTFILE, phase 'read'), a missing folder is absent, and nothing resolves the
-// target before this walk. (2) The target's own lstat, then the kind gate (repoEntryKind, as before). (3) The identity the handle must have:
-// the last lstat of the target, or for a symlink the statSync of the target the kind gate judged inside the root. (4) The open. (5) fstat of
+// target before this walk. (2) The target's own lstat (absent and inspect answers only), then the kind gate (judgeEntry). (3) The identity the handle
+// must have: the one judgeEntry took in the same pass as the kind gate (the statSync of the resolved target, 29nx). (4) The open. (5) fstat of
 // the handle, compared with (3): a mismatch closes the handle and refuses (ECHANGED, phase 'read'), fail closed. The compare is skipped only
 // where a volume reports ino 0 (no inode tells two files apart): then the name judgement stands, as it did before 29nd (the choice, stated).
 // The read, the bound, the short-read check and the identity all come from that one handle, and every exit path closes it.
@@ -149,21 +150,19 @@ export function readRepoFileOutcome(file, root, maxBytes) {
     if (chain === 'absent') return { status: 'absent' };
     if (chain === 'refused') return refusedRead(file, 'ENOTFILE', 'read');
   }
-  let tst;
-  try { tst = fs.lstatSync(file, { bigint: true }); } catch (e) {
+  // (2) the name's own lstat, for the absent and inspect answers only: the identity comes from the one judgement below, never from this stat.
+  try { fs.lstatSync(file); } catch (e) {
     if (e.code === 'ENOENT') return { status: 'absent' };
     return refusedRead(file, e.code, 'inspect');
   }
-  const kind = repoEntryKind(file, root);
-  if (kind === 'missing') return { status: 'absent' }; // the name went away between the lstat and this check
-  if (kind === 'dir') return refusedRead(file, 'EISDIR', 'read');
-  if (kind !== 'file') return refusedRead(file, 'ENOTFILE', 'read');
-  let expected;
-  try { expected = tst.isSymbolicLink() ? fs.statSync(file, { bigint: true }) : tst; } catch (e) {
-    return refusedRead(file, e.code || 'EREAD', 'read');
-  }
+  // (3) ONE pass judges the kind and takes the identity the handle must have (judgeEntry, T-82 candidate 5, 29nx): the target the check resolved.
+  const judged = judgeEntry(file, root);
+  if (judged.kind === 'missing') return { status: 'absent' }; // the name went away between the lstat and this check
+  if (judged.kind === 'dir') return refusedRead(file, 'EISDIR', 'read');
+  if (judged.kind !== 'file') return refusedRead(file, 'ENOTFILE', 'read');
+  const expected = judged.identity;
   let fd;
-  // T-82, a stated limit. The fstat compare below proves the handle is the file the last lstat (or, for a file link, the last stat)
+  // T-82, a stated limit. The fstat compare below proves the handle is the file the last lstat (or, for a file link, the target the kind check approved)
   // saw: a swap after that is refused (ECHANGED). It cannot prove that file lies under the walked folders. A process on the same
   // machine that swaps a folder in the chain for a link before that lstat, back for the kind check, and in again before this open,
   // makes the lstat and the open agree on a file outside the root, and the read goes through. Node's fs has no handle-relative open
