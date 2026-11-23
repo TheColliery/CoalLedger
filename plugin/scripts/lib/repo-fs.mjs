@@ -95,8 +95,9 @@ function folderChainIsPlain(p, root) {
 // file lies under the walked folders when a process on the same machine times several swaps of a folder in the chain: swapped for a link before one of
 // the calls that judge the file, swapped back while a chain is walked, and swapped in again for the calls after it and the open. Node's fs has no
 // handle-relative open (no openat; O_NOFOLLOW guards the last component only and is absent on Windows), and on Windows and macOS no call names the file
-// an open handle holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0,
-// the agreements, the re-check and the compare cannot tell two files apart, and the name checks stand.
+// an open handle holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0, or hands a deleted file's inode number to the next file it creates (ext4 can, at once),
+// the agreements, the re-check and the compare cannot tell a file deleted and re-created at the same name inside the root from the one the kind check saw,
+// so the new file's bytes may be read; the check against the root still keeps the read inside it.
 // Returns { kind, identity }: kind is 'missing' | 'dir' | 'file' | 'other'; identity is the bigint stat the kind check took, when kind is 'file'.
 function judgeEntry(p, root) {
   const other = { kind: 'other', identity: null };
@@ -112,7 +113,7 @@ function judgeEntry(p, root) {
   if (root != null) {
     let realRoot;
     try { realRoot = fs.realpathSync.native(root); } catch { return other; }
-    if (real !== realRoot && !isContained(real, realRoot)) return other; // escaping link
+    if (real !== realRoot && !isContained(real, realRoot)) return other; // the entry escapes the root
   }
   let rst;
   try { rst = fs.statSync(real, { bigint: true }); } catch { return other; }
@@ -199,8 +200,9 @@ export function readRepoFileOutcome(file, root, maxBytes) {
   // file lies under the walked folders when a process on the same machine times several swaps of a folder in the chain: swapped for a link before one of
   // the calls that judge the file, swapped back while a chain is walked, and swapped in again for the calls after it and the open. Node's fs has no
   // handle-relative open (no openat; O_NOFOLLOW guards the last component only and is absent on Windows), and on Windows and macOS no call names the file
-  // an open handle holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0,
-  // the agreements, the re-check and the compare cannot tell two files apart, and the name checks stand.
+  // an open handle holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0, or hands a deleted file's inode number to the next file it creates (ext4 can, at once),
+  // the agreements, the re-check and the compare cannot tell a file deleted and re-created at the same name inside the root from the one the kind check saw,
+  // so the new file's bytes may be read; the check against the root still keeps the read inside it.
   try { fd = fs.openSync(file, REPO_READ_FLAGS); } catch (e) {
     if (e.code === 'ENOENT') return { status: 'absent' };
     return refusedRead(file, e.code, 'read');

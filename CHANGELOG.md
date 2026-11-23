@@ -2,6 +2,16 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.21] - 2026-11-23
+
+a plain entry is checked for escape, and the inode limit is named
+
+### Fixed
+- **The escape-from-root check runs for a plain entry too (`scripts/lib/repo-fs.mjs`, T-97).** A folder swapped for a junction to an outside tree could be read outside the root through a plain entry, where the identity checks are blind (on a volume that reports inode 0, or that reuses an inode number). The check that the resolved path stays inside the root now runs for every entry, not only for a link. Test: `scripts/lib/repo-fs-expected.test.mjs`.
+
+### Changed
+- **The stated limit names an inode number reused for a file re-created at the same name (`scripts/lib/repo-fs.mjs`, `SECURITY.md`, T-98).** On a volume that hands a deleted file's inode number to the next file it creates (ext4 can, at once), a file deleted and re-created at the same name inside the root can be read, because the identity checks cannot tell the two apart. The read stays inside the root. The limit text names this case in the code comments and in SECURITY.md.
+
 ## [0.17.0-beta.20] - 2026-11-23
 
 a kept swap to another file or folder is refused
