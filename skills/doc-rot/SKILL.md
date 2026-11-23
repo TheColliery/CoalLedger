@@ -53,7 +53,7 @@ CONFIRMED table only; SUSPECTED (old-but-unproven) as a separate list, never the
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
 
-- **Apply safe fixes:** only updates whose current value is unambiguous (bump a version string to the manifest's, which needs no confirmation; refresh a date, or delete a TODO, only after the user confirms that date or that TODO, item by item). Until those confirmations are given, nothing is written to the doc: the answer to this menu is not the answer to the date or the TODO. Each fix: checkpoint (git stash/commit in a git repo; else copy the file aside—never assume git exists) -> apply -> re-read the changed lines. With no user present, write nothing and return the questions as text.
+- **Apply safe fixes:** only updates whose current value is unambiguous (bump a version string to the manifest's, which needs no confirmation; refresh a date, or delete a TODO, only after the user confirms that date or that TODO, item by item). Until those confirmations are given, neither that date nor that TODO is written (the version bump, which needs none, is unaffected); the answer to this menu is not the answer to the date or the TODO. Each fix: checkpoint (git stash/commit in a git repo; else copy the file aside—never assume git exists) -> apply -> re-read the changed lines. With no user present, write nothing and return the questions as text.
 - **Let me pick:** list findings; the user selects.
 - **Report only:** exit unchanged.
 
