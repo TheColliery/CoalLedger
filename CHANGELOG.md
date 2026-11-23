@@ -2,6 +2,14 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.24] - 2026-11-23
+
+the two fix menus wait for the second ask before they write
+
+### Fixed
+- **doc-standard and doc-rot write nothing before the second ask is answered (`skills/doc-standard/SKILL.md`, `skills/doc-rot/SKILL.md`, T-102, T-104).** A fix-menu answer was read as the answer to the second ask: doc-standard's Draft path, and doc-rot's date and TODO confirmations. Each step now says in its own text that nothing is written until the user answers that ask, that choosing the menu item is not that answer, and that with no user present the drafts or the questions are returned as text. Measured with haiku runs, hooks off, `--permission-mode acceptEdits`: on `v0.17.0-beta.23`, doc-standard wrote the doc before its approval in 2 of 5 runs and doc-rot in 4 of 5; on this build, 0 of 3 runs each wrote before the second ask, and a post-fix control wrote after a real approval. This is prose strength (the skill's text, not a machine gate).
+- doc-leak, doc-consistency and `/coalledger:update` were measured and held (0 of 3 runs each), so their text did not change.
+
 ## [0.17.0-beta.23] - 2026-11-23
 
 the stated limit names a folder moved out of the root and linked back
