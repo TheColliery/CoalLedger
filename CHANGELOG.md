@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.23] - 2026-11-23
+
+the stated limit names a folder moved out of the root and linked back
+
+### Changed
+- **The stated limit names a moved folder (`scripts/lib/repo-fs.mjs`, `SECURITY.md`, t397).** On a volume with real inode numbers, the identity check refuses a folder swap that brings in a different file, but a folder of the path moved out of the root on the same volume and linked back is still read: the judged file keeps its inode, so the bytes are the judged file's. The reader's code is unchanged.
+
 ## [0.17.0-beta.22] - 2026-11-23
 
 the stated limit says the read can leave the root

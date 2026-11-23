@@ -100,7 +100,9 @@ function folderChainIsPlain(p, root) {
 // and a folder in the chain swapped for a link to an outside tree after the check against the root (for a file link, after its target's folder chain is re-walked)
 // and before the open makes the read leave the root (on a volume that hands numbers on, when the outside file holds the judged file's number). The check against
 // the root runs only while the name is resolved, and nothing here resolves the name again after the open, so no check here closes that: a stated limit.
-// On a volume with real inode numbers that are not handed on, the compare refuses it.
+// On a volume with real inode numbers that are not handed on, the compare refuses a swap that brings in a different file;
+// a folder of the chain moved out of the root on the same volume and linked back still reads the judged file itself, now outside the root,
+// because the file keeps its inode.
 // Returns { kind, identity }: kind is 'missing' | 'dir' | 'file' | 'other'; identity is the bigint stat the kind check took, when kind is 'file'.
 function judgeEntry(p, root) {
   const other = { kind: 'other', identity: null };
@@ -208,7 +210,9 @@ export function readRepoFileOutcome(file, root, maxBytes) {
   // and a folder in the chain swapped for a link to an outside tree after the check against the root (for a file link, after its target's folder chain is re-walked)
   // and before the open makes the read leave the root (on a volume that hands numbers on, when the outside file holds the judged file's number). The check against
   // the root runs only while the name is resolved, and nothing here resolves the name again after the open, so no check here closes that: a stated limit.
-  // On a volume with real inode numbers that are not handed on, the compare refuses it.
+  // On a volume with real inode numbers that are not handed on, the compare refuses a swap that brings in a different file;
+  // a folder of the chain moved out of the root on the same volume and linked back still reads the judged file itself, now outside the root,
+  // because the file keeps its inode.
   try { fd = fs.openSync(file, REPO_READ_FLAGS); } catch (e) {
     if (e.code === 'ENOENT') return { status: 'absent' };
     return refusedRead(file, e.code, 'read');
