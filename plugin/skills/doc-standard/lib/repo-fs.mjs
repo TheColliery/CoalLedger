@@ -95,9 +95,12 @@ function folderChainIsPlain(p, root) {
 // file lies under the walked folders when a process on the same machine times several swaps of a folder in the chain: swapped for a link before one of
 // the calls that judge the file, swapped back while a chain is walked, and swapped in again for the calls after it and the open. Node's fs has no
 // handle-relative open (no openat; O_NOFOLLOW guards the last component only and is absent on Windows), and on Windows and macOS no call names the file
-// an open handle holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0, or hands a deleted file's inode number to the next file it creates (ext4 can, at once),
-// the agreements, the re-check and the compare cannot tell a file deleted and re-created at the same name inside the root from the one the kind check saw,
-// so the new file's bytes may be read; the check against the root still keeps the read inside it.
+// an open handle holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0 (the compare is then skipped), or hands a deleted file's inode number to the next file it creates (ext4 can, at once),
+// the agreements, the re-check and the compare cannot tell two files apart. There a file deleted and re-created at the same name inside the root can be read,
+// and a folder in the chain swapped for a link to an outside tree after the check against the root (for a file link, after its target's folder chain is re-walked)
+// and before the open makes the read leave the root (on a volume that hands numbers on, when the outside file holds the judged file's number). The check against
+// the root runs only while the name is resolved, and nothing here resolves the name again after the open, so no check here closes that: a stated limit.
+// On a volume with real inode numbers that are not handed on, the compare refuses it.
 // Returns { kind, identity }: kind is 'missing' | 'dir' | 'file' | 'other'; identity is the bigint stat the kind check took, when kind is 'file'.
 function judgeEntry(p, root) {
   const other = { kind: 'other', identity: null };
@@ -200,9 +203,12 @@ export function readRepoFileOutcome(file, root, maxBytes) {
   // file lies under the walked folders when a process on the same machine times several swaps of a folder in the chain: swapped for a link before one of
   // the calls that judge the file, swapped back while a chain is walked, and swapped in again for the calls after it and the open. Node's fs has no
   // handle-relative open (no openat; O_NOFOLLOW guards the last component only and is absent on Windows), and on Windows and macOS no call names the file
-  // an open handle holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0, or hands a deleted file's inode number to the next file it creates (ext4 can, at once),
-  // the agreements, the re-check and the compare cannot tell a file deleted and re-created at the same name inside the root from the one the kind check saw,
-  // so the new file's bytes may be read; the check against the root still keeps the read inside it.
+  // an open handle holds, so no check here closes that; on Linux /proc/self/fd could, and is not used (a stated choice). Where a volume reports inode 0 (the compare is then skipped), or hands a deleted file's inode number to the next file it creates (ext4 can, at once),
+  // the agreements, the re-check and the compare cannot tell two files apart. There a file deleted and re-created at the same name inside the root can be read,
+  // and a folder in the chain swapped for a link to an outside tree after the check against the root (for a file link, after its target's folder chain is re-walked)
+  // and before the open makes the read leave the root (on a volume that hands numbers on, when the outside file holds the judged file's number). The check against
+  // the root runs only while the name is resolved, and nothing here resolves the name again after the open, so no check here closes that: a stated limit.
+  // On a volume with real inode numbers that are not handed on, the compare refuses it.
   try { fd = fs.openSync(file, REPO_READ_FLAGS); } catch (e) {
     if (e.code === 'ENOENT') return { status: 'absent' };
     return refusedRead(file, e.code, 'read');

@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.22] - 2026-11-23
+
+the stated limit says the read can leave the root
+
+### Changed
+- **Correction to the stated limit (`scripts/lib/repo-fs.mjs`, `SECURITY.md`, T-100).** Beta.21 said the check against the root keeps the read inside the root on a volume that reports inode 0 or hands a deleted file's inode number on. It does not: that check runs only while the name is resolved, so on those volumes a folder in the chain swapped for a link to an outside tree after it and before the open can make the read leave the root. The limit now says so; the reader's code is unchanged.
+
 ## [0.17.0-beta.21] - 2026-11-23
 
 a plain entry is checked for escape, and the inode limit is named
