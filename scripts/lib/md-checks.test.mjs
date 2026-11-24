@@ -19,7 +19,7 @@ const CLI = path.join(here, 'md-checks.mjs');
 
 function run(name) {
   const p = path.join(FIX, name);
-  return checkDocument(fs.readFileSync(p, 'utf8'), { filePath: p });
+  return checkDocument(fs.readFileSync(p, 'utf8'), { filePath: p, root: FIX }); // 29ph: the fixtures folder is the run's root
 }
 const pairs = (f) => f.map((x) => `${x.check}@${x.line}`).sort();
 
@@ -232,7 +232,7 @@ test('image-alt-missing is silent on a code span or fenced block (AST-native, no
 });
 
 test('CONFIRMED checks never carry a suspected field (backward compat — old finding shape unchanged)', () => {
-  const findings = checkDocument('# T\n\n[dead](./gone.md)\n', { filePath: path.join(FIX, 'virtual.md') });
+  const findings = checkDocument('# T\n\n[dead](./gone.md)\n', { filePath: path.join(FIX, 'virtual.md'), root: FIX });
   assert.strictEqual(findings.length, 1);
   assert.strictEqual(findings[0].check, 'file-missing');
   assert.ok(!('suspected' in findings[0]));
@@ -347,7 +347,7 @@ test('U13/F1 M1 (findings-back): a `>`-heavy fenced code block does not cry-wolf
   // the early-return failure mode named in the finding: a false doc-too-
   // nested would have swallowed this file-missing finding too
   const mixed = '```\n' + '>'.repeat(250) + '\n```\n\n[dead link](./nope.md)\n';
-  const findings = checkDocument(mixed, { filePath: path.join(FIX, 'probe.md') });
+  const findings = checkDocument(mixed, { filePath: path.join(FIX, 'probe.md'), root: FIX });
   assert.ok(!findings.some((x) => x.check === 'doc-too-nested'));
   assert.ok(findings.some((x) => x.check === 'file-missing'), 'the real finding after the fence must not be dropped');
 });
@@ -515,7 +515,7 @@ test('table cells: an escaped pipe loses its backslash, in and out of a code spa
     ['plain', 'a|b', 'escaped pipe outside a code span'],
   ]);
   assert.strictEqual(tables[0].children[1].children[1].children[0].type, 'inlineCode');
-  assert.deepStrictEqual(checkDocument(src, { filePath: path.join(FIX, 'table-escaped-pipe.md') }), []);
+  assert.deepStrictEqual(checkDocument(src, { filePath: path.join(FIX, 'table-escaped-pipe.md'), root: FIX }), []);
 });
 
 test('table cells: a node ending right before a dropped backslash keeps its own source end (CWK-153)', () => {
@@ -541,13 +541,13 @@ const NEST = (n) => '> '.repeat(n);
 test('16e E: a linked target nested past the depth cap is left unchecked, so no anchor-missing is reported against it (deterministic leg)', (t) => {
   const dir = linkFixture(t, { 'deep.md': '# Deep\n\n' + NEST(300) + 'x\n', 'shallow.md': '# Shallow\n\n' + NEST(3) + 'x\n' });
   const main = path.join(dir, 'main.md');
-  const run = (target) => checkDocument('# Main\n\n[d](' + target + '#nope)\n', { filePath: main }).filter((f) => f.check === 'anchor-missing');
+  const run = (target) => checkDocument('# Main\n\n[d](' + target + '#nope)\n', { filePath: main, root: dir }).filter((f) => f.check === 'anchor-missing');
   assert.strictEqual(run('./shallow.md').length, 1, 'control: a shallow target IS parsed, so its missing anchor is reported (the check is live)');
   assert.strictEqual(run('./deep.md').length, 0, 'a target nested past the cap is not parsed, so nothing is reported against it');
 });
 test('16e E: a target exactly AT the depth cap is still parsed (the guard is the same strict greater-than the primary doc uses)', (t) => {
   const dir = linkFixture(t, { 'edge.md': '# Edge\n\n' + '>'.repeat(200) + ' x\n' });
-  const f = checkDocument('# Main\n\n[d](./edge.md#nope)\n', { filePath: path.join(dir, 'main.md') }).filter((x) => x.check === 'anchor-missing');
+  const f = checkDocument('# Main\n\n[d](./edge.md#nope)\n', { filePath: path.join(dir, 'main.md'), root: dir }).filter((x) => x.check === 'anchor-missing');
   assert.strictEqual(f.length, 1, 'depth 200 is not over the cap of 200');
 });
 // 16e bounce 2 (CodeRabbit t127, the house rule testing.md Determinism: no real clock in a unit test): the timing leg that stood here asserted a wall-clock bound and
@@ -555,7 +555,7 @@ test('16e E: a target exactly AT the depth cap is still parsed (the guard is the
 // that took 5.6 s to parse) as a second fixture and asserts the same clockless outcome: the target is left unchecked, so nothing is reported against it.
 test('16e E: a hostile 16000-marker linked target is left unchecked, so nothing is reported against it (no clock)', (t) => {
   const dir = linkFixture(t, { 'hostile.md': '# Hostile\n\n' + NEST(16000) + 'x\n' });
-  const f = checkDocument('# Main\n\n[d](./hostile.md#nope)\n', { filePath: path.join(dir, 'main.md') }).filter((x) => x.check === 'anchor-missing');
+  const f = checkDocument('# Main\n\n[d](./hostile.md#nope)\n', { filePath: path.join(dir, 'main.md'), root: dir }).filter((x) => x.check === 'anchor-missing');
   assert.strictEqual(f.length, 0, 'a target nested past the cap is not parsed, so no anchor-missing is reported against it');
 });
 

@@ -113,3 +113,61 @@ test('md-checks CLI reads a doc in a real folder under its root and finds its ba
   assert.equal(r.status, 0, `stderr: ${r.stderr}`);
   assert.ok(JSON.parse(r.stdout)[0].findings.some((f) => f.check === 'bare-url'), 'the bare URL in the real doc is found');
 });
+
+// 29ph (T-107): a cross-file anchor target is read, and its existence checked, only under the run's root. A target that
+// leaves the root by a `..` path, a folder link or a file link is never read: it gives no finding, and its bytes never
+// reach the result. Each leg makes its own fixture under the OS temp folder, asserted and removed by the test, and runs
+// the md-checks CLI with --root=<the project folder>, the way the skills run it.
+const OUTSIDE_HEADING = '# Top Secret\n';
+const SKIP_LINK = 'this volume cannot make the link (probe: symlinkSync failed)';
+function linkWorld(t) {
+  const d = fs.realpathSync.native(fs.mkdtempSync(path.join(TMP, 'cl-29ph-')));
+  if (path.dirname(d) !== TMP || !path.basename(d).startsWith('cl-29ph-')) throw new Error(`refusing temp root ${d}`);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 }));
+  const outside = path.join(d, 'outside');
+  const repo = path.join(d, 'repo');
+  const docs = path.join(repo, 'docs');
+  fs.mkdirSync(outside);
+  fs.mkdirSync(docs, { recursive: true });
+  fs.writeFileSync(path.join(outside, 'secret.md'), OUTSIDE_HEADING);
+  return { outside, repo, docs };
+}
+function findingsOf(r) {
+  assert.equal(r.status, 0, `exit 0; stderr: ${r.stderr}`);
+  return JSON.parse(r.stdout)[0].findings;
+}
+
+test('29ph P: a cross-file link that climbs out of the run root with `..` is not read (no finding, no outside heading)', (t) => {
+  const w = linkWorld(t);
+  const doc = path.join(w.docs, 'doc.md');
+  fs.writeFileSync(doc, '# Doc\n\n[a](../../outside/secret.md#top-secret) [b](../../outside/secret.md#nope)\n');
+  assert.deepEqual(findingsOf(runMdChecks(['--json', `--root=${w.repo}`, doc])), [], 'the outside file is not read: its heading does not answer #top-secret and #nope is not reported missing');
+});
+
+test('29ph J: a cross-file link through a folder link to outside the root is not read (capability-gated)', (t) => {
+  const w = linkWorld(t);
+  try { fs.symlinkSync(w.outside, path.join(w.docs, 'sub'), 'junction'); } catch { t.skip(SKIP_LINK); return; }
+  const doc = path.join(w.docs, 'doc.md');
+  fs.writeFileSync(doc, '# Doc\n\n[b](sub/secret.md#nope)\n');
+  assert.deepEqual(findingsOf(runMdChecks(['--json', `--root=${w.repo}`, doc])), [], 'a target reached through a folder link that leaves the root is not read: #nope is not reported missing');
+});
+
+test('29ph F: a cross-file link through a file link to outside the root is not read (capability-gated)', (t) => {
+  const w = linkWorld(t);
+  try { fs.symlinkSync(path.join(w.outside, 'secret.md'), path.join(w.docs, 'link.md'), 'file'); } catch { t.skip(SKIP_LINK); return; }
+  const doc = path.join(w.docs, 'doc.md');
+  fs.writeFileSync(doc, '# Doc\n\n[b](link.md#nope)\n');
+  assert.deepEqual(findingsOf(runMdChecks(['--json', `--root=${w.repo}`, doc])), [], 'a file link that leaves the root is not read: #nope is not reported missing');
+});
+
+// Control: an inside target still resolves, and an inside missing file is still reported. Green before the fix, and must stay green.
+test('29ph IN: a cross-file link inside the run root still finds its anchor and reports a missing inside file', (t) => {
+  const w = linkWorld(t);
+  fs.writeFileSync(path.join(w.docs, 'real.md'), '# Here\n');
+  const doc = path.join(w.docs, 'doc.md');
+  fs.writeFileSync(doc, '# Doc\n\n[ok](./real.md#here) [bad](./real.md#nope) [gone](./missing.md)\n');
+  const f = findingsOf(runMdChecks(['--json', `--root=${w.repo}`, doc]));
+  assert.deepEqual(f.map((x) => x.check).sort(), ['anchor-missing', 'file-missing'], 'the inside anchor resolves; the missing anchor and the missing file are each reported');
+  assert.ok(f.some((x) => x.check === 'anchor-missing' && x.message.includes('#nope')), 'the missing inside anchor is named');
+  assert.ok(f.some((x) => x.check === 'file-missing' && x.message.includes('missing.md')), 'the missing inside file is named');
+});

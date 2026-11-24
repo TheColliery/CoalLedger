@@ -620,11 +620,12 @@ console.log('engine smoke (fixtures ground truth):');
 try {
   const { checkDocument } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'md-checks.mjs')).href);
   const decoy = path.join(repo, 'scripts', 'fixtures', 'decoy-clean.md');
-  const fp = checkDocument(fs.readFileSync(decoy, 'utf8'), { filePath: decoy }).length;
+  const fixtures = path.join(repo, 'scripts', 'fixtures'); // 29ph: the run's root for the smoke fixtures (cross-file targets live beside them)
+  const fp = checkDocument(fs.readFileSync(decoy, 'utf8'), { filePath: decoy, root: fixtures }).length;
   if (fp === 0) ok('decoy-clean.md yields 0 findings (anti-cry-wolf holds)');
   else fail(`decoy-clean.md yields ${fp} findings — the engine cry-wolfs`);
   const defects = path.join(repo, 'scripts', 'fixtures', 'defects-structure.md');
-  const n = checkDocument(fs.readFileSync(defects, 'utf8'), { filePath: defects }).length;
+  const n = checkDocument(fs.readFileSync(defects, 'utf8'), { filePath: defects, root: fixtures }).length;
   if (n >= 11) ok(`defects-structure.md yields ${n} findings (planted defects detected)`);
   else fail(`defects-structure.md yields only ${n} findings (expected >= 11)`);
 } catch (e) { fail(`engine smoke: ${e.message}`); }

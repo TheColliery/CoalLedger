@@ -95,7 +95,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseMarkdown, walk, textContent, makeSlugger, githubSlug } from './md-ast.mjs';
-import { readRepoFileBounded, docReadRoot, docReadError, readRunList, runListLine, listPathCli, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, repoEntryKind, docReadRoot, docReadError, readRunList, runListLine, listPathCli, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 // A real anchor id/name only — the negative lookbehind for a word-char or hyphen
@@ -137,7 +137,13 @@ export function collectAnchors(root) {
 // Core entry: check ONE document. opts:
 //   filePath   absolute or cwd-relative path of the doc (enables relative-file
 //              and cross-file-anchor checks; omit for pure in-memory checks)
-//   fileExists / readFile   injectable fs (hermetic tests); default real fs
+//   root       29ph/T-107: the run's root. A cross-file target is read and its existence
+//              checked ONLY under this root (repoEntryKind / readRepoFileBounded). A target
+//              outside the root, or reached through a link, is NOT CHECKED: silent, as the
+//              site-root-relative targets are. With no root a cross-file target is not read
+//              at all (fail closed); the CLI always passes its base.
+//   fileExists / readFile   injectable fs (hermetic tests); when given, they replace the
+//              root-bound default for existence and for the read
 // A structural health scan never needs to parse a megabyte-scale doc. The parser's
 // super-linear paths are fixed at the algorithm level (linear emphasis processing +
 // bounded inline-dest/backtick scans in md-ast.mjs); this cap is the BACKSTOP that
@@ -269,18 +275,28 @@ function isNonRelativeTarget(rel) {
 
 export function checkDocument(src, opts = {}) {
   const filePath = opts.filePath ? path.resolve(opts.filePath) : null;
-  const fileExists = opts.fileExists || ((p) => { try { return fs.existsSync(p); } catch { return false; } });
-  // CWK-137: a cross-file anchor target (anchorsOf below) is a REPO-DERIVED path --
-  // a link inside the doc being scanned, which may name a file this engine never
-  // chose. root=null (no containment check: the target is deliberately outside the
-  // doc's own tree sometimes, e.g. a monorepo cross-link) but still kind-gated
-  // (refuses a FIFO/device/socket before ever opening) and bounded at this file's
-  // own MAX_DOC_BYTES, never the raw fs.readFileSync this used to be.
+  // 29ph (T-107): the cross-file anchor target (anchorsOf below) is a REPO-DERIVED path, a link inside the doc
+  // being scanned, which may name a file outside the run. It is read and its existence checked only under the
+  // run's root: repoEntryKind and readRepoFileBounded both refuse a target outside the root or reached through a
+  // link, and a refused target is NOT CHECKED. Without a root nothing is read (fail closed); an injected
+  // fileExists/readFile replaces the default for a hermetic test. Still kind-gated and bounded at MAX_DOC_BYTES.
+  const runRoot = opts.root ?? null; // not `root`: that name is the parsed AST below
   const readFile = opts.readFile || ((p) => {
-    const text = readRepoFileBounded(p, null, MAX_DOC_BYTES);
-    if (text === null) throw new Error(`unreadable or over MAX_DOC_BYTES: ${p}`); // caught by anchorsOf's own try/catch -> set=null, same as today's unreadable-target handling
+    if (runRoot == null) throw new Error(`no root: cross-file target not read: ${p}`); // caught by anchorsOf's own try/catch -> set=null
+    const text = readRepoFileBounded(p, runRoot, MAX_DOC_BYTES);
+    if (text === null) throw new Error(`unreadable, outside the root, or over MAX_DOC_BYTES: ${p}`); // caught by anchorsOf's own try/catch -> set=null
     return text;
   });
+  // The existence state of a cross-file target: 'missing' gives file-missing; 'unchecked' (outside the root, through a
+  // link, not a plain file or folder, or no root at all) gives nothing and is never read; 'file' and 'dir' exist.
+  function targetState(abs) {
+    if (opts.fileExists) return opts.fileExists(abs) ? 'file' : 'missing';
+    if (runRoot == null) return 'unchecked';
+    const kind = repoEntryKind(abs, runRoot);
+    if (kind === 'missing') return 'missing';
+    if (kind === 'other') return 'unchecked';
+    return kind; // 'file' | 'dir'
+  }
   if (typeof src === 'string' && src.length > MAX_DOC_BYTES) {
     return [{ check: 'doc-too-large', line: 1, column: 1, message: `document is ${(src.length / 1048576).toFixed(1)} MB (> ${MAX_DOC_BYTES / 1048576} MB) — too large for a structural scan; split it into smaller docs` }];
   }
@@ -454,7 +470,9 @@ export function checkDocument(src, opts = {}) {
     if (isNonRelativeTarget(rel)) return;
     if (!rel) { if (frag != null) checkAnchor(node, frag, anchors, ''); return; } // "#... " handled; "?x#y" self
     const abs = path.resolve(path.dirname(filePath), rel);
-    if (!fileExists(abs)) {
+    const state = targetState(abs);
+    if (state === 'unchecked') return; // 29ph: a target outside the root or through a link is a named limit, never a finding and never read
+    if (state === 'missing') {
       add('file-missing', node, `relative target '${rel}' not found (resolved: ${abs})`);
       return;
     }
@@ -573,14 +591,15 @@ if (isMainModule(import.meta.url) && !listPathCli()) {
   let total = 0;
   for (const f of files) {
     let src;
+    // T-17: a doc named on the command line may sit in a cloned repository. It is read kind-gated (a FIFO or
+    // device is refused before it is opened), bounded at the I/O ceiling (4 MB) rather than this file's own 512 KB
+    // MAX_DOC_BYTES (a real over-512 KB doc still reaches checkDocument and comes back as a `doc-too-large`
+    // finding), and under a literal root (repo-fs.mjs docReadRoot): a link at a folder between that root and the file,
+    // a file link that leaves its own folder, or a file outside the root is refused; a file link that stays inside its
+    // own folder is read. --root is the project folder; without it the filesystem root of the path is the root.
+    // 29ph: the same base is the root every cross-file anchor target is checked under (checkDocument's opts.root below).
+    const base = docReadRoot(f, root);
     try {
-      // T-17: a doc named on the command line may sit in a cloned repository. It is read kind-gated (a FIFO or
-      // device is refused before it is opened), bounded at the I/O ceiling (4 MB) rather than this file's own 512 KB
-      // MAX_DOC_BYTES (a real over-512 KB doc still reaches checkDocument and comes back as a `doc-too-large`
-      // finding), and under a literal root (repo-fs.mjs docReadRoot): a link at a folder between that root and the file,
-      // a file link that leaves its own folder, or a file outside the root is refused; a file link that stays inside its
-      // own folder is read. --root is the project folder; without it the filesystem root of the path is the root.
-      const base = docReadRoot(f, root);
       src = readRepoFileBounded(f, base, IO_CEILING_BYTES);
       if (src === null) throw docReadError(f, base, IO_CEILING_BYTES, 'I/O ceiling');
     } catch (e) {
@@ -590,7 +609,7 @@ if (isMainModule(import.meta.url) && !listPathCli()) {
     }
     let findings;
     try {
-      findings = checkDocument(src, { filePath: f });
+      findings = checkDocument(src, { filePath: f, root: base }); // 29ph: the cross-file reach is the run's root (docReadRoot), never unbounded
     } catch (e) {
       // Backstop of the backstop: checkDocument itself should never throw
       // (both guards above degrade to a finding), but the batch must not
