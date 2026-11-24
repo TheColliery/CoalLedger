@@ -104,10 +104,37 @@ function folderChainIsPlain(p, root) {
 // a folder of the chain moved out of the root on the same volume and linked back still reads the judged file itself, now outside the root,
 // because the file keeps its inode.
 // Returns { kind, identity }: kind is 'missing' | 'dir' | 'file' | 'other'; identity is the bigint stat the kind check took, when kind is 'file'.
+// 29po (T-108, T-109, T-110): is p an absent path INSIDE root whose nearest existing folder below root is a plain folder? That
+// folder is judged by judgeEntry itself, so the folder chain under the root and the realpath containment are the checks a present
+// path gets. Only an ENOENT ancestor is passed over; any other failure, a path outside the root, or a link above the path answers no.
+function absentInsideRoot(p, root) {
+  const rel0 = path.relative(root, p);
+  if (rel0 === '' || escapesRoot(rel0)) return false;
+  let cur = path.dirname(p);
+  while (cur !== root) {
+    const rel = path.relative(root, cur);
+    if (rel === '' || escapesRoot(rel)) return false;
+    try { fs.lstatSync(cur); } catch (e) {
+      if (e && e.code === 'ENOENT') { cur = path.dirname(cur); continue; }
+      return false;
+    }
+    return judgeEntry(cur, root).kind === 'dir'; // cur exists here, so judgeEntry never reaches this helper again
+  }
+  return true; // the root itself is the nearest existing folder
+}
+
 function judgeEntry(p, root) {
   const other = { kind: 'other', identity: null };
   let lst;
-  try { lst = fs.lstatSync(p, { bigint: true }); } catch (e) { return { kind: 'missing', identity: null, code: e && e.code }; }
+  try { lst = fs.lstatSync(p, { bigint: true }); } catch (e) {
+    if (root == null) return { kind: 'missing', identity: null, code: e && e.code };
+    // 29po (T-108, T-109, T-110): with a root, 'missing' is an answer only for an ENOENT on a path INSIDE the root whose nearest
+    // existing folder below the root is a plain folder. Any other path, outside the root or below a link, and any other lstat
+    // failure, is 'other': no caller learns from this whether the path exists.
+    if (e && e.code === 'ENOENT' && absentInsideRoot(p, root)) return { kind: 'missing', identity: null, code: 'ENOENT' };
+    // T-81: a failure other than ENOENT keeps its code, so readRepoFileOutcome refuses with that code in phase inspect.
+    return e && e.code && e.code !== 'ENOENT' ? { ...other, code: e.code } : other;
+  }
   if (root != null && !folderChainIsPlain(p, root)) return other;
   let real, realFolder;
   try {
@@ -194,7 +221,7 @@ export function readRepoFileOutcome(file, root, maxBytes) {
   // The name went away between the lstat and this check (ENOENT only); any other error from that lstat is a refusal, never an absence.
   if (judged.kind === 'missing') return judged.code === 'ENOENT' ? { status: 'absent' } : refusedRead(file, judged.code || 'EREAD', 'inspect');
   if (judged.kind === 'dir') return refusedRead(file, 'EISDIR', 'read');
-  if (judged.kind !== 'file') return refusedRead(file, 'ENOTFILE', 'read');
+  if (judged.kind !== 'file') return judged.code ? refusedRead(file, judged.code, 'inspect') : refusedRead(file, 'ENOTFILE', 'read');
   const expected = judged.identity;
   let fd;
   // T-82, a stated limit. Every call in one pass that resolves the same name must find the same file: for a plain file, the entry's own lstat must agree

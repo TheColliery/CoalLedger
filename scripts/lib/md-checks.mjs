@@ -273,26 +273,14 @@ function isNonRelativeTarget(rel) {
     || rel.startsWith('\\\\?\\') || rel.startsWith('\\\\.\\');
 }
 
-// 29pl bounce 1 (T-107, the existence oracle): the existence answer for a path under a run's root, which never tells a
-// caller whether a path OUTSIDE the root exists. repoEntryKind answers 'missing' from the first lstat, before any root
-// check, so its 'missing' is trusted only where the path is lexically inside the root AND the nearest existing folder
-// ancestor below the root judges 'dir' (that judgement walks the chain under the root: a junction or link above the path
-// answers 'other'). Every other case is 'unchecked': no finding, never read. Returns 'file' | 'dir' | 'missing' | 'unchecked'.
+// 29pl bounce 1 (T-107), simplified by 29po bounce 2: the existence answer for a path under a run's root. repoEntryKind (the
+// shared reader) answers 'missing' only for an absent path inside the root whose nearest existing folder below the root is a
+// plain folder; an outside path, or one below a link, answers 'other'. Those become 'unchecked': no finding, never read.
+// Returns 'file' | 'dir' | 'missing' | 'unchecked'.
 function rootedTargetState(abs, runRoot) {
   const kind = repoEntryKind(abs, runRoot);
   if (kind === 'other') return 'unchecked'; // outside the root, through a link, or not a plain file or folder
-  if (kind !== 'missing') return kind; // 'file' | 'dir'
-  const inside = (p) => { const r = path.relative(runRoot, p); return r !== '' && !r.startsWith('..') && !path.isAbsolute(r); };
-  if (!inside(abs)) return 'unchecked'; // the lstat said missing, but the path is outside the root: no answer
-  let cur = path.dirname(abs);
-  while (cur !== runRoot) {
-    if (!inside(cur)) return 'unchecked';
-    const k = repoEntryKind(cur, runRoot);
-    if (k === 'dir') return 'missing'; // the nearest existing folder below the root is plain: the path is absent inside it
-    if (k !== 'missing') return 'unchecked'; // a link, a junction, a file or a device above the path: never judged missing
-    cur = path.dirname(cur);
-  }
-  return 'missing'; // the root itself is the nearest existing folder
+  return kind; // 'file' | 'dir' | 'missing'; 29po: 'missing' is answered only inside the root, by repoEntryKind itself
 }
 
 export function checkDocument(src, opts = {}) {

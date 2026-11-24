@@ -250,3 +250,63 @@ test('29pl CTRL-NAMED-IN: a named doc missing inside the root still reports ENOE
   assert.equal(r.status, 1, `exit 1; stdout: ${r.stdout}`);
   assert.match(r.stderr, /ENOENT/, 'the inside missing doc is still named as absent');
 });
+
+// 29po bounce 2 (T-108, T-109, T-110, T-112): the shared reader answers 'missing' only inside the root, so no reader gives an
+// existence answer for a path outside it. X1 and X2 are the two named-doc readers (emdash, lang-mechanics): the refusal text
+// must be the same whether an outside doc exists or not, through `..` and through a junction. Capability-gated where a junction
+// cannot be made.
+function errorText(fn) { try { fn(); return 'no error'; } catch (e) { return e.message; } }
+function presentThenAbsentFn(w, fn) {
+  fs.writeFileSync(w.target, OUTSIDE_HEADING);
+  const present = errorText(fn);
+  fs.rmSync(w.target);
+  const absent = errorText(fn);
+  return { present, absent };
+}
+
+test('29po X1 emdash: a named doc outside the root is refused the same way whether it exists or not (`..` path)', (t) => {
+  const w = oracleWorld(t, { junction: false });
+  const doc = path.join(w.repo, 'docs', '..', '..', 'outside', 'secret.md');
+  const { present, absent } = presentThenAbsentFn(w, () => scanFile(doc, 'spaced', w.repo));
+  assert.notEqual(present, 'no error', 'present: refused, not read');
+  assert.equal(absent, present, 'absent: the same refusal text, with no ENOENT for a path outside the root');
+});
+
+test('29po X1-J emdash: a named doc through a junction outside the root is refused the same way whether it exists or not (capability-gated)', (t) => {
+  let w;
+  try { w = oracleWorld(t, { junction: true }); } catch { t.skip(SKIP_JUNCTION); return; }
+  const doc = path.join(w.docs, 'sub', 'secret.md');
+  const { present, absent } = presentThenAbsentFn(w, () => scanFile(doc, 'spaced', w.repo));
+  assert.notEqual(present, 'no error', 'present: refused, not read');
+  assert.equal(absent, present, 'absent: the same refusal text through the junction');
+});
+
+test('29po X2 lang-mechanics: a named doc outside the root is refused the same way whether it exists or not (`..` path)', (t) => {
+  const w = oracleWorld(t, { junction: false });
+  const doc = path.join(w.repo, 'docs', '..', '..', 'outside', 'secret.md');
+  const { present, absent } = presentThenAbsentFn(w, () => checkFile(doc, { root: w.repo }));
+  assert.notEqual(present, 'no error', 'present: refused, not read');
+  assert.equal(absent, present, 'absent: the same refusal text, with no ENOENT for a path outside the root');
+});
+
+test('29po X2-J lang-mechanics: a named doc through a junction outside the root is refused the same way whether it exists or not (capability-gated)', (t) => {
+  let w;
+  try { w = oracleWorld(t, { junction: true }); } catch { t.skip(SKIP_JUNCTION); return; }
+  const doc = path.join(w.docs, 'sub', 'secret.md');
+  const { present, absent } = presentThenAbsentFn(w, () => checkFile(doc, { root: w.repo }));
+  assert.notEqual(present, 'no error', 'present: refused, not read');
+  assert.equal(absent, present, 'absent: the same refusal text through the junction');
+});
+
+// T-112: a folder whose name starts with two dots (`..x`) is INSIDE the root. Its absent doc is named absent, and its absent link
+// target is file-missing. A prefix test on the relative path reads it as outside, so both legs are red on 3a58d69.
+test('29po T-112: a folder named `..x` inside the root is inside: its absent named doc is ENOENT and its absent link target is file-missing', (t) => {
+  const w = oracleWorld(t, { junction: false });
+  fs.mkdirSync(path.join(w.repo, '..x'));
+  const named = runCliIn(w.repo, ['--root=.', '..x/missing.md']);
+  assert.equal(named.status, 1, `exit 1; stdout: ${named.stdout}`);
+  assert.match(named.stderr, /ENOENT/, 'a `..x` folder is inside the root: its absent doc is named absent');
+  fs.writeFileSync(path.join(w.docs, 'doc.md'), '# Doc\n\n[m](../..x/missing.md)\n');
+  const linked = findingsOf(runCliIn(w.repo, ['--json', '--root=.', 'docs/doc.md']));
+  assert.ok(linked.some((x) => x.check === 'file-missing' && x.message.includes('missing.md')), 'a `..x` link target inside the root is checked and reported missing');
+});

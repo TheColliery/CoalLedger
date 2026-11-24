@@ -1132,3 +1132,23 @@ for (const [type, ok, label] of [['junction', () => JUNCTION_OK, 'junction'], ['
     });
   }
 }
+
+// 29po X4 (T-110): with .claude a junction to an outside folder, the project notices are the same whether the candidate config
+// exists there or not. Before the fix the walk's stat (which follows the link) reports the present one as unreadable.
+test('29po X4: a candidate config behind a .claude junction to an outside folder gives the same notices whether it exists (capability-gated)', (t) => {
+  const d = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-29po-cl-')));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 }));
+  const repo = path.join(d, 'repo');
+  const home = path.join(d, 'home');
+  const outsideClaude = path.join(d, 'outside-claude');
+  fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+  fs.mkdirSync(home);
+  fs.mkdirSync(path.join(outsideClaude, 'coal'), { recursive: true });
+  try { fs.symlinkSync(outsideClaude, path.join(repo, '.claude'), 'junction'); } catch { t.skip('this volume cannot make a folder junction (probe: symlinkSync with junction failed)'); return; }
+  const target = path.join(outsideClaude, 'coal', 'coalledger.json');
+  fs.writeFileSync(target, '{}\n');
+  const present = configNotices(repo, home);
+  fs.rmSync(target);
+  const absent = configNotices(repo, home);
+  assert.deepEqual(absent, present, 'the same notices whether or not the candidate exists behind the link');
+});

@@ -72,6 +72,27 @@ function physicalFile(p) {
 function isFile(p) {
   try { return fs.statSync(p).isFile(); } catch { return false; }
 }
+// 29po (T-110): with a project root, a candidate is a FILE only when repoEntryKind proves it inside the root. The stat that isFile()
+// takes FOLLOWS a link out of the root, so it would answer whether an outside file exists; a link ('other') and an absent path
+// below one are never claimed present. The global config (root null) keeps the stat check: it is the user's own home file.
+function projectIsFile(p, root) { return root == null ? isFile(p) : repoEntryKind(p, root) === 'file'; }
+// 29po: a project candidate that EXISTS as a file or a folder, proven inside the root (the F8 notice names it, a link does not).
+function projectExists(p, root) { const k = repoEntryKind(p, root); return k === 'file' || k === 'dir'; }
+// 29po (T-110): the first folder on the way to candidate c, below root, that is a link or a special entry (null when every folder
+// there is a plain folder, or one is absent). The walk is top-down and stops AT the first link, so it never looks below a link:
+// what lies beyond a link is outside the project, and the notice names the link itself, which is a project entry.
+function linkedAncestor(c, root) {
+  const rel = path.relative(root, path.dirname(c));
+  if (rel === '' || rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) return null;
+  let cur = root;
+  for (const part of rel.split(path.sep)) {
+    cur = path.join(cur, part);
+    const k = repoEntryKind(cur, root);
+    if (k === 'other') return cur;
+    if (k !== 'dir') return null; // absent (nothing below it can be in the repo) or a file where a folder belongs
+  }
+  return null;
+}
 // THE TRAP THE NESTED LEGACY CARRIES: `<home>/.claude/.coalledger.json` is the
 // GLOBAL config, and as a "nested legacy" it is spelled identically. Unguarded,
 // every user with a global config would (a) have any cwd under home resolve its
@@ -172,7 +193,7 @@ export function projectConfigPath(cwd = process.cwd(), home = os.homedir()) {
   // walks the tree twice — a hook-path cost with no benefit).
   const root = findProjectRoot(cwd, home);
   const candidates = candidatesForRoot(root, home);
-  for (const c of candidates) if (isFile(c)) return c; // F3: a DIRECTORY at a candidate path is not a config
+  for (const c of candidates) if (projectIsFile(c, root)) return c; // F3: a DIRECTORY at a candidate path is not a config
   // nothing found anywhere -- READS: behaviour-identical to the old
   // candidates[0] fallback (both this and `.claude` are equally absent, so
   // readJsonc returns {} either way — this change is only observable on a
@@ -257,7 +278,7 @@ export function configNotices(cwd = process.cwd(), home = os.homedir()) {
   const root = findProjectRoot(cwd, home);
   const out = [];
   const candidates = candidatesForRoot(root, home);
-  const won = candidates.findIndex((c) => isFile(c)); // F3: same predicate the candidate walk uses, or the two disagree
+  const won = candidates.findIndex((c) => projectIsFile(c, root)); // F3: same predicate the candidate walk uses, or the two disagree
   if (won >= AGENT_DIR_ORDER.length) {
     out.push(`[CoalLedger] LEGACY: ${candidates[won]} is a deprecated config path (still read); move it to ${CANONICAL_REL}`);
   }
@@ -281,10 +302,21 @@ export function configNotices(cwd = process.cwd(), home = os.homedir()) {
   // all, but something non-file does) needs a SEPARATE line. The SELECTION stays exactly
   // as F3 left it: a real file one candidate lower still wins and is still read; this
   // only adds the notice CoalFace's case-63 already ships for the identical shape.
-  const existsIdx = candidates.findIndex((c) => repoEntryKind(c, root) !== 'missing');
+  const existsIdx = candidates.findIndex((c) => projectExists(c, root));
   if (existsIdx !== -1 && existsIdx !== won) {
     const reason = classifyConfigRead(candidates[existsIdx], root);
     if (reason) out.push(`[CoalLedger] UNREADABLE: ${candidates[existsIdx]} exists but is not a readable config (${reason}); it was skipped — canonical = ${CANONICAL_REL}`);
+  }
+  // 29po (T-110): a link or special entry on the way to a project candidate is reported once, whether or not the candidate
+  // exists behind it. The notice names the link inside the project and never what lies beyond it, so present and absent give
+  // the same notice (before this, the present one alone was reported: the stat followed the link out of the project).
+  const linkNamed = new Set();
+  for (const c of candidates) {
+    const link = linkedAncestor(c, root);
+    if (link && !linkNamed.has(link)) {
+      linkNamed.add(link);
+      out.push(`[CoalLedger] UNREADABLE: ${link} is a link or special entry, not a plain folder; the project config under it is not read; canonical = ${CANONICAL_REL}`);
+    }
   }
   // The GLOBAL config is read independently of the project candidate walk (both layers
   // merge in loadMergedConfig), so it is reported independently too. CWK-135 (a): this
@@ -300,7 +332,7 @@ export function configNotices(cwd = process.cwd(), home = os.homedir()) {
     // make the user's own GLOBAL config read as an ignored project file.
     // isFile (F3): an IGNORED line says "a FILE exists here that nothing reads";
     // a directory that happens to be named `coalledger.json` is not that.
-    if (isFile(p) && !isGlobalConfig(p, home)) out.push(`[CoalLedger] IGNORED: ${p} is not a config path; canonical = ${CANONICAL_REL}`);
+    if (projectIsFile(p, root) && !isGlobalConfig(p, home)) out.push(`[CoalLedger] IGNORED: ${p} is not a config path; canonical = ${CANONICAL_REL}`);
   }
   return out;
 }

@@ -191,3 +191,25 @@ test('the command the built doc-consistency SKILL.md names reads the project con
   assert.equal(fs.existsSync(path.join(d, 'pwned')), false);
   assert.match(r.stdout, /translation-missing/, r.stdout);
 });
+
+// 29po X3 (T-108): a pair source reached through a junction to an outside folder gets the same report whether the source exists
+// or not. Before the fix the reason says "missing" for an absent source and "refused by the link rule" for a present one.
+test('29po X3: a pair source behind a junction outside the root gives the same report whether it exists or not (capability-gated)', (t) => {
+  const d = fs.realpathSync.native(fs.mkdtempSync(path.join(TMP, 'cl-29po-tp-')));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 }));
+  const repo = path.join(d, 'repo');
+  const outside = path.join(d, 'outside');
+  fs.mkdirSync(path.join(repo, 'docs'), { recursive: true });
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(repo, 'docs', 'b.md'), '# B\n');
+  try { fs.symlinkSync(outside, path.join(repo, 'docs', 'sub'), 'junction'); } catch { t.skip('this volume cannot make a folder junction (probe: symlinkSync with junction failed)'); return; }
+  const run = () => spawnSync(process.execPath, [CLI, '--json', `--root=${repo}`, '--pair=docs/sub/a.md=docs/b.md'],
+    { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: SANDBOX_ENV });
+  const target = path.join(outside, 'a.md');
+  fs.writeFileSync(target, '# A\n');
+  const present = run();
+  fs.rmSync(target);
+  const absent = run();
+  assert.equal(absent.status, present.status, 'the same exit code');
+  assert.equal(absent.stdout, present.stdout, 'the same report for an absent and a present source behind the junction');
+});
