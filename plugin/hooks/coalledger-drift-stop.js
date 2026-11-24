@@ -71,6 +71,11 @@ const DRIFT_LINE = "[CoalLedger] Docs memory-drift: documentation was edited thi
 // The 0-byte sid-scoped `.docmemmoved` survives every Stop; the SessionEnd hook
 // (coalledger-session-end.js) removes it at the end of the session. Port CoalMine's
 // ACK machinery only if this tier ever needs re-nudging within a session.
+// 29po M-2: a regular file judged by its OWN entry (lstat, never stat): a link answers false, and so does any error.
+function isPlainFile(p) {
+  try { return fs.lstatSync(p).isFile(); } catch { return false; }
+}
+
 function cleanup(base) {
   try { fs.unlinkSync(base + '.docs'); } catch {}
 }
@@ -123,7 +128,9 @@ async function main() {
   const out = {};
   try {
     const root = findProjectRoot(cwd);
-    if (!fs.existsSync(base + '.docmemmoved') && fs.existsSync(path.join(root, 'MEMORY.md'))) {
+    // 29po M-2: the entry's OWN lstat, so a MEMORY.md link answers by the link and never by what it points at.
+    // A link (junction or symlink) is not a plain file, so it reads as absent here.
+    if (!fs.existsSync(base + '.docmemmoved') && isPlainFile(path.join(root, 'MEMORY.md'))) {
       // systemMessage, not hookSpecificOutput.additionalContext (board #82) —
       // additionalContext on Stop forces an extra agent turn that eats the
       // real result under -p --output-format json; systemMessage does not,

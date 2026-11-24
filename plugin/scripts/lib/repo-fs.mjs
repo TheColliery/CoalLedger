@@ -111,16 +111,18 @@ function absentInsideRoot(p, root) {
   const rel0 = path.relative(root, p);
   if (rel0 === '' || escapesRoot(rel0)) return false;
   let cur = path.dirname(p);
-  while (cur !== root) {
+  for (;;) {
+    // 29po M-1: the root is reached by path.relative, never a string compare. On Windows path.relative folds drive-letter case,
+    // so a root spelled in another case still ends the walk here, where `cur !== root` would have walked past it.
     const rel = path.relative(root, cur);
-    if (rel === '' || escapesRoot(rel)) return false;
+    if (rel === '') return true; // the root itself is the nearest existing folder
+    if (escapesRoot(rel)) return false;
     try { fs.lstatSync(cur); } catch (e) {
       if (e && e.code === 'ENOENT') { cur = path.dirname(cur); continue; }
       return false;
     }
     return judgeEntry(cur, root).kind === 'dir'; // cur exists here, so judgeEntry never reaches this helper again
   }
-  return true; // the root itself is the nearest existing folder
 }
 
 function judgeEntry(p, root) {

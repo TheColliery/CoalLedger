@@ -468,3 +468,25 @@ test('UMB-133 tracker: the GLOBAL config is NOT a root marker — a tmp-rooted p
     assert.ok(fs.existsSync(path.join(hookTmp, 'coalledger-U2.docs')));
   } finally { clean(home, tmp, proj); }
 });
+
+// 29po M-2 (bounce 3): a MEMORY.md that is a LINK answers the drift nudge by the link itself, never by its outside target.
+// A junction at MEMORY.md to an outside folder must give the same Stop output as no MEMORY.md at all.
+test('29po M-2: a MEMORY.md junction to an outside folder gives the same Stop output as no MEMORY.md (capability-gated)', (t) => {
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clg-outside-')));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const present = sandbox();
+  const absent = sandbox();
+  const link = path.join(present.proj, 'MEMORY.md');
+  t.after(() => {
+    try { fs.rmdirSync(link); } catch {} // unlink the junction itself before the tree goes, never through it
+    clean(present.home, present.tmp, present.proj, absent.home, absent.tmp, absent.proj);
+  });
+  try { fs.symlinkSync(outside, link, 'junction'); } catch { t.skip('this volume cannot make a folder junction (probe: symlinkSync with junction failed)'); return; }
+  for (const s of [present, absent]) runHook(TRACK, trackPayload('M2', path.join(s.proj, 'README.md'), s.proj), s.tmp, s.home, s.proj);
+  const rp = runHook(STOP, stopPayload('M2', present.proj), present.tmp, present.home, present.proj);
+  const ra = runHook(STOP, stopPayload('M2', absent.proj), absent.tmp, absent.home, absent.proj);
+  assertGraceful(rp);
+  assertGraceful(ra);
+  assert.strictEqual(driftEmitted(ra.stdout), false, 'control: no MEMORY.md, no nudge');
+  assert.strictEqual(rp.stdout, ra.stdout, `a MEMORY.md link must answer like no MEMORY.md: present=${rp.stdout} absent=${ra.stdout}`);
+});

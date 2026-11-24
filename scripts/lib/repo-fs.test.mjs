@@ -848,3 +848,18 @@ test('16f B1 LOW-2: a folder-chain refusal tells the user to fix the folder, nev
     assert.match(fileMsg, /regular file/, 'a refusal about a FILE target keeps the file text');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+// 29po M-1 (bounce 3): the walk up to the root is decided by path.relative, never a string compare. On Windows path.relative
+// folds drive-letter case, so a root spelled with the drive letter's case flipped must still give the same answer for an absent
+// path that lies directly under it. Capability-gated: skipped visibly where the flipped spelling is not the same folder.
+test('29po M-1: an absent root-level path is missing under a root whose drive letter is spelled in the other case (capability-gated)', (t) => {
+  const real = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cl-29po-case-')));
+  t.after(() => fs.rmSync(real, { recursive: true, force: true }));
+  const flip = /^[A-Z]:/.test(real) ? real[0].toLowerCase() + real.slice(1) : /^[a-z]:/.test(real) ? real[0].toUpperCase() + real.slice(1) : null;
+  if (flip == null) { t.skip('no drive letter to flip (probe: the root has no drive letter)'); return; }
+  let same = false;
+  try { const a = fs.statSync(real, { bigint: true }); const b = fs.statSync(flip, { bigint: true }); same = a.dev === b.dev && a.ino === b.ino; } catch {}
+  if (!same) { t.skip('the flipped drive-letter spelling does not resolve to the same folder on this volume (probe: stat dev and ino)'); return; }
+  assert.strictEqual(repoEntryKind(path.join(real, 'gone.md'), flip), 'missing', 'a root-level absent path under the flipped root is missing');
+  assert.strictEqual(repoEntryKind(path.join(real, 'docs', 'gone.md'), flip), 'missing', 'the same for an absent path one folder down (control)');
+});
