@@ -2,6 +2,13 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.25] - 2026-11-24
+
+the cross-file anchor check reads a linked file only under the run's root
+
+### Security
+- **doc-structure's cross-file anchor check reads and checks a linked file only under the run's root (`scripts/lib/md-checks.mjs`, `skills/doc-structure/SKILL.md`, `SECURITY.md`, T-107).** Before, a doc's link to a file outside the run was read and its existence checked with no root, so a stranger's repo could learn whether an outside Markdown file had a given heading, or whether an outside path existed. Now a target outside the run's root, or reached through a link that leaves its own folder, is neither read nor reported. A file link that stays inside its own folder is read, as a named doc's is. Still open, and stated: the check-then-use race (SECURITY (d)).
+
 ## [0.17.0-beta.24] - 2026-11-23
 
 the two fix menus hold what a second ask covers before they write
