@@ -95,7 +95,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseMarkdown, walk, textContent, makeSlugger, githubSlug } from './md-ast.mjs';
-import { readRepoFileBounded, repoEntryKind, docReadRoot, docReadError, readRunList, runListLine, listPathCli, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
+import { readRepoFileBounded, repoEntryKind, docReadRoot, readRunList, runListLine, listPathCli, MAX_DOC_BYTES as IO_CEILING_BYTES } from './repo-fs.mjs';
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 // A real anchor id/name only — the negative lookbehind for a word-char or hyphen
@@ -273,6 +273,28 @@ function isNonRelativeTarget(rel) {
     || rel.startsWith('\\\\?\\') || rel.startsWith('\\\\.\\');
 }
 
+// 29pl bounce 1 (T-107, the existence oracle): the existence answer for a path under a run's root, which never tells a
+// caller whether a path OUTSIDE the root exists. repoEntryKind answers 'missing' from the first lstat, before any root
+// check, so its 'missing' is trusted only where the path is lexically inside the root AND the nearest existing folder
+// ancestor below the root judges 'dir' (that judgement walks the chain under the root: a junction or link above the path
+// answers 'other'). Every other case is 'unchecked': no finding, never read. Returns 'file' | 'dir' | 'missing' | 'unchecked'.
+function rootedTargetState(abs, runRoot) {
+  const kind = repoEntryKind(abs, runRoot);
+  if (kind === 'other') return 'unchecked'; // outside the root, through a link, or not a plain file or folder
+  if (kind !== 'missing') return kind; // 'file' | 'dir'
+  const inside = (p) => { const r = path.relative(runRoot, p); return r !== '' && !r.startsWith('..') && !path.isAbsolute(r); };
+  if (!inside(abs)) return 'unchecked'; // the lstat said missing, but the path is outside the root: no answer
+  let cur = path.dirname(abs);
+  while (cur !== runRoot) {
+    if (!inside(cur)) return 'unchecked';
+    const k = repoEntryKind(cur, runRoot);
+    if (k === 'dir') return 'missing'; // the nearest existing folder below the root is plain: the path is absent inside it
+    if (k !== 'missing') return 'unchecked'; // a link, a junction, a file or a device above the path: never judged missing
+    cur = path.dirname(cur);
+  }
+  return 'missing'; // the root itself is the nearest existing folder
+}
+
 export function checkDocument(src, opts = {}) {
   const filePath = opts.filePath ? path.resolve(opts.filePath) : null;
   // 29ph (T-107): the cross-file anchor target (anchorsOf below) is a REPO-DERIVED path, a link inside the doc
@@ -292,10 +314,7 @@ export function checkDocument(src, opts = {}) {
   function targetState(abs) {
     if (opts.fileExists) return opts.fileExists(abs) ? 'file' : 'missing';
     if (runRoot == null) return 'unchecked';
-    const kind = repoEntryKind(abs, runRoot);
-    if (kind === 'missing') return 'missing';
-    if (kind === 'other') return 'unchecked';
-    return kind; // 'file' | 'dir'
+    return rootedTargetState(abs, runRoot);
   }
   if (typeof src === 'string' && src.length > MAX_DOC_BYTES) {
     return [{ check: 'doc-too-large', line: 1, column: 1, message: `document is ${(src.length / 1048576).toFixed(1)} MB (> ${MAX_DOC_BYTES / 1048576} MB) — too large for a structural scan; split it into smaller docs` }];
@@ -600,8 +619,15 @@ if (isMainModule(import.meta.url) && !listPathCli()) {
     // 29ph: the same base is the root every cross-file anchor target is checked under (checkDocument's opts.root below).
     const base = docReadRoot(f, root);
     try {
-      src = readRepoFileBounded(f, base, IO_CEILING_BYTES);
-      if (src === null) throw docReadError(f, base, IO_CEILING_BYTES, 'I/O ceiling');
+      // 29pl bounce 1: a named doc gets the same existence answer as a cross-file target. Only a path inside the root can
+      // answer ENOENT; an outside path, or one reached through a link, gets the one generic refusal, present or absent.
+      const state = rootedTargetState(path.resolve(f), base);
+      src = state === 'unchecked' ? null : readRepoFileBounded(f, base, IO_CEILING_BYTES);
+      if (src === null) {
+        throw state === 'missing'
+          ? new Error(`ENOENT: no such file, open '${f}'`)
+          : new Error(`refused: '${f}' is not a plain file reached from the run root through real folders only, or it is over the ${IO_CEILING_BYTES / 1048576} MB I/O ceiling`);
+      }
     } catch (e) {
       console.error(`FAIL ${f}: ${e.message}`);
       process.exitCode = 1;

@@ -171,3 +171,82 @@ test('29ph IN: a cross-file link inside the run root still finds its anchor and 
   assert.ok(f.some((x) => x.check === 'anchor-missing' && x.message.includes('#nope')), 'the missing inside anchor is named');
   assert.ok(f.some((x) => x.check === 'file-missing' && x.message.includes('missing.md')), 'the missing inside file is named');
 });
+
+// 29pl bounce 1 (T-107, the existence oracle). A path OUTSIDE the run's root must give the same output whether it exists or
+// not: a caller may not learn from md-checks that an outside path is there. Each leg runs one world twice, with the outside
+// file present and then removed, so every absolute path in both runs is identical. Capability-gated where a junction cannot be made.
+const OUTSIDE_LINKS_DOTDOT = '# Doc\n\n[a](../../outside/secret.md#top-secret) [b](../../outside/secret.md#nope)\n';
+const OUTSIDE_LINKS_JUNCTION = '# Doc\n\n[a](sub/secret.md#top-secret) [b](sub/secret.md#nope)\n';
+const SKIP_JUNCTION = 'this volume cannot make a folder junction (probe: symlinkSync with junction failed)';
+function oracleWorld(t, { junction }) {
+  const d = fs.realpathSync.native(fs.mkdtempSync(path.join(TMP, 'cl-29pl-')));
+  if (path.dirname(d) !== TMP || !path.basename(d).startsWith('cl-29pl-')) throw new Error(`refusing temp root ${d}`);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 }));
+  const outside = path.join(d, 'outside');
+  const repo = path.join(d, 'repo');
+  const docs = path.join(repo, 'docs');
+  fs.mkdirSync(outside);
+  fs.mkdirSync(docs, { recursive: true });
+  if (junction) fs.symlinkSync(outside, path.join(docs, 'sub'), 'junction'); // throws where a junction cannot be made: the caller skips
+  return { repo, docs, target: path.join(outside, 'secret.md') };
+}
+function runCliIn(cwd, args) {
+  return spawnSync(process.execPath, ['--max-old-space-size=256', MD_CHECKS, ...args],
+    { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', cwd, env: SANDBOX_ENV });
+}
+function presentThenAbsent(w, argv) {
+  fs.writeFileSync(w.target, OUTSIDE_HEADING);
+  const present = runCliIn(w.repo, argv);
+  fs.rmSync(w.target);
+  const absent = runCliIn(w.repo, argv);
+  return { present, absent };
+}
+function sameOutput(a, b) {
+  assert.equal(a.status, b.status, 'the same exit code');
+  assert.equal(a.stdout, b.stdout, 'the same stdout');
+  assert.equal(a.stderr, b.stderr, 'the same stderr');
+}
+
+test('29pl P-EXIST: a `..` link to an outside path gives the same output whether that path exists or not', (t) => {
+  const w = oracleWorld(t, { junction: false });
+  fs.writeFileSync(path.join(w.docs, 'doc.md'), OUTSIDE_LINKS_DOTDOT);
+  const { present, absent } = presentThenAbsent(w, ['--json', '--root=.', 'docs/doc.md']);
+  assert.equal(present.status, 0, `exit 0; stderr: ${present.stderr}`);
+  assert.deepEqual(JSON.parse(present.stdout)[0].findings, [], 'present: the outside file is not read or reported');
+  assert.deepEqual(JSON.parse(absent.stdout)[0].findings, [], 'absent: no file-missing for the outside path (the oracle)');
+  sameOutput(present, absent);
+});
+
+test('29pl J-EXIST: a link through a junction to an outside path gives the same output whether that path exists or not (capability-gated)', (t) => {
+  let w;
+  try { w = oracleWorld(t, { junction: true }); } catch { t.skip(SKIP_JUNCTION); return; }
+  fs.writeFileSync(path.join(w.docs, 'doc.md'), OUTSIDE_LINKS_JUNCTION);
+  const { present, absent } = presentThenAbsent(w, ['--json', '--root=.', 'docs/doc.md']);
+  assert.equal(present.status, 0, `exit 0; stderr: ${present.stderr}`);
+  assert.deepEqual(JSON.parse(present.stdout)[0].findings, [], 'present: the outside file is not read or reported');
+  assert.deepEqual(JSON.parse(absent.stdout)[0].findings, [], 'absent: no file-missing through the junction (the oracle)');
+  sameOutput(present, absent);
+});
+
+test('29pl NAMED-P: a named doc outside the root is refused the same way whether it exists or not', (t) => {
+  const w = oracleWorld(t, { junction: false });
+  const { present, absent } = presentThenAbsent(w, ['--root=.', '../outside/secret.md']);
+  assert.equal(present.status, 1, `refused, exit 1; stdout: ${present.stdout}`);
+  sameOutput(present, absent);
+});
+
+test('29pl NAMED-J: a named doc reached through a junction outside the root is refused the same way whether it exists or not (capability-gated)', (t) => {
+  let w;
+  try { w = oracleWorld(t, { junction: true }); } catch { t.skip(SKIP_JUNCTION); return; }
+  const { present, absent } = presentThenAbsent(w, ['--root=.', 'docs/sub/secret.md']);
+  assert.equal(present.status, 1, `refused, exit 1; stdout: ${present.stdout}`);
+  sameOutput(present, absent);
+});
+
+// Control: a named doc missing INSIDE the root keeps its ENOENT answer; only outside paths lose it.
+test('29pl CTRL-NAMED-IN: a named doc missing inside the root still reports ENOENT', (t) => {
+  const w = oracleWorld(t, { junction: false });
+  const r = runCliIn(w.repo, ['--root=.', 'docs/missing.md']);
+  assert.equal(r.status, 1, `exit 1; stdout: ${r.stdout}`);
+  assert.match(r.stderr, /ENOENT/, 'the inside missing doc is still named as absent');
+});
