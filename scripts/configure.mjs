@@ -44,7 +44,7 @@ import { fileURLToPath } from 'url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { parseJsonc } from './lib/jsonc.mjs';
 import { findProjectRoot, projectConfigPath, ownDirDefault, globalConfigPath } from './lib/config-load.mjs';
-import { readRepoFileBounded, readRepoFileOutcome, readOnlyRefusal, writeRepoFile, mkdirRepoParents, RepoWriteRefused, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
+import { readRepoFileBounded, readRepoFileOutcome, readOnlyRefusal, writeRepoFile, mkdirRepoParents, MAX_CONFIG_BYTES } from './lib/repo-fs.mjs';
 import { spawnSync } from 'child_process';
 import { gitEnv } from './lib/git-env.mjs';
 
@@ -111,6 +111,16 @@ function moveLegacyAside(legacy, writePath, root, snapshot) {
   }
   console.log(`Migrated the project config to ${writePath}; the old file is kept as ${bak}${wasReadOnly ? ', read-only as it was' : ''} ${replaced ? '(replaced an earlier backup)' : '(no earlier backup)'}.`);
   if (tracked) console.log(`${legacy} is tracked by git: commit its removal (git add -A -- ${legacy}). ${bak} is untracked and yours to keep or delete.`);
+}
+
+// T-74 (29qx): a write target must be absent or a plain file. readOnlyRefusal (repo-fs.mjs) knows only the write bit, so it passed a folder or a
+// link at the backup target, and the run overwrote the malformed config without its backup. A link is a symlink under lstat, so it is refused
+// by the same non-file test. repo-fs.mjs is copied into plugin/, so the check lives here, in the one caller that needs it (configure.mjs is not shipped).
+function targetRefusal(target) {
+  let st;
+  try { st = fs.lstatSync(target); } catch { return readOnlyRefusal(target); }
+  if (!st.isFile()) return `${target}: is not a plain file (a folder, a link or another non-file); nothing was written -- move it aside and run again`;
+  return readOnlyRefusal(target);
 }
 
 function printHelp() {
@@ -330,7 +340,7 @@ function main() {
   if (migrating || malformed) targets.push(backupPath);
   targets.push(writePath);
   for (const target of new Set(targets)) {
-    const refusal = readOnlyRefusal(target);
+    const refusal = targetRefusal(target);
     if (refusal !== null) {
       console.error(`FAIL ${refusal}`);
       process.exitCode = 1;
@@ -349,8 +359,10 @@ function main() {
       writeRepoFile(backupPath, rawConfig, readRoot);
       console.warn(`Warning: existing config is malformed — backed it up to ${backupPath} and rebuilding.`);
     } catch (bakErr) {
-      if (bakErr instanceof RepoWriteRefused) console.warn(`Warning: existing config is malformed, and its backup was refused (${bakErr.message}). Overwriting without a backup.`);
-      else console.warn('Warning: existing config is malformed. Overwriting.');
+      // T-74 (29qx): a backup that cannot be written stops the rebuild, so the malformed config is never overwritten without its backup. The
+      // pre-write check (targetRefusal) refuses a folder or a link at this target first; this branch is reached only by a race or an I/O error.
+      console.error(`FAIL ${bakErr.message}; nothing was written`);
+      return;
     }
   }
 

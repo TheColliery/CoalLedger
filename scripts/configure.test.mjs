@@ -376,3 +376,44 @@ test('configure 16f A: a missing .claude and .claude/coal are created INSIDE the
   assert.ok(fs.statSync(path.join(proj, '.claude', 'coal')).isDirectory());
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(proj, '.claude', 'coal', 'coalledger.json'), 'utf8')).severityFloor, 'high');
 });
+
+// ---- T-74 (29qx; witness scratchpad/29mo/r/witness.mjs ITEM2): a malformed config whose BACKUP target is a folder or a link is refused BEFORE any write ----
+// Before the fix readOnlyRefusal passed both (it knows only the write bit), the .bak write was refused, and the run wrote the new config over the
+// malformed one with a warning ("Overwriting without a backup"). The config bytes checked below are the data-loss proof.
+test('configure T-74: a malformed config with a FOLDER at its .bak is refused before any write; the config bytes are unchanged', (t) => {
+  const { home, proj } = sandbox();
+  t.after(() => clean(home, proj));
+  fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+  const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+  const BROKEN = 'not valid json at all {{{';
+  fs.writeFileSync(cfgPath, BROKEN);
+  fs.mkdirSync(cfgPath + '.bak');
+  const r = run(['--updateCheckDays', '9'], { home, proj });
+  assert.strictEqual(r.status, 1, `the run must exit 1, got ${r.status}\n${r.stdout}${r.stderr}`);
+  assert.strictEqual(fs.readFileSync(cfgPath, 'utf8'), BROKEN, 'the malformed config was overwritten although its backup target is a folder');
+  const failLine = `${r.stdout}\n${r.stderr}`.split(/\r?\n/).find((l) => l.startsWith('FAIL ') && l.includes(path.basename(cfgPath) + '.bak'));
+  assert.ok(failLine, `no FAIL line names the backup target:\n${r.stdout}${r.stderr}`);
+  assert.ok(failLine.includes('not a plain file'), `the refusal does not name the backup target as a non-file (a folder or a link): ${failLine}`);
+  assert.ok(failLine.includes('nothing was written'), `the refusal line does not say nothing was written: ${failLine}`);
+  assert.ok(fs.statSync(cfgPath + '.bak').isDirectory(), 'the folder at the backup target was touched');
+});
+
+test('configure T-74: a malformed config with a LINK at its .bak is refused before any write; nothing lands outside the project', (t) => {
+  if (!JUNCTION_CLI_OK) { t.skip('this seat cannot create a junction on this box'); return; }
+  const { home, proj } = sandbox();
+  const outside = outsideDir();
+  t.after(() => clean(home, proj, outside));
+  fs.mkdirSync(path.join(proj, '.claude', 'coal'), { recursive: true });
+  const cfgPath = path.join(proj, '.claude', 'coal', 'coalledger.json');
+  const BROKEN = 'not valid json at all {{{';
+  fs.writeFileSync(cfgPath, BROKEN);
+  fs.symlinkSync(outside, cfgPath + '.bak', 'junction');
+  const r = run(['--updateCheckDays', '9'], { home, proj });
+  assert.strictEqual(r.status, 1, `the run must exit 1, got ${r.status}\n${r.stdout}${r.stderr}`);
+  assert.strictEqual(fs.readFileSync(cfgPath, 'utf8'), BROKEN, 'the malformed config was overwritten although its backup target is a link');
+  assert.deepStrictEqual(fs.readdirSync(outside), [], 'a backup written through the link landed outside the project');
+  const failLine = `${r.stdout}\n${r.stderr}`.split(/\r?\n/).find((l) => l.startsWith('FAIL ') && l.includes(path.basename(cfgPath) + '.bak'));
+  assert.ok(failLine, `no FAIL line names the backup target:\n${r.stdout}${r.stderr}`);
+  assert.ok(failLine.includes('not a plain file'), `the refusal does not name the backup target as a non-file (a folder or a link): ${failLine}`);
+  assert.ok(failLine.includes('nothing was written'), `the refusal line does not say nothing was written: ${failLine}`);
+});
