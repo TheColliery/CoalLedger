@@ -54,7 +54,7 @@ function clearReadOnly(dir) {
 
 // Runs the real CLI in the sandboxed project. The child env drops every GIT_* and CLAUDE_* key, and HOME/USERPROFILE point at the sandbox home.
 function runConfigure(sb, extra = []) {
-  const env = { ...process.env, HOME: sb.home, USERPROFILE: sb.home, NODE_OPTIONS: '--max-old-space-size=2048' };
+  const env = { ...process.env, HOME: sb.home, USERPROFILE: sb.home, TEMP: sb.home, TMP: sb.home, TMPDIR: sb.home, NODE_OPTIONS: '--max-old-space-size=2048' };
   for (const k of Object.keys(env)) if (k.startsWith('GIT_') || k.startsWith('CLAUDE_')) delete env[k];
   return spawnSync(process.execPath, [CLI, ...extra, '--updateMode', 'off'], { cwd: sb.proj, env, encoding: 'utf8', timeout: 60000 });
 }

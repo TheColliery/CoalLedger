@@ -36,7 +36,7 @@ function run(args, { home, proj }) {
   return spawnSync(process.execPath, [CLI, ...args], {
     cwd: proj,
     encoding: 'utf8',
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: '' },
+    env: { ...process.env, HOME: home, USERPROFILE: home, TEMP: home, TMP: home, TMPDIR: home, CLAUDE_CONFIG_DIR: '' },
     timeout: 20000,
   });
 }
@@ -214,7 +214,7 @@ test('configure --help: the --global line names the path this run would ACTUALLY
     fs.mkdirSync(cfgDir, { recursive: true });
     const r = spawnSync(process.execPath, [CLI, '--help'], {
       cwd: proj, encoding: 'utf8', timeout: 20000,
-      env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: cfgDir },
+      env: { ...process.env, HOME: home, USERPROFILE: home, TEMP: home, TMP: home, TMPDIR: home, CLAUDE_CONFIG_DIR: cfgDir },
     });
     assert.ok(r.stdout.includes(path.join(cfgDir, '.coalledger.json')),
       `the --global help line must name the resolved global path; got:\n${r.stdout}`);
@@ -416,4 +416,42 @@ test('configure T-74: a malformed config with a LINK at its .bak is refused befo
   assert.ok(failLine, `no FAIL line names the backup target:\n${r.stdout}${r.stderr}`);
   assert.ok(failLine.includes('not a plain file'), `the refusal does not name the backup target as a non-file (a folder or a link): ${failLine}`);
   assert.ok(failLine.includes('nothing was written'), `the refusal line does not say nothing was written: ${failLine}`);
+});
+
+// ---- 29qx LOW 3 (the reviewer's INSPECT of T-74, instances 4 and 5): the migration's two write targets, each a FOLDER. Both legs pass on the
+// refusal in targetRefusal. Under the reviewer's mutant N1 (that refusal line made dead) they go red: the proof is in scratchpad/29qx/b-v.md. ----
+function migrationProject(t) {
+  const { home, proj } = sandbox();
+  t.after(() => clean(home, proj));
+  fs.mkdirSync(path.join(proj, '.git')); // a project root for the walk, as scripts/lib/configure-migrate.test.mjs does
+  const legacy = path.join(proj, '.coalledger.json');
+  const LEGACY = '{ "language": "en" }\n';
+  fs.writeFileSync(legacy, LEGACY);
+  return { home, proj, legacy, LEGACY, newHome: path.join(proj, '.claude', 'coal', 'coalledger.json') };
+}
+
+test('29qx LOW 3 (a): a legacy config migrated with a FOLDER at <legacy>.bak is refused before the new home is written; the legacy file is kept', (t) => {
+  const { home, proj, legacy, LEGACY, newHome } = migrationProject(t);
+  fs.mkdirSync(legacy + '.bak');
+  const r = run(['--updateCheckDays', '9'], { home, proj });
+  assert.strictEqual(r.status, 1, `the run must exit 1, got ${r.status}\n${r.stdout}${r.stderr}`);
+  assert.strictEqual(fs.existsSync(newHome), false, 'the new home was written although the backup target is a folder');
+  assert.strictEqual(fs.readFileSync(legacy, 'utf8'), LEGACY, 'the legacy config changed');
+  assert.ok(fs.statSync(legacy + '.bak').isDirectory(), 'the folder at the backup target was touched');
+  const failLine = `${r.stdout}\n${r.stderr}`.split(/\r?\n/).find((l) => l.startsWith('FAIL ') && l.includes(path.basename(legacy) + '.bak'));
+  assert.ok(failLine, `no FAIL line names the backup target:\n${r.stdout}${r.stderr}`);
+  assert.ok(failLine.includes('not a plain file'), `the refusal does not name the backup target as a non-file: ${failLine}`);
+});
+
+test('29qx LOW 3 (b): a new home that is a FOLDER is refused before anything is written; the legacy file and its backup are untouched', (t) => {
+  const { home, proj, legacy, LEGACY, newHome } = migrationProject(t);
+  fs.mkdirSync(newHome, { recursive: true });
+  const r = run(['--updateCheckDays', '9'], { home, proj });
+  assert.strictEqual(r.status, 1, `the run must exit 1, got ${r.status}\n${r.stdout}${r.stderr}`);
+  assert.ok(fs.statSync(newHome).isDirectory(), 'the folder at the new home was touched');
+  assert.strictEqual(fs.readFileSync(legacy, 'utf8'), LEGACY, 'the legacy config changed');
+  assert.strictEqual(fs.existsSync(legacy + '.bak'), false, 'a backup was written before the refusal');
+  const failLine = `${r.stdout}\n${r.stderr}`.split(/\r?\n/).find((l) => l.startsWith('FAIL ') && l.includes(path.basename(newHome)));
+  assert.ok(failLine, `no FAIL line names the new home:\n${r.stdout}${r.stderr}`);
+  assert.ok(failLine.includes('not a plain file'), `the refusal does not name the new home as a non-file: ${failLine}`);
 });

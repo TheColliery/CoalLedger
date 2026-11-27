@@ -24,10 +24,16 @@ function fixture(t) {
   return d;
 }
 
+// T-27 (29qx): a fixture git call sees no user or system git configuration. gitEnv strips the GIT_* family; on top of that HOME,
+// USERPROFILE and XDG_CONFIG_HOME point at the sandbox, and GIT_CONFIG_NOSYSTEM is set, so no ambient ~/.gitconfig or system file shapes a fixture.
+function fixtureGitEnv(d) {
+  return { ...gitEnv(path.dirname(d)), HOME: SANDBOX_ENV.HOME, USERPROFILE: SANDBOX_ENV.USERPROFILE, XDG_CONFIG_HOME: SANDBOX_ENV.HOME, GIT_CONFIG_NOSYSTEM: '1' };
+}
+
 // A repository with its own .git, asserted before any git command runs against it.
 function repo(t) {
   const d = fixture(t);
-  execFileSync('git', ['init', '-q', d], { env: gitEnv(path.dirname(d)), stdio: 'ignore' });
+  execFileSync('git', ['init', '-q', d], { env: fixtureGitEnv(d), stdio: 'ignore' });
   assert.ok(fs.existsSync(path.join(d, '.git')), 'the fixture repository has its own .git');
   return d;
 }
@@ -41,9 +47,9 @@ function commit(d, iso, files) {
     fs.mkdirSync(path.dirname(path.join(d, rel)), { recursive: true });
     fs.writeFileSync(path.join(d, rel), body);
   }
-  execFileSync('git', ['add', '-A'], { cwd: d, env: gitEnv(path.dirname(d)), stdio: 'ignore' });
-  execFileSync('git', [...ID, 'commit', '-q', '-m', 'change', `--date=${iso}`], { cwd: d, env: gitEnv(path.dirname(d)), stdio: 'ignore' });
-  execFileSync('git', [...ID, 'rebase', '-q', '--committer-date-is-author-date', '--root'], { cwd: d, env: gitEnv(path.dirname(d)), stdio: 'ignore' });
+  execFileSync('git', ['add', '-A'], { cwd: d, env: fixtureGitEnv(d), stdio: 'ignore' });
+  execFileSync('git', [...ID, 'commit', '-q', '-m', 'change', `--date=${iso}`], { cwd: d, env: fixtureGitEnv(d), stdio: 'ignore' });
+  execFileSync('git', [...ID, 'rebase', '-q', '--committer-date-is-author-date', '--root'], { cwd: d, env: fixtureGitEnv(d), stdio: 'ignore' });
 }
 
 function run(args) {

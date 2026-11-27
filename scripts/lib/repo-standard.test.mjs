@@ -282,8 +282,26 @@ test('--root missing exits 2 with a usage line', () => {
   assert.equal(r.status, 2, r.stdout);
 });
 
-test('OpenSSF witness: every criterion the engine emits is a heading in the CoalGob checklist (skips when no sibling room)', (t) => {
+// T-28 (29qx): the unskippable half. The four criterion ids are CRITERIA, and every criterion the engine EMITS is one of them, read from
+// the findings of fixtures that reach each criterion. Before the split this assertion sat behind a skip that a sibling-less CI never reaches.
+test('OpenSSF witness: every criterion the engine emits is in CRITERIA, and CRITERIA is the four literal ids (T-28)', (t) => {
   assert.deepEqual([...CRITERIA].sort(), [...LITERAL_CRITERIA].sort());
+  const noLicense = clean(t); fs.rmSync(path.join(noLicense, 'LICENSE'));
+  const noContrib = clean(t); fs.rmSync(path.join(noContrib, 'CONTRIBUTING.md'));
+  const noSecurity = clean(t); fs.rmSync(path.join(noSecurity, 'SECURITY.md')); fs.rmSync(path.join(noSecurity, '.well-known'), { recursive: true });
+  const rawLog = clean(t); put(rawLog, 'CHANGELOG.md', `commit ${'a'.repeat(40)}\nAuthor: t <t@example.invalid>\n\n    change\n`);
+  const emitted = new Set();
+  for (const d of [noLicense, noContrib, noSecurity, rawLog]) {
+    for (const f of findings(d)) {
+      assert.ok(CRITERIA.includes(f.criterion), `the engine emitted criterion ${JSON.stringify(f.criterion)}, which is not in CRITERIA`);
+      emitted.add(f.criterion);
+    }
+  }
+  assert.deepEqual([...emitted].sort(), [...LITERAL_CRITERIA].sort(), 'the fixtures must reach all four criteria');
+});
+
+// T-28 (29qx): the skippable half stands alone, so a sibling-less CI skips only this leg, never the emitted-criterion assertion above.
+test('OpenSSF witness: each criterion id is a heading in the CoalGob checklist (skips when no sibling room)', (t) => {
   if (!fs.existsSync(CHECKLIST)) { t.skip('no CoalGob checklist beside this room (CI has no sibling room)'); return; }
   const headings = fs.readFileSync(CHECKLIST, 'utf8').split(/\r?\n/).filter((l) => l.startsWith('### ')).map((l) => l.slice(4).split(' ')[0]);
   for (const id of LITERAL_CRITERIA) assert.ok(headings.includes(id), `${id} is a heading in the checklist`);
