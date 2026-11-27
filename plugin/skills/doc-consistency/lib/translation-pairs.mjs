@@ -48,6 +48,14 @@ function lastCommitDate(root, rel) {
   }
 }
 
+// T-23 (29qx): the reason names the kind repoEntryKind returned. 'missing' says missing, 'dir' says a folder, and 'other' (a link, or a
+// device, pipe or socket) is refused by the link rule. A 'file' never reaches here.
+function kindWord(kind) {
+  if (kind === 'missing') return 'missing';
+  if (kind === 'dir') return 'a folder';
+  return 'refused by the link rule, or a device, pipe or socket';
+}
+
 // One finding per pair at most. `root` is used as given (the caller pins it literally).
 export function checkTranslationPairs(root, pairs) {
   const out = [];
@@ -62,12 +70,12 @@ export function checkTranslationPairs(root, pairs) {
     const base2 = { ...base, source, counterpart };
     const sourceKind = repoEntryKind(path.join(root, source), root);
     if (sourceKind !== 'file') {
-      out.push({ ...base2, check: 'pair-source-missing', reason: `${source} is not a plain file under the root (${sourceKind === 'missing' ? 'missing' : 'refused by the link rule'})` });
+      out.push({ ...base2, check: 'pair-source-missing', reason: `${source} is not a plain file under the root (${kindWord(sourceKind)})` });
       continue;
     }
     const counterKind = repoEntryKind(path.join(root, counterpart), root);
     if (counterKind !== 'file') {
-      out.push({ ...base2, check: 'translation-missing', reason: `${counterpart} is not a plain file under the root (${counterKind === 'missing' ? 'missing' : 'refused by the link rule'})` });
+      out.push({ ...base2, check: 'translation-missing', reason: `${counterpart} is not a plain file under the root (${kindWord(counterKind)})` });
       continue;
     }
     const s = lastCommitDate(root, source);

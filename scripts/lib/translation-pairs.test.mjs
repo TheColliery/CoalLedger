@@ -106,6 +106,17 @@ test('a missing source is reported pair-source-missing', (t) => {
   assert.deepEqual(findings(d, ['README.md=README.th.md']).map((x) => x.check), ['pair-source-missing']);
 });
 
+// T-23 (29qx): a counterpart that is a FOLDER is named as a folder. Before the fix every non-missing kind read "refused by the link rule".
+test('T-23: a counterpart that is a FOLDER is reported as a folder, never as a link', (t) => {
+  const d = repo(t);
+  commit(d, T_OLD, { 'README.md': 'en\n' });
+  fs.mkdirSync(path.join(d, 'README.th.md'));
+  const f = findings(d, ['README.md=README.th.md']);
+  assert.deepEqual(f.map((x) => x.check), ['translation-missing']);
+  assert.match(f[0].reason, /a folder/, f[0].reason);
+  assert.doesNotMatch(f[0].reason, /link rule/, f[0].reason);
+});
+
 test('a folder with no .git is dated by no one: translation-undated, never translation-older', (t) => {
   const d = fixture(t);
   fs.writeFileSync(path.join(d, 'README.md'), 'en\n');
