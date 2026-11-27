@@ -31,15 +31,16 @@ git tag -v "$(git describe --tags --abbrev=0)"
 <!-- version-transition: SkillSpector scan—the re-scan is automatic when this room's version is bumped (gated by a baseline diff), not a maintainer command; a genuinely new attack surface is a second trigger, by hand. Bump the version/score/date/commit below only after a real re-scan. Replace this section on a re-scan; never append. -->
 ## Independent Scanning—NVIDIA SkillSpector
 
-Last scan: CoalLedger **v0.17.0-beta.5** dist (`plugin/`, the release at commit `8a11661`), on **2026-11-06** (19:02 UTC), with [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) self-reported version **v2.13.4** (package source revision `54824463814a0be01360792523ec7245a69190fc`), static stage (`--no-llm`). **Score 100/100 (CRITICAL), 25 findings, 0 real.** Each class, read at the scanned tree:
+Last scan: CoalLedger **v0.17.0-beta.26** dist (`plugin/`, the tree of commit `330b56f`, the tagged release; derived, see below), on **2026-11-27** (03:58 UTC), with [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) self-reported version **v2.13.4** (package source revision `54824463814a0be01360792523ec7245a69190fc`), static stage (`--no-llm`). **Score 100/100 (CRITICAL), 26 findings, 0 real.** The scan file does not carry the version or the commit: the version is read from `plugin/.claude-plugin/plugin.json`, and the commit is matched by file sizes, since the scan file carries no digest. Each class, read at the scanned tree:
 
 - **RA1 Self-Modification ×15:** the update check is a local stamp the hook schedules. The agent verifies online and offers `claude plugin update`.
 - **RA2 Rogue Agent, Session Persistence ×5:** a comment in each copy of the run-list reader names `~/.claude` as a protected path; the reader writes nothing there.
 - **MP3 Memory Manipulation ×1:** a placeholder the agent fills from its own context, not a memory write.
-- **EA2 Autonomous Decision Making ×3:** code comments listing config keys that carry no consent, spend or outward axis.
+- **EA2 Autonomous Decision Making ×3:** code comments listing config keys that carry no consent, spend or outward axis (`config-load.mjs:441` and its two dist copies).
+- **EA2 Autonomous Decision Making ×1, a second family:** the fix-menu step at `skills/doc-rot/SKILL.md:56` ("bump a version string to the manifest's, which needs no confirmation"). It runs only after the user picks "Apply safe fixes", and with no user present it writes nothing; only the version bump skips a per-item ask. A known false-positive family, not a ticket.
 - **BH1 Bundled hooks ×1:** the three declared hooks, each fail-silent, no network, no child process.
 
-Coverage was **partial**: 21 of 43 files fully inspected, 22 partial. The scan file, `skillspector-20261106T190215Z.json`, is kept locally and gitignored. Earlier scans are in this file's git history (`git log -- SECURITY.md`), and scanning is event-driven.
+Coverage was **partial**: 22 of 45 files fully inspected, 23 partial, 0 uninspected (48.9%). The scan file, `skillspector-20261127T035527Z.json`, is kept locally and gitignored. Earlier scans are in this file's git history (`git log -- SECURITY.md`), and scanning is event-driven.
 
 ## Structural Safety
 
