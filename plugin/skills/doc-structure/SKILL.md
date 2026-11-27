@@ -63,7 +63,7 @@ Then: SUSPECTED list · counts + top 3 to fix.
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
 
-- **Apply safe fixes:** mechanical, fully reversible edits only (correct an anchor slug to the real heading, fix a relative path to the file's actual location, remove an orphan definition). Each fix: checkpoint (copy the file aside—never git stash or git commit, which take the user's unrelated changes too) -> apply -> re-run the engine on the file -> revert if new findings appeared.
+- **Apply safe fixes:** mechanical, fully reversible edits only (correct an anchor slug to the real heading, fix a relative path to the file's actual location, remove an orphan definition). Each fix: checkpoint (copy the file aside to the OS temp folder, never inside the repository—never git stash or git commit, which take the user's unrelated changes too; restore from that copy on revert, and remove the copy once its decisions are applied or declined) -> apply -> re-run the engine on the file -> revert if new findings appeared.
 - **Let me pick:** list findings; the user selects.
 - **Report only:** exit unchanged.
 

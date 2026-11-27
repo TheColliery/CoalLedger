@@ -52,7 +52,7 @@ CONFIRMED table only; `⚠️ unverified` and SUSPECTED go to separate lists, ne
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
 
-- **Apply safe fixes:** only corrections the source states unambiguously (a version string, a figure copied wrong). Each fix: checkpoint (copy the file aside—never git stash or git commit, which take the user's unrelated changes too) -> apply -> re-read the changed lines -> revert on doubt.
+- **Apply safe fixes:** only corrections the source states unambiguously (a version string, a figure copied wrong). Each fix: checkpoint (copy the file aside to the OS temp folder, never inside the repository—never git stash or git commit, which take the user's unrelated changes too; restore from that copy on revert, and remove the copy once its decisions are applied or declined) -> apply -> re-read the changed lines -> revert on doubt.
 - **Let me pick:** list findings; the user selects.
 - **Report only:** exit unchanged.
 

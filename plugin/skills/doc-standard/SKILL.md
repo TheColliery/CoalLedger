@@ -59,7 +59,7 @@ CONFIRMED table only; `⚠️ unverified` standards and SUSPECTED gaps in separa
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
 
-- **Draft the missing parts:** propose section drafts for the user to review—content is ALWAYS the user's call; drafts are applied only after approval, with a checkpoint first (copy the file aside—never git stash or git commit, which take the user's unrelated changes too). Until the user approves the drafts, nothing is written to the doc; choosing this menu item is not that approval. With no user present, write nothing and return the drafts and the question as text.
+- **Draft the missing parts:** propose section drafts for the user to review—content is ALWAYS the user's call; drafts are applied only after approval, with a checkpoint first (copy the file aside to the OS temp folder, never inside the repository—never git stash or git commit, which take the user's unrelated changes too; restore from that copy on revert, and remove the copy once its decisions are applied or declined). Until the user approves the drafts, nothing is written to the doc; choosing this menu item is not that approval. With no user present, write nothing and return the drafts and the question as text.
 - **Let me pick:** list gaps; the user selects which to draft.
 - **Report only:** exit unchanged.
 

@@ -55,7 +55,7 @@ All findings SUSPECTED. Redact within the report itself—a leak report must not
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc—every redaction is a content decision.
 
-- **Propose redactions:** show each finding with a proposed replacement (placeholder, generalization, or removal); the user approves per item; apply with a checkpoint first (copy the file aside—never git stash or git commit, which take the user's unrelated changes too).
+- **Propose redactions:** show each finding with a proposed replacement (placeholder, generalization, or removal); the user approves per item; apply with a checkpoint first (copy the file aside to the OS temp folder, never inside the repository—never git stash or git commit, which take the user's unrelated changes too; that copy holds the text being redacted, so it must never sit in the working tree; restore from it on revert, and remove it once the approved redactions are applied or declined).
 - **Let me pick:** list findings; the user selects.
 - **Report only:** exit unchanged.
 
