@@ -2,6 +2,19 @@
 
 All notable changes to CoalLedger are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/) (the version lives in `.claude-plugin/plugin.json`).
 
+## [0.17.0-beta.26] - 2026-11-27
+
+checkpoints copy files aside; configure refuses a folder or link backup
+
+### Changed
+- **Every skill's checkpoint copies the file aside, never `git stash` or `git commit` (`skills/doc-consistency`, `skills/doc-grounding`, `skills/doc-leak`, `skills/doc-quality`, `skills/doc-rot`, `skills/doc-standard`, `skills/doc-structure`, T-55).** A checkpoint before a fix used to be a `git stash` or a commit, which takes the user's unrelated changes with it. Each skill's grants row and apply step now name a file copy, and the text says never to stash or commit. The shipped `plugin/skills/` copies are rebuilt to match.
+
+### Fixed
+- **A translation pair that names a folder is reported as a folder (`scripts/lib/translation-pairs.mjs`, T-23).** A counterpart that was a folder was reported as refused by the link rule. Now a missing counterpart says missing, a folder says folder, and only a link, device, pipe or socket says refused by the link rule.
+- **`scripts/configure.mjs` refuses a folder or a link at its backup target before any write (T-74).** A malformed config whose `.bak` was a folder was overwritten with no backup, so its bytes were lost. A migration whose `<legacy>.bak` was a folder wrote the new home first and then failed to move the legacy file. Now the backup target, the migration backup and the config target are each checked before the first write. A folder or a link there stops the run with a FAIL line naming the target as not a plain file: the malformed config's bytes are kept, nothing new is written, and the legacy file stays. Named residuals: a link in the new home's folder chain during a migration still leaves one `<legacy>.bak` copy (nothing is lost), and a race on the rename still warns and exits 1.
+
+Test-only changes (T-27, T-28, T-66: sandboxed HOME and TEMP in the translation, configure and OpenSSF witness tests) ship no behaviour change and are not listed.
+
 ## [0.17.0-beta.25] - 2026-11-24
 
 the readers answer an outside path the same whether it exists or not
