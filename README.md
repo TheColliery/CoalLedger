@@ -2,7 +2,7 @@
 
 # 📒 CoalLedger
 
-> *A working mine keeps two things: the coal and the ledger. The ledger is the written record — and a mine with a wrong ledger is lying to everyone who reads it.* This one keeps your DOCS healthy: **CoalMine for documentation.**
+> *A working mine keeps two things: the coal and the ledger. The ledger is the written record—and a mine with a wrong ledger is lying to everyone who reads it.* This one keeps your DOCS healthy: **CoalMine for documentation.**
 
 **A docs-health canary suite**—6+1 canaries that catch the six ways a doc goes bad (wrong · incomplete · stale · contradictory · broken · unreadable, plus config-gated leaked), structure detection through a vendored CommonMark+GFM AST engine so things that render fine are never flagged, severity judged by context, and fixes always behind a choice-gated menu—never auto-applied.
 
