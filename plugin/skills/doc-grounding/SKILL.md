@@ -37,7 +37,7 @@ This canary verifies only what it can FETCH or RECOMPUTE. A claim needing formal
 | class | step it powers | grant | on denial |
 |---|---|---|---|
 | read | extract + verify claims against their source | `Read`·`Grep`·`Glob` | refuse that file, report it unscanned—never a false clean bill |
-| write | Apply safe fixes (source-unambiguous corrections) | `Write`·`Edit` (·`Bash`—checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
+| write | Apply safe fixes (source-unambiguous corrections) | `Write`·`Edit` (·`Bash`—checkpoint by copying the file aside) | report + courier the intended change to the dispatcher; never claim applied |
 | network | Full-tier live/multi-source verification | `WebSearch`·`WebFetch` | already covered—Method step 3's `⚠️ unverified: check [source]` degrade |
 
 A denial reaches the WORKER as a visible message and propagates NO further—not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
@@ -52,7 +52,7 @@ CONFIRMED table only; `⚠️ unverified` and SUSPECTED go to separate lists, ne
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
 
-- **Apply safe fixes:** only corrections the source states unambiguously (a version string, a figure copied wrong). Each fix: checkpoint (git stash/commit in a git repo; else copy the file aside—never assume git exists) -> apply -> re-read the changed lines -> revert on doubt.
+- **Apply safe fixes:** only corrections the source states unambiguously (a version string, a figure copied wrong). Each fix: checkpoint (copy the file aside—never git stash or git commit, which take the user's unrelated changes too) -> apply -> re-read the changed lines -> revert on doubt.
 - **Let me pick:** list findings; the user selects.
 - **Report only:** exit unchanged.
 

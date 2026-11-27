@@ -39,7 +39,7 @@ Whether a claim was EVER true is doc-grounding's job; formal verification of a h
 | class | step it powers | grant | on denial |
 |---|---|---|---|
 | read | collect age-markers + check the version source of truth | `Read`·`Grep`·`Glob` | refuse that file, report it unscanned—never a false clean bill |
-| write | Apply safe fixes (unambiguous current-value updates) | `Write`·`Edit` (·`Bash`—checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
+| write | Apply safe fixes (unambiguous current-value updates) | `Write`·`Edit` (·`Bash`—checkpoint by copying the file aside) | report + courier the intended change to the dispatcher; never claim applied |
 
 A denial reaches the WORKER as a visible message and propagates NO further—not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
 
@@ -53,7 +53,7 @@ CONFIRMED table only; SUSPECTED (old-but-unproven) as a separate list, never the
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
 
-- **Apply safe fixes:** only updates whose current value is unambiguous (bump a version string to the manifest's, which needs no confirmation; refresh a date, or delete a TODO, only after the user confirms that date or that TODO, item by item). Until those confirmations are given, neither that date nor that TODO is written (the version bump, which needs none, is unaffected); the answer to this menu is not the answer to the date or the TODO. Each fix: checkpoint (git stash/commit in a git repo; else copy the file aside—never assume git exists) -> apply -> re-read the changed lines. With no user present, write nothing and return the questions as text.
+- **Apply safe fixes:** only updates whose current value is unambiguous (bump a version string to the manifest's, which needs no confirmation; refresh a date, or delete a TODO, only after the user confirms that date or that TODO, item by item). Until those confirmations are given, neither that date nor that TODO is written (the version bump, which needs none, is unaffected); the answer to this menu is not the answer to the date or the TODO. Each fix: checkpoint (copy the file aside—never git stash or git commit, which take the user's unrelated changes too) -> apply -> re-read the changed lines. With no user present, write nothing and return the questions as text.
 - **Let me pick:** list findings; the user selects.
 - **Report only:** exit unchanged.
 

@@ -41,7 +41,7 @@ Adjudicating WHICH of two contradicting claims is true = doc-grounding (fetch/re
 | class | step it powers | grant | on denial |
 |---|---|---|---|
 | read | inventory facts/terms across the doc set, incl. cross-language pairs | `Read`·`Grep`·`Glob` (·`Bash`·`Write` for the run list—the translation-pair engine runs via `node ./lib/translation-pairs.mjs`, Method 2b; `Read`/`Grep`/`Glob` cannot execute it) | refuse that file, report it unscanned—never a false clean bill |
-| write | Align to a chosen side (after the user picks) | `Write`·`Edit` (·`Bash`—checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
+| write | Align to a chosen side (after the user picks) | `Write`·`Edit` (·`Bash`—checkpoint by copying the file aside) | report + courier the intended change to the dispatcher; never claim applied |
 
 A denial reaches the WORKER as a visible message and propagates NO further—not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
 
@@ -55,7 +55,7 @@ CONFIRMED table only; SUSPECTED (a tension that may be intended, e.g. an archive
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
 
-- **Align to a chosen side:** the user picks which doc is right per finding; the other is edited to match, with a checkpoint first (git stash/commit in a git repo; else copy the file aside—never assume git exists).
+- **Align to a chosen side:** the user picks which doc is right per finding; the other is edited to match, with a checkpoint first (copy the file aside—never git stash or git commit, which take the user's unrelated changes too).
 - **Let me pick:** list findings; the user selects.
 - **Report only:** exit unchanged.
 

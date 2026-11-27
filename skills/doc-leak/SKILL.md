@@ -41,7 +41,7 @@ Whether the doc's CLAIMS are right is doc-grounding; this canary only asks "shou
 | class | step it powers | grant | on denial |
 |---|---|---|---|
 | read | scan prose against the audience-boundary table | `Read`·`Grep`·`Glob` | refuse that file, report it unscanned—never a false clean bill |
-| write | Propose redactions (approved per item) | `Write`·`Edit` (·`Bash`—checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied—a "redacted" that was never written is a shipped secret |
+| write | Propose redactions (approved per item) | `Write`·`Edit` (·`Bash`—checkpoint by copying the file aside) | report + courier the intended change to the dispatcher; never claim applied—a "redacted" that was never written is a shipped secret |
 
 A denial reaches the WORKER as a visible message and propagates NO further—not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
 
@@ -55,7 +55,7 @@ All findings SUSPECTED. Redact within the report itself—a leak report must not
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc—every redaction is a content decision.
 
-- **Propose redactions:** show each finding with a proposed replacement (placeholder, generalization, or removal); the user approves per item; apply with a checkpoint first (git stash/commit in a git repo; else copy the file aside—never assume git exists).
+- **Propose redactions:** show each finding with a proposed replacement (placeholder, generalization, or removal); the user approves per item; apply with a checkpoint first (copy the file aside—never git stash or git commit, which take the user's unrelated changes too).
 - **Let me pick:** list findings; the user selects.
 - **Report only:** exit unchanged.
 

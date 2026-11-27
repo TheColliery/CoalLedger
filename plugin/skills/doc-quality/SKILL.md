@@ -40,7 +40,7 @@ Whether the CONTENT is true is doc-grounding; whether the doc is structurally br
 | class | step it powers | grant | on denial |
 |---|---|---|---|
 | read | scan docs for mechanics + quality, against any house rules | `Read`·`Grep`·`Glob` (·`Bash`·`Write` for the run list—the `emDash` and script-mechanics engines run via `node ./lib/emdash.mjs` / `./lib/lang-mechanics.mjs`, per Method steps 2b/2c; `Read`/`Grep`/`Glob` cannot execute either) | refuse that file, report it unscanned—never a false clean bill |
-| write | Apply safe fixes (mechanics only) | `Write`·`Edit` (·`Bash`—checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
+| write | Apply safe fixes (mechanics only) | `Write`·`Edit` (·`Bash`—checkpoint by copying the file aside) | report + courier the intended change to the dispatcher; never claim applied |
 
 A denial reaches the WORKER as a visible message and propagates NO further—not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
 
@@ -54,7 +54,7 @@ CONFIRMED table only; SUSPECTED (style/word-choice questions) as a separate list
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
 
-- **Apply safe fixes:** mechanics only (recompose characters, collapse doubled spaces, unify punctuation per the house rule, add/remove the single space around an em-dash to match the configured `emDash` convention—never touch a hit inside a fenced/inline-code, URL, Thai, blockquote, or LICENSE/NOTICE/COPYING-class exclusion, since the engine never reported one there). Each fix: checkpoint (git stash/commit in a git repo; else copy the file aside—never assume git exists) -> apply -> re-read the changed lines -> re-run the engine on the file (`emDash` findings only) -> revert if new findings appeared.
+- **Apply safe fixes:** mechanics only (recompose characters, collapse doubled spaces, unify punctuation per the house rule, add/remove the single space around an em-dash to match the configured `emDash` convention—never touch a hit inside a fenced/inline-code, URL, Thai, blockquote, or LICENSE/NOTICE/COPYING-class exclusion, since the engine never reported one there). Each fix: checkpoint (copy the file aside—never git stash or git commit, which take the user's unrelated changes too) -> apply -> re-read the changed lines -> re-run the engine on the file (`emDash` findings only) -> revert if new findings appeared.
 - **Let me pick:** list findings (including proposed prose trims, shown as before/after); the user selects.
 - **Report only:** exit unchanged.
 

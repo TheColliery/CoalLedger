@@ -44,7 +44,7 @@ Whether content is CORRECT is doc-grounding's job; whether a judgment call needs
 | class | step it powers | grant | on denial |
 |---|---|---|---|
 | read | detect required parts by reading the doc | `Read`·`Grep`·`Glob` (·`Bash`·`Write` for the run list—the repository pass runs via `node ./lib/repo-standard.mjs`, Method 2b; `Read`/`Grep`/`Glob` cannot execute it) | refuse that file, report it unscanned—never a false clean bill |
-| write | Draft the missing parts (after approval) | `Write`·`Edit` (·`Bash`—checkpoint via git stash/commit) | report + courier the intended change to the dispatcher; never claim applied |
+| write | Draft the missing parts (after approval) | `Write`·`Edit` (·`Bash`—checkpoint by copying the file aside) | report + courier the intended change to the dispatcher; never claim applied |
 | network | resolving the kind's accepted standard | `WebSearch`·`WebFetch` | already covered—resolving the standard already degrades to `⚠️ unverified: check [source]` when offline (see "The standard" above) |
 
 A denial reaches the WORKER as a visible message and propagates NO further—not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
@@ -59,7 +59,7 @@ CONFIRMED table only; `⚠️ unverified` standards and SUSPECTED gaps in separa
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
 
-- **Draft the missing parts:** propose section drafts for the user to review—content is ALWAYS the user's call; drafts are applied only after approval, with a checkpoint first (git stash/commit in a git repo; else copy the file aside—never assume git exists). Until the user approves the drafts, nothing is written to the doc; choosing this menu item is not that approval. With no user present, write nothing and return the drafts and the question as text.
+- **Draft the missing parts:** propose section drafts for the user to review—content is ALWAYS the user's call; drafts are applied only after approval, with a checkpoint first (copy the file aside—never git stash or git commit, which take the user's unrelated changes too). Until the user approves the drafts, nothing is written to the doc; choosing this menu item is not that approval. With no user present, write nothing and return the drafts and the question as text.
 - **Let me pick:** list gaps; the user selects which to draft.
 - **Report only:** exit unchanged.
 

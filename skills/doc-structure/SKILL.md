@@ -49,7 +49,7 @@ Scan markdown docs for structural breakage. Report CONFIRMED findings. Fix on re
 | class | step it powers | grant | on denial |
 |---|---|---|---|
 | read | scan target docs via the AST engine | `Bash`·`Write` (the run list; the engine runs via `node ./lib/md-checks.mjs`, per Method step 1—`Read`/`Grep`/`Glob` cannot execute it, and step 1 forbids re-deriving checks by reading markdown yourself) | refuse that file, report it unscanned—never a false clean bill (same posture as `doc-too-large`/`doc-too-nested`/`doc-unreadable` above) |
-| write | Apply safe fixes (anchor/path/orphan corrections) | `Write`·`Edit` (·`Bash`—checkpoint via git stash/commit, and the re-run-the-engine revert check) | report + courier the intended change to the dispatcher; never claim applied |
+| write | Apply safe fixes (anchor/path/orphan corrections) | `Write`·`Edit` (·`Bash`—checkpoint by copying the file aside, and the re-run-the-engine revert check) | report + courier the intended change to the dispatcher; never claim applied |
 
 A denial reaches the WORKER as a visible message and propagates NO further—not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean.
 
@@ -63,7 +63,7 @@ Then: SUSPECTED list · counts + top 3 to fix.
 ## Fix mode (choice-gated)
 After any report in an interactive session you **MUST** present this menu via your question tool (skip only when findings are zero or no user is present). NEVER auto-fix a live doc.
 
-- **Apply safe fixes:** mechanical, fully reversible edits only (correct an anchor slug to the real heading, fix a relative path to the file's actual location, remove an orphan definition). Each fix: checkpoint (git stash/commit in a git repo; else copy the file aside—never assume git exists) -> apply -> re-run the engine on the file -> revert if new findings appeared.
+- **Apply safe fixes:** mechanical, fully reversible edits only (correct an anchor slug to the real heading, fix a relative path to the file's actual location, remove an orphan definition). Each fix: checkpoint (copy the file aside—never git stash or git commit, which take the user's unrelated changes too) -> apply -> re-run the engine on the file -> revert if new findings appeared.
 - **Let me pick:** list findings; the user selects.
 - **Report only:** exit unchanged.
 
