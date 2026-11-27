@@ -230,3 +230,24 @@ test('29po X3: a pair source behind a junction outside the root gives the same r
   assert.equal(absent.status, present.status, 'the same exit code');
   assert.equal(absent.stdout, present.stdout, 'the same report for an absent and a present source behind the junction');
 });
+
+// LOW 2 (29qx bounce 1, CW-110): the reason names each kind. Mutant K2 (kindWord's missing branch removed) and K3 (the source-side reason
+// put back to the old two-way expression) each make one of these legs red.
+test('LOW 2 (a): a MISSING counterpart says (missing) in its reason, never a link', (t) => {
+  const d = repo(t);
+  commit(d, T_OLD, { 'README.md': 'en\n' });
+  const f = findings(d, ['README.md=README.th.md']);
+  assert.deepEqual(f.map((x) => x.check), ['translation-missing']);
+  assert.match(f[0].reason, /\(missing\)/, f[0].reason);
+  assert.doesNotMatch(f[0].reason, /link rule/, f[0].reason);
+});
+
+test('LOW 2 (b): a FOLDER source says a folder in its reason, never a link', (t) => {
+  const d = repo(t);
+  commit(d, T_OLD, { 'README.th.md': 'th\n' });
+  fs.mkdirSync(path.join(d, 'README.md'));
+  const f = findings(d, ['README.md=README.th.md']);
+  assert.deepEqual(f.map((x) => x.check), ['pair-source-missing']);
+  assert.match(f[0].reason, /a folder/, f[0].reason);
+  assert.doesNotMatch(f[0].reason, /link rule/, f[0].reason);
+});
